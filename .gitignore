@@ -1,0 +1,19 @@
+# Local build outputs and caches; retain dependency locks when genuinely generated.
+/build/
+/dist/
+/target/
+/.cache/
+*.log
+.DS_Store
+Thumbs.db
+
+# Local instructions, planning, and generated verification evidence.
+/AGENTS.md
+/DESIGN.md
+/tests/FAILURE_MODES.md
+/artifacts/
+__pycache__/
+*.pyc
+
+# Generated precompiled development bundle payload.
+/native/

@@ -1,0 +1,10 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata: {name: inputscope}
+spec:
+  entrypoint: main
+  templates:
+    - name: main
+      container:
+        image: alpine
+        args: ["{{inputs.parameters.absent}}"]

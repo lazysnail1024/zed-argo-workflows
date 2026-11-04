@@ -1,0 +1,43 @@
+{
+  "missing": [
+    "WF_LOCAL_TEMPLATE_MISSING"
+  ],
+  "valid": [],
+  "duplicate": [
+    "WF_DUPLICATE_SYMBOL"
+  ],
+  "dag": [
+    "WF_DAG_CYCLE",
+    "WF_DEPENDENCY_MISSING"
+  ],
+  "depends": [
+    "WF_DEPENDENCY_MODE_CONFLICT",
+    "WF_DEPENDS_SYNTAX"
+  ],
+  "targetVersion": "3.6.0",
+  "exitCode": 2,
+  "arguments": [
+    "WF_ARGUMENT_MISSING"
+  ],
+  "defaults": [],
+  "stepduplicate": [
+    "WF_DUPLICATE_SYMBOL"
+  ],
+  "inputscope": [
+    "WF_REFERENCE_SCOPE"
+  ],
+  "outputmissing": [
+    "WF_OUTPUT_MISSING"
+  ],
+  "dagscope": [
+    "WF_REFERENCE_SCOPE"
+  ],
+  "stepscope": [
+    "WF_REFERENCE_SCOPE"
+  ],
+  "dynamicindex": [
+    "WF_DYNAMIC_REFERENCE"
+  ],
+  "referencevalid": [],
+  "publicinputs": []
+}

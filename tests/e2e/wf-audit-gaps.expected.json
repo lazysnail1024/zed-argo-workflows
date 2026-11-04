@@ -1,0 +1,14 @@
+{
+  "rename-dag-onexit": "Rename cleanup to tidy must either be refused or update both the local declaration and the DAG task onExit reference. A successful edit must remain valid under official Argo 3.6.0 offline lint.",
+  "rename-step-onexit": "Rename cleanup to tidy must either be refused or update both the local declaration and the Step onExit reference. A successful edit must remain valid under official Argo 3.6.0 offline lint.",
+  "fieldfix-external": "Correcting clusterScop to clusterScope must be withheld if the resulting scope analysis adds a WF_TEMPLATE_REF_UNRESOLVED Error.",
+  "scope-separate-damage": "A malformed YAML document in scope beta must not downgrade the known missing external reference Error in complete scope alpha.",
+  "scope-same-damage": "A malformed YAML document in the caller scope must downgrade missing external references to Information.",
+  "scope-same-duplicate": "A duplicate YAML mapping key makes strict projection incomplete, so closed-policy missing external references in that scope must stay Information.",
+  "unknown-namespace": "Closed policy with no known namespace must report external absence as Information, without guessing a namespace.",
+  "unsupported-gvk": "A resource whose apiVersion is not in the selected target Schema must not resolve a v1alpha1 caller, and must not provide template document symbols or a definition target.",
+  "alias-input": "A template inputs alias to a declaration with message must not produce WF_REFERENCE_SCOPE for inputs.parameters.message when the whole YAML projects successfully.",
+  "workspace-symbol-baseline": "Workspace symbols must include a changed disk buffer, an unsaved new buffer, and an explicitly opened excluded file exactly once; old disk names must disappear. An independent deletion variant must preserve these semantic results.",
+  "completion-prefix": "Applying a completion to an existing partial key must replace that prefix exactly once and preserve its YAML value. The server must provide an exact replacement range because word replacement is client dependent.",
+  "incomplete-scope-field-fix": "Adding broken.yaml with unrecoverable GVK to the same scope withholds the semantic field edit; normal complete-scope fixes remain enabled."
+}

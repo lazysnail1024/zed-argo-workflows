@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata: {name: referencevalid}
+spec:
+  entrypoint: main
+  templates:
+    - name: main
+      inputs:
+        parameters: [{name: available, default: hello}]
+      dag:
+        tasks:
+          - name: first
+            template: run
+          - name: second
+            template: run
+            depends: first.Succeeded
+            arguments:
+              parameters: [{name: extra, value: "{{=tasks['first'].outputs.parameters['available']}}"}]
+    - name: run
+      outputs:
+        parameters: [{name: available, valueFrom: {path: /tmp/value}}]
+      container: {image: alpine}

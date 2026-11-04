@@ -1,0 +1,16 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata: {name: arguments}
+spec:
+  entrypoint: main
+  templates:
+    - name: main
+      steps:
+        - - name: invoke
+            template: run
+            arguments:
+              parameters: [{name: unused, value: anything}]
+    - name: run
+      inputs:
+        parameters: [{name: required}]
+      container: {image: alpine}

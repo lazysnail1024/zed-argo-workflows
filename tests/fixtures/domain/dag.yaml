@@ -1,0 +1,17 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata: {name: dag}
+spec:
+  entrypoint: main
+  templates:
+    - name: main
+      dag:
+        tasks:
+          - name: first
+            template: run
+            dependencies: [second]
+          - name: second
+            template: run
+            dependencies: [first, absent]
+    - name: run
+      container: {image: alpine}

@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata: {name: outputmissing}
+spec:
+  entrypoint: main
+  templates:
+    - name: main
+      dag:
+        tasks:
+          - name: first
+            template: run
+          - name: second
+            template: run
+            dependencies: [first]
+            arguments:
+              parameters: [{name: extra, value: "{{tasks.first.outputs.parameters.absent}}"}]
+    - name: run
+      outputs:
+        parameters: [{name: available, valueFrom: {path: /tmp/value}}]
+      container: {image: alpine}

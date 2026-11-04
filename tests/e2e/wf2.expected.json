@@ -1,0 +1,1 @@
+{"product":"argo-workflows","kindSet":["Workflow","WorkflowTemplate","ClusterWorkflowTemplate","CronWorkflow"],"cronSchedules":{"3.5.0":false,"3.6.0":true},"unknownTarget":"99.99.99","unknownExit":2}

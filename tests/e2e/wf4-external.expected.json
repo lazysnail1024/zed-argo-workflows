@@ -1,0 +1,40 @@
+{
+  "resolved": [],
+  "missing-open": [
+    [
+      "WF_TEMPLATE_REF_UNRESOLVED",
+      "Information"
+    ]
+  ],
+  "missing-closed": [
+    [
+      "WF_TEMPLATE_REF_UNRESOLVED",
+      "Error"
+    ]
+  ],
+  "wrong-namespace": [
+    [
+      "WF_TEMPLATE_REF_UNRESOLVED",
+      "Information"
+    ]
+  ],
+  "missing-template": [
+    [
+      "WF_TEMPLATE_REF_UNRESOLVED",
+      "Error"
+    ]
+  ],
+  "ambiguous": [
+    [
+      "WF_TEMPLATE_REF_AMBIGUOUS",
+      "Warning"
+    ]
+  ],
+  "exitCode": 2,
+  "unknown-namespace": [
+    [
+      "WF_TEMPLATE_REF_UNRESOLVED",
+      "Information"
+    ]
+  ]
+}

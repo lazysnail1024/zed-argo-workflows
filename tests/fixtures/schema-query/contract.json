@@ -1,0 +1,542 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "apiVersion": {
+      "const": "argoproj.io/v1alpha1"
+    },
+    "kind": {
+      "const": "Workflow"
+    },
+    "metadata": {
+      "type": "object"
+    },
+    "spec": {
+      "type": "object",
+      "properties": {
+        "viaRef": {
+          "$ref": "#/$defs/objectLeaf"
+        },
+        "arrayPointer": {
+          "$ref": "#/$defs/arraySource/allOf/0"
+        },
+        "conjunction": {
+          "allOf": [
+            {
+              "type": "object",
+              "properties": {
+                "choice": {
+                  "type": "string",
+                  "enum": [
+                    "a",
+                    "b"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "choice": {
+                  "type": "string",
+                  "enum": [
+                    "b",
+                    "c"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "alternative": {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "choice": {
+                      "type": "string",
+                      "enum": [
+                        "a",
+                        "b"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "choice": {
+                      "type": "string",
+                      "enum": [
+                        "b",
+                        "c"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "choice": {
+                  "type": "string",
+                  "enum": [
+                    "d"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "combined": {
+          "allOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "choice": {
+                      "type": "string",
+                      "enum": [
+                        "a",
+                        "b"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "choice": {
+                      "type": "string",
+                      "enum": [
+                        "c"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "choice": {
+                  "type": "string",
+                  "enum": [
+                    "b",
+                    "c",
+                    "d"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "inclusiveChoice": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "b",
+                "c"
+              ]
+            }
+          ]
+        },
+        "exclusiveChoice": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "type": "string",
+              "enum": [
+                "b",
+                "c"
+              ]
+            }
+          ]
+        },
+        "duplicateExclusive": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ab"
+            },
+            {
+              "$ref": "#/$defs/ab"
+            }
+          ]
+        },
+        "duplicateInclusive": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ab"
+            },
+            {
+              "$ref": "#/$defs/ab"
+            }
+          ]
+        },
+        "referencedExclusive": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ab"
+            },
+            {
+              "$ref": "#/$defs/bc"
+            }
+          ]
+        },
+        "refSibling": {
+          "$ref": "#/$defs/ab",
+          "enum": [
+            "b",
+            "c"
+          ]
+        },
+        "defaultOnly": {
+          "type": "string",
+          "default": "seed",
+          "description": "A default annotation, not a finite value constraint."
+        },
+        "branch": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/gitBranch"
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/chartBranch"
+                }
+              ]
+            }
+          ]
+        },
+        "wrappedBranch": {
+          "allOf": [
+            {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/gitBranch"
+                },
+                {
+                  "$ref": "#/$defs/chartBranch"
+                }
+              ]
+            }
+          ]
+        },
+        "sequenceValues": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "red",
+              "blue"
+            ]
+          }
+        },
+        "typeIntersection": {
+          "allOf": [
+            {
+              "type": [
+                "integer",
+                "string"
+              ]
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "typeUnion": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "typeContradiction": {
+          "allOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "objectExclusive": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/objectAB"
+            },
+            {
+              "$ref": "#/$defs/objectBC"
+            }
+          ]
+        },
+        "objectDuplicateExclusive": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/objectAB"
+            },
+            {
+              "$ref": "#/$defs/objectAB"
+            }
+          ]
+        },
+        "objectDuplicateInclusive": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/objectAB"
+            },
+            {
+              "$ref": "#/$defs/objectAB"
+            }
+          ]
+        },
+        "impossible": false,
+        "closedConjunction": {
+          "allOf": [
+            {
+              "type": "object",
+              "properties": {
+                "shared": {
+                  "type": "string",
+                  "enum": [
+                    "ok"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "shared": {
+                  "type": "string",
+                  "enum": [
+                    "ok"
+                  ]
+                },
+                "blocked": {
+                  "type": "string",
+                  "enum": [
+                    "bad"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "closedRefConjunction": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/closedBase"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "shared": {
+                  "type": "string",
+                  "enum": [
+                    "ok"
+                  ]
+                },
+                "blocked": {
+                  "type": "string",
+                  "enum": [
+                    "bad"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "closedUnion": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "left": {
+                  "type": "string",
+                  "enum": [
+                    "a"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "right": {
+                  "type": "string",
+                  "enum": [
+                    "b"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "closedBranches": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "const": "git"
+                },
+                "repo": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "mode": {
+                  "const": "chart"
+                },
+                "chart": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      }
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "spec"
+  ],
+  "$defs": {
+    "ab": {
+      "type": "string",
+      "enum": [
+        "a",
+        "b"
+      ]
+    },
+    "bc": {
+      "type": "string",
+      "enum": [
+        "b",
+        "c"
+      ]
+    },
+    "objectLeaf": {
+      "type": "object",
+      "properties": {
+        "leaf": {
+          "type": "string",
+          "enum": [
+            "x",
+            "y"
+          ],
+          "description": "Referenced leaf.",
+          "default": "x"
+        }
+      }
+    },
+    "arraySource": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "leaf": {
+              "type": "string",
+              "description": "Array pointer leaf."
+            }
+          }
+        }
+      ]
+    },
+    "gitBranch": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "const": "git",
+          "type": "string"
+        },
+        "repo": {
+          "type": "string",
+          "description": "Git repository."
+        }
+      },
+      "required": [
+        "mode"
+      ]
+    },
+    "chartBranch": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "const": "chart",
+          "type": "string"
+        },
+        "chart": {
+          "type": "string",
+          "description": "Chart name."
+        }
+      },
+      "required": [
+        "mode"
+      ]
+    },
+    "objectAB": {
+      "type": "object",
+      "properties": {
+        "choice": {
+          "$ref": "#/$defs/ab"
+        }
+      }
+    },
+    "objectBC": {
+      "type": "object",
+      "properties": {
+        "choice": {
+          "$ref": "#/$defs/bc"
+        }
+      }
+    },
+    "closedBase": {
+      "type": "object",
+      "properties": {
+        "shared": {
+          "type": "string",
+          "enum": [
+            "ok"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

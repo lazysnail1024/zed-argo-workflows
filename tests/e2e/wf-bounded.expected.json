@@ -1,0 +1,72 @@
+{
+  "scope": "Linux bounded analysis and external command behavior; product readiness, query expansion, historical semantics and native non-Linux acceptance remain separate gates.",
+  "cli": {
+    "tinyFiles": 24,
+    "completedCounts": "Count only completed files and resources; canceled or undispatched inputs must not inflate completed counts.",
+    "deadlineExit": 3,
+    "unverifiedExitWithoutCancellation": 2,
+    "samples": 5
+  },
+  "load": {
+    "yamlFiles": 10000,
+    "inputBytes": 52428800,
+    "declarationsAndReferences": 30000,
+    "activeVersions": [
+      "3.5.0",
+      "3.6.0"
+    ],
+    "cpuLimit": 4,
+    "memoryLimitBytes": 8589934592,
+    "coldIndexSeconds": 5,
+    "samples": 5
+  },
+  "lsp": {
+    "affectedFiles": 100,
+    "maximumActiveFileBytes": 204800,
+    "debounceMilliseconds": 120,
+    "diagnosticP95Milliseconds": 500,
+    "completionAndDefinitionRequests": 1000,
+    "queryP95Milliseconds": 100,
+    "edits": 600,
+    "editDurationSeconds": 60,
+    "openEditCloseCycles": 10000,
+    "warmRssSamples": 5,
+    "warmRssGrowthMaximum": 0.1,
+    "cancelDispatchMilliseconds": 200,
+    "shutdownSeconds": 5,
+    "invariants": [
+      "one active analysis",
+      "closed URI clears are never lost",
+      "every query has exactly one terminal response",
+      "no stale epoch or revision output"
+    ]
+  },
+  "expression": "Deep, malformed and large expression inputs must be bounded before noncancellable parser calls and during AST work; a subsequent normal request must succeed in the same process.",
+  "external": {
+    "tools": [
+      "Helm 3",
+      "Argo offline lint"
+    ],
+    "combinedStdoutStderrBytes": 10485760,
+    "helperCgroupMemoryBytes": 536870912,
+    "checks": [
+      "real tool positive control",
+      "descendant cleanup",
+      "inherited pipe cleanup",
+      "cancel/deadline",
+      "raw tool failure preserved",
+      "combined output budget",
+      "PID start-time-bound cleanup",
+      "sampled RSS ceiling"
+    ]
+  },
+  "readiness": false,
+  "snapshotTextBudget": {
+    "bytes": 134217728,
+    "loadedInput": "One analysis invocation across loaded roots/scopes reserves all retained open buffers, then counts additional disk snapshot text. Shared authoritative overlays are not counted twice.",
+    "bufferStorage": "One server-wide 128 MiB retained-text budget across all open roots and scopes, checked before snapshot construction.",
+    "diskConfiguration": "Separate 1 MiB file bound; open configuration buffer text counts in server-wide buffer storage.",
+    "boundary": "Exactly 128 MiB is permitted; one byte over reports a resource reason without treating any truncated scope as complete.",
+    "recovery": "A refused buffer cannot fall back to disk or supply stale text to queries/edits; a full replacement after freeing space or close/reopen restores it."
+  }
+}

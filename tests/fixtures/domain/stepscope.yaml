@@ -1,0 +1,16 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata: {name: stepscope}
+spec:
+  entrypoint: main
+  templates:
+    - name: main
+      steps:
+        - - name: first
+            template: run
+          - name: second
+            template: run
+            arguments:
+              parameters: [{name: extra, value: "{{steps.first.outputs.result}}"}]
+    - name: run
+      container: {image: alpine}

@@ -1,0 +1,6 @@
+{
+  "saturation-id-reuse": "Forty requests sent while one expensive request is active must each receive exactly one terminal response, including queue-full errors. Cancel the active request, then reuse its completed ID for a valid request; the new request must succeed. Shutdown and exit must collect the worker and exit within five seconds.",
+  "buffer-authority": "An open versioned valid YAML buffer overrides an oversized invalid disk file. Queries and diagnostics must use the buffer, without reading or accepting disk content as current.",
+  "nested-root-spelling": "A nested workspace root whose URI ends with a slash denotes the same filesystem directory. It must own its child once, and the parent root must prune that subtree.",
+  "close-clear-interrupted": "Once a diagnostic-bearing document closes onto valid disk content, its diagnostics must clear. Interrupting the in-progress diagnostic batch with a change to a still-open document must not permanently lose the closed URI. A later current-version diagnostic and request barrier confirm the worker has resumed; the closed URI still needs its clear notification."
+}

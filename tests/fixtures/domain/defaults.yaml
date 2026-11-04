@@ -1,0 +1,13 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata: {name: defaults}
+spec:
+  entrypoint: main
+  arguments:
+    parameters: [{name: extra, value: tolerated}]
+  templates:
+    - name: main
+      inputs:
+        parameters: [{name: optional, default: fallback}]
+        artifacts: [{name: data, optional: true, path: /data}]
+      container: {image: alpine}

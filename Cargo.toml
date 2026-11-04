@@ -1,0 +1,16 @@
+[package]
+name = "zed-argo-workflows"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+repository = "https://github.com/lazysnail1024/zed-argo-workflows"
+[lib]
+crate-type = ["cdylib"]
+[dependencies]
+zed_extension_api = "=0.7.0"
+serde_json = "=1.0.145"
+
+[features]
+default = []
+bundled-server = []

@@ -1,0 +1,9 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata: {name: duplicate}
+spec:
+  templates:
+    - name: same
+      container: {image: alpine}
+    - name: same
+      container: {image: alpine}

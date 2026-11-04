@@ -1,0 +1,8 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata: {name: missing}
+spec:
+  entrypoint: absent
+  templates:
+    - name: main
+      container: {image: alpine}

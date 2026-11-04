@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata: {name: stepduplicate}
+spec:
+  entrypoint: main
+  templates:
+    - name: main
+      steps:
+        - - name: repeated
+            template: run
+        - - name: repeated
+            template: run
+    - name: run
+      container: {image: alpine}

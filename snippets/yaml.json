@@ -1,0 +1,76 @@
+{
+  "Argo Workflow": {
+    "prefix": "argo-wf-workflow",
+    "description": "Workflow · target Argo Workflows 3.6.0",
+    "body": [
+      "apiVersion: argoproj.io/v1alpha1",
+      "kind: Workflow",
+      "metadata:",
+      "  generateName: ${1:workflow}-",
+      "spec:",
+      "  entrypoint: main",
+      "  templates:",
+      "    - name: main",
+      "      container:",
+      "        image: alpine:3.20",
+      "        command: [echo]",
+      "        args: [\"hello\"]"
+    ]
+  },
+  "Argo WorkflowTemplate": {
+    "prefix": "argo-wf-template",
+    "description": "WorkflowTemplate · target Argo Workflows 3.6.0",
+    "body": [
+      "apiVersion: argoproj.io/v1alpha1",
+      "kind: WorkflowTemplate",
+      "metadata:",
+      "  name: ${1:template}",
+      "spec:",
+      "  entrypoint: main",
+      "  templates:",
+      "    - name: main",
+      "      container:",
+      "        image: alpine:3.20",
+      "        command: [echo]",
+      "        args: [\"hello\"]"
+    ]
+  },
+  "Argo ClusterWorkflowTemplate": {
+    "prefix": "argo-wf-cluster-template",
+    "description": "ClusterWorkflowTemplate · target Argo Workflows 3.6.0",
+    "body": [
+      "apiVersion: argoproj.io/v1alpha1",
+      "kind: ClusterWorkflowTemplate",
+      "metadata:",
+      "  name: ${1:cluster-template}",
+      "spec:",
+      "  entrypoint: main",
+      "  templates:",
+      "    - name: main",
+      "      container:",
+      "        image: alpine:3.20",
+      "        command: [echo]",
+      "        args: [\"hello\"]"
+    ]
+  },
+  "Argo CronWorkflow": {
+    "prefix": "argo-wf-cron",
+    "description": "CronWorkflow · target Argo Workflows 3.6.0",
+    "body": [
+      "apiVersion: argoproj.io/v1alpha1",
+      "kind: CronWorkflow",
+      "metadata:",
+      "  name: ${1:cron}",
+      "spec:",
+      "  schedule: \"${2:0 * * * *}\"",
+      "  workflowSpec:",
+      "    entrypoint: main",
+      "    templates:",
+      "      - name: main",
+      "        container:",
+      "          image: alpine:3.20",
+      "          command: [echo]",
+      "          args: [\"hello\"]"
+    ]
+  }
+}

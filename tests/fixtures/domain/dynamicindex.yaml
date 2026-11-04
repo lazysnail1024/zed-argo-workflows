@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata: {name: dynamicindex}
+spec:
+  entrypoint: main
+  arguments:
+    parameters: [{name: selector, value: available}]
+  templates:
+    - name: main
+      inputs:
+        parameters: [{name: available, default: hello}]
+      container:
+        image: alpine
+        args: ["{{=inputs.parameters[workflow.parameters.selector]}}"]

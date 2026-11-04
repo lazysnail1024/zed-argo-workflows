@@ -1,0 +1,30 @@
+--- a/vendor/github.com/expr-lang/expr/file/error.go
++++ b/vendor/github.com/expr-lang/expr/file/error.go
+@@ -36,22 +36,23 @@
+ 		snippet := strings.Replace(snippet, "\t", " ", -1)
+ 		srcLine := "\n | " + snippet
+ 		var bytes = []byte(snippet)
+-		var indLine = "\n | "
++		var indLine strings.Builder
++		indLine.WriteString("\n | ")
+ 		for i := 0; i < e.Column && len(bytes) > 0; i++ {
+ 			_, sz := utf8.DecodeRune(bytes)
+ 			bytes = bytes[sz:]
+ 			if sz > 1 {
+ 				goto noind
+ 			} else {
+-				indLine += "."
++				indLine.WriteByte('.')
+ 			}
+ 		}
+ 		if _, sz := utf8.DecodeRune(bytes); sz > 1 {
+ 			goto noind
+ 		} else {
+-			indLine += "^"
++			indLine.WriteByte('^')
+ 		}
+-		srcLine += indLine
++		srcLine += indLine.String()
+ 
+ 	noind:
+ 		e.Snippet = srcLine

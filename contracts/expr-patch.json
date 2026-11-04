@@ -1,0 +1,12 @@
+{
+  "module": "github.com/expr-lang/expr",
+  "version": "v1.16.9",
+  "upstreamCommit": "55ff9aad94a176a11f9f9f333e7ed9f59ec5e37f",
+  "file": "vendor/github.com/expr-lang/expr/file/error.go",
+  "upstreamSha256": "eb649572c931257eba6ceea396219caa748dd29224d50f7ae97bc74f606e40a2",
+  "patchedSha256": "fc59933aa4f0ad145985781c8d295ed32ecc514aacafc0f95e78ad97201a5606",
+  "patch": "expr-linear-error.patch",
+  "license": "MIT; upstream LICENSE retained unchanged",
+  "reason": "Use a strings.Builder for caret indentation to avoid quadratic allocation while preserving exact parser error text and coordinates. No tokenizer or parser semantics changed.",
+  "reproduction": "scripts/vendor-native.py applies and verifies this exact local patch after vendoring. The vendored Expr source intentionally differs from the module ZIP in this one file."
+}

@@ -1,0 +1,1 @@
+{"scopeVersions":{"dev":"3.6.0","prod":"3.5.0"},"overrideVersion":"3.6.0","selectedScopeFiles":2,"selectedDiagnostics":1,"exitCode":2,"invalid":["unknownField","overlap","unknownVersion","duplicateScope","missingScope","outsideFile"]}

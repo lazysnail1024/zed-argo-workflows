@@ -1,0 +1,12 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata: {name: publicinputs}
+spec:
+  entrypoint: main
+  templates:
+    - name: main
+      inputs:
+        parameters: [{name: supplied-by-caller}]
+      container:
+        image: alpine
+        args: ["{{inputs.parameters.supplied-by-caller}}"]

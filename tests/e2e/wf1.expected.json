@@ -1,0 +1,7 @@
+{
+  "product": "argo-workflows",
+  "adapterContractVersion": 1,
+  "analysisReady": true,
+  "reportSchemaVersion": 1,
+  "validationScope": "local-editing-contract"
+}
