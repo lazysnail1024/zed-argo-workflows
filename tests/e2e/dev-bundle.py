@@ -22,8 +22,11 @@ try:
     za=next(a.glob('*.zip')); zb=next(b.glob('*.zip'))
     assert sha(za)==sha(zb)
     folder=next(p for p in a.iterdir() if p.is_dir())
-    required=['extension.toml','Cargo.toml','Cargo.lock','rust-toolchain.toml','src/lib.rs','snippets/yaml.json','LICENSE','native/server.bin','native/manifest.json','licenses/go/LICENSE','licenses/go/PATENTS','licenses/schemas/LICENSE','licenses/vendor/github.com/tree-sitter/go-tree-sitter/src/unicode/LICENSE','licenses/vendor/go.yaml.in/yaml/v2/NOTICE']
+    required=['examples/zed-tasks.json','extension.toml','Cargo.toml','Cargo.lock','rust-toolchain.toml','src/lib.rs','snippets/yaml.json','LICENSE','native/server.bin','native/manifest.json','licenses/go/LICENSE','licenses/go/PATENTS','licenses/schemas/LICENSE','licenses/vendor/github.com/tree-sitter/go-tree-sitter/src/unicode/LICENSE','licenses/vendor/go.yaml.in/yaml/v2/NOTICE']
     assert all((folder/p).is_file() for p in required)
+    task=json.loads((folder/"examples/zed-tasks.json").read_text())[0]
+    assert "render-check" in task["command"] and "--helm-binary" in task["command"] and "--values" in task["command"]
+    assert "examples/zed-tasks.json" in (folder/"README.md").read_text()
     # The native source snapshot, not the packager inventory, is the legal-text oracle.
     with tarfile.open(source, 'r:*') as archive:
         patents=archive.extractfile('vendor/golang.org/x/text/PATENTS').read()

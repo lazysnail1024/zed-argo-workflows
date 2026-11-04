@@ -10,7 +10,8 @@ impl zed::Extension for Workflows {
     fn language_server_command(&mut self, id: &LanguageServerId, worktree: &Worktree) -> zed::Result<Command> {
         if id.as_ref() != "argo-workflows-ls" { return Err("unexpected language server ID".into()); }
         let settings = LspSettings::for_worktree("argo-workflows-ls", worktree)?.settings;
-        let path = match settings.as_ref().and_then(|settings| settings.get("serverPath")) {
+        let explicit_path = settings.as_ref().and_then(|settings| settings.get("serverPath"));
+        let path = match explicit_path {
             Some(value) => value.as_str().filter(|value| !value.is_empty())
                 .ok_or("settings.serverPath must be an absolute path string")?.to_owned(),
             None => bundled_server()?,
@@ -20,7 +21,14 @@ impl zed::Extension for Workflows {
         if !absolute { return Err("binary path must be absolute".into()); }
         let args = vec!["serve".to_string(), "--stdio".to_string()];
         let env = Vec::new();
-        let output = zed::process::Command::new(&path).args(["version", "--json"]).output()?;
+        let output = zed::process::Command::new(&path).args(["version", "--json"]).output()
+            .map_err(|error| {
+                if explicit_path.is_some() {
+                    format!("cannot execute lsp.argo-workflows-ls.settings.serverPath {path:?}: {error}. Correct the executable path or remove the override to use the bundled server.")
+                } else {
+                    format!("cannot execute bundled Workflows server at {path:?}: {error}. Check executable permissions or reinstall the development bundle.")
+                }
+            })?;
         if output.status != Some(0) { return Err("server version handshake failed".into()); }
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|e| format!("invalid server identity: {e}"))?;
         for key in ["product", "serverVersion", "adapterContractVersion", "analysisReady", "configSchemaVersions", "reportSchemaVersions", "toolkitVersion", "catalogHash", "sourceCommit", "dirty", "buildMode"] {

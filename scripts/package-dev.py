@@ -47,7 +47,7 @@ def main():
     files = {}
     for name in ('Cargo.toml','Cargo.lock','extension.toml','rust-toolchain.toml','LICENSE','README.md','DEVELOPMENT.md'):
         files[name] = (ROOT/name).read_bytes()
-    for directory in ('src','snippets'):
+    for directory in ('src','snippets','examples'):
         for path in sorted((ROOT/directory).rglob('*')):
             if path.is_file(): files[path.relative_to(ROOT).as_posix()] = path.read_bytes()
     cargo = files['Cargo.toml'].decode()

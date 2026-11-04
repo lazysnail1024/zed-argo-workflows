@@ -4,6 +4,8 @@ package lsp
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
@@ -30,27 +32,37 @@ type buffer struct {
 	version     int32
 	unavailable string
 }
+type externalResult struct {
+	diagnostics []analysis.Diagnostic
+	completion  map[source.URI]analysis.ExternalCompletion
+}
 type session struct {
-	facts          *analysis.Facts
-	factsEpoch     uint64
-	factInput      *workspace.Workspace
-	factBoundary   string
-	factMixed      bool
-	workspaces     map[workspaceKey]workspace.Workspace
-	ctx            context.Context
-	pending        map[string]bool
-	out            io.Writer
-	log            io.Writer
-	roots          []string
-	override       string
-	buffers        map[string]buffer
-	bufferBytes    int
-	initialized    bool
-	shutdown       bool
-	epoch          uint64
-	versionedEdits bool
-	actions        map[string]pendingAction
-	actionSequence uint64
+	acquiredInputs  map[workspaceKey]string
+	queryResults    map[string]json.RawMessage
+	queryBytes      int
+	queryKey        string
+	externalFacts   *analysis.ExternalFacts
+	externalResults map[string]externalResult
+	facts           *analysis.Facts
+	factsEpoch      uint64
+	factInput       *workspace.Workspace
+	factBoundary    string
+	factMixed       bool
+	workspaces      map[workspaceKey]workspace.Workspace
+	ctx             context.Context
+	pending         map[string]bool
+	out             io.Writer
+	log             io.Writer
+	roots           []string
+	override        string
+	buffers         map[string]buffer
+	bufferBytes     int
+	initialized     bool
+	shutdown        bool
+	epoch           uint64
+	versionedEdits  bool
+	actions         map[string]pendingAction
+	actionSequence  uint64
 }
 
 func read(r *bufio.Reader) (message, error) {
@@ -110,6 +122,19 @@ func (s *session) write(value any) error {
 	return err
 }
 func (s *session) reply(id json.RawMessage, result any) error {
+	if s.queryKey != "" && s.context().Err() == nil {
+		raw, err := json.Marshal(result)
+		if err == nil && len(raw) <= 4*1024*1024 {
+			if len(s.queryResults) >= 16 || s.queryBytes+len(raw) > 4*1024*1024 {
+				s.queryResults = map[string]json.RawMessage{}
+				s.queryBytes = 0
+			}
+			if _, exists := s.queryResults[s.queryKey]; !exists {
+				s.queryResults[s.queryKey] = raw
+				s.queryBytes += len(raw)
+			}
+		}
+	}
 	return s.write(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
 }
 func (s *session) failure(id json.RawMessage, code int, text string) error {
@@ -160,6 +185,21 @@ func (s *session) workspace(root, selected string) (workspace.Workspace, error) 
 		overlay = &text
 	}
 	w, err := s.workspaceWithConfig(root, selected, overlay)
+	if s.acquiredInputs != nil {
+		if err != nil {
+			s.acquiredInputs[workspaceKey{root, selected}] = "error:" + err.Error()
+		} else {
+			encoded, _ := json.Marshal(struct {
+				Content    string
+				Config     workspace.Config
+				Targets    []workspace.Target
+				Incomplete map[string]bool
+				Notes      []string
+			}{fingerprint(w), w.Config, w.Targets, w.IncompleteScopes, w.NotEvaluated})
+			sum := sha256.Sum256(encoded)
+			s.acquiredInputs[workspaceKey{root, selected}] = hex.EncodeToString(sum[:])
+		}
+	}
 	if err == nil && s.context().Err() == nil && s.workspaces != nil {
 		s.workspaces[workspaceKey{root, selected}] = w
 		boundary := analysis.FactBoundary(w)
@@ -234,6 +274,11 @@ func (s *session) publishAffected(uri string) error {
 	root := s.root(uri)
 	name, _ := filePath(uri)
 	isConfig := filepath.Base(name) == ".argo-workflows-ls.yaml"
+	if isConfig {
+		if err := s.publish(uri); err != nil {
+			return err
+		}
+	}
 	changed, changedErr := s.bufferDocument(uri)
 	for other := range s.buffers {
 		otherName, _ := filePath(other)
@@ -268,6 +313,7 @@ func (s *session) publish(uri string) error {
 	}
 	if opened && b.unavailable != "" {
 		fmt.Fprintln(s.log, b.unavailable)
+		params["diagnostics"] = []map[string]any{analysisStatus("WF_ANALYSIS_UNAVAILABLE", b.unavailable)}
 		return s.write(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": params})
 	}
 	if root == "" {
@@ -281,6 +327,7 @@ func (s *session) publish(uri string) error {
 	input, err := s.workspace(root, selected)
 	if err != nil {
 		fmt.Fprintln(s.log, "workspace incomplete:", err)
+		params["diagnostics"] = []map[string]any{analysisStatus("WF_ANALYSIS_UNAVAILABLE", err.Error())}
 		return s.write(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": params})
 	}
 	var document *workspace.Document
@@ -309,7 +356,21 @@ func (s *session) publish(uri string) error {
 		}
 		ctx, cancel := context.WithTimeout(analysis.WithLogicalResult(s.context()), 5*time.Second)
 		result := analysis.AnalyzeSchema(ctx, document.Snapshot, document.Target.Version)
-		externalDiagnostics, _ := analysis.ExternalDiagnostics(ctx, scopeWorkspace(input, document.Target.ID))
+		external, cached := s.externalResults[document.Target.ID]
+		if !cached {
+			external.diagnostics, external.completion = analysis.ExternalDiagnostics(ctx, scopeWorkspace(input, document.Target.ID))
+			if ctx.Err() == nil && s.externalResults != nil {
+				s.externalResults[document.Target.ID] = external
+			}
+		}
+		externalDiagnostics, completion := external.diagnostics, external.completion
+		if !completion[document.Snapshot.URI()].Completed {
+			result.NotEvaluated = append(result.NotEvaluated, "external reference analysis incomplete")
+		}
+		if input.IncompleteScopes[document.Target.ID] {
+			result.NotEvaluated = append(result.NotEvaluated, "scope input is incomplete")
+		}
+		result.NotEvaluated = append(result.NotEvaluated, input.NotEvaluated...)
 		for _, d := range externalDiagnostics {
 			if d.URI == uri {
 				result.Diagnostics = append(result.Diagnostics, d)
@@ -327,6 +388,9 @@ func (s *session) publish(uri string) error {
 				severity = 4
 			}
 			diagnostics = append(diagnostics, map[string]any{"range": d.Range, "code": d.Code, "source": d.Source, "severity": severity, "message": d.Message})
+		}
+		if len(result.NotEvaluated) > 0 {
+			diagnostics = append(diagnostics, analysisStatus("WF_ANALYSIS_INCOMPLETE", strings.Join(result.NotEvaluated, "; ")))
 		}
 		for _, note := range result.NotEvaluated {
 			fmt.Fprintln(s.log, "analysis incomplete:", note)
@@ -488,6 +552,31 @@ func (s *session) handle(m message) (bool, int, error) {
 			}
 		}
 	}
+	// Only complete, freshly acquired scope inputs may reuse read-only results.
+	// Disk acquisition remains authoritative even without a watcher notification.
+	if m.Method == "textDocument/definition" || m.Method == "textDocument/references" || m.Method == "textDocument/completion" {
+		var p struct {
+			TextDocument protocol.TextDocumentIdentifier `json:"textDocument"`
+		}
+		if json.Unmarshal(m.Params, &p) == nil {
+			uri := string(p.TextDocument.URI)
+			if d, err := s.queryDocument(uri); err == nil {
+				if w, err := s.workspace(s.root(uri), d.Target.Scope); err == nil && len(w.NotEvaluated) == 0 {
+					complete := true
+					for _, incomplete := range w.IncompleteScopes {
+						complete = complete && !incomplete
+					}
+					if complete {
+						sum := sha256.Sum256([]byte(m.Method + string(m.Params) + fingerprint(w)))
+						s.queryKey = hex.EncodeToString(sum[:])
+						if raw, ok := s.queryResults[s.queryKey]; ok {
+							return false, 0, s.reply(m.ID, raw)
+						}
+					}
+				}
+			}
+		}
+	}
 	switch m.Method {
 	case "textDocument/codeAction", "codeAction/resolve", "textDocument/prepareRename", "textDocument/rename":
 		return s.handleEdit(m)
@@ -592,6 +681,19 @@ func (s *session) handle(m message) (bool, int, error) {
 			result = items
 		} else {
 			result, err = analysis.HoverField(ctx, document.Snapshot, document.Target.Version, pos)
+			if hover, ok := result.(map[string]any); ok {
+				if contents, ok := hover["contents"].(map[string]any); ok {
+					from := document.Target.Source
+					if s.override != "" {
+						from = "editor settings override"
+					}
+					status := "accepted local editing target"
+					if !compat.Accepted(document.Target.Version) {
+						status = "experimental read-only target; analysis remains incomplete"
+					}
+					contents["value"] = fmt.Sprint(contents["value"]) + "\n\nTarget selection: " + from + " · scope: " + document.Target.Scope + " · " + status
+				}
+			}
 		}
 		if err != nil {
 			return false, 0, s.failure(m.ID, -32803, err.Error())
@@ -678,6 +780,11 @@ func (s *session) handle(m message) (bool, int, error) {
 		uri := string(p.TextDocument.URI)
 		s.bufferBytes -= len(s.buffers[uri].snapshot.Text())
 		delete(s.buffers, uri)
+		for token, action := range s.actions {
+			if action.uri == uri {
+				delete(s.actions, token)
+			}
+		}
 		s.epoch++
 		return false, 0, s.publishAffected(uri)
 	case "workspace/didChangeWorkspaceFolders":
@@ -693,6 +800,20 @@ func (s *session) handle(m message) (bool, int, error) {
 		}
 		for _, removed := range p.Event.Removed {
 			path, _ := filePath(removed.URI)
+			for token, action := range s.actions {
+				if s.root(action.uri) == path {
+					delete(s.actions, token)
+				}
+			}
+			for key := range s.acquiredInputs {
+				if key.root == path {
+					delete(s.acquiredInputs, key)
+				}
+			}
+			s.queryResults = map[string]json.RawMessage{}
+			s.queryBytes = 0
+			s.facts = nil
+			s.externalFacts = nil
 			roots := []string{}
 			for _, root := range s.roots {
 				if root != path {
@@ -761,4 +882,8 @@ func scopeWorkspace(w workspace.Workspace, target string) workspace.Workspace {
 	}
 	w.Documents = selected
 	return w
+}
+
+func analysisStatus(code, reason string) map[string]any {
+	return map[string]any{"range": analysis.Range{}, "code": code, "source": "argo-workflows", "severity": 2, "message": "Analysis did not complete: " + reason + ". Correct the input or configuration to retry."}
 }

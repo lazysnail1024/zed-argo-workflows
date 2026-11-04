@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
+	"io"
 	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"syscall"
@@ -145,10 +147,6 @@ func renderCheck(args []string) int {
 	if !filepath.IsAbs(*helm) || *chart == "" || *output == "" {
 		return fail(fmt.Errorf("--helm-binary must be absolute; --chart and --output are required"))
 	}
-	version, err := selectedTarget(ctx, *root, *scope, *target)
-	if err != nil {
-		return fail(err)
-	}
 	chartPath, err := filepath.Abs(*chart)
 	if err != nil {
 		return fail(err)
@@ -163,6 +161,17 @@ func renderCheck(args []string) int {
 	if entries, err := os.ReadDir(outputPath); err == nil && len(entries) > 0 {
 		return fail(fmt.Errorf("output directory must be empty"))
 	} else if err != nil && !os.IsNotExist(err) {
+		return fail(err)
+	}
+	if relative, err := filepath.Rel(chartPath, outputPath); err != nil || relative == "." || relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return fail(fmt.Errorf("output directory must be outside the chart input directory"))
+	}
+	inputs, err := renderInputs(ctx, chartPath, *helm, *root, values)
+	if err != nil {
+		return fail(err)
+	}
+	version, err := selectedTarget(ctx, *root, *scope, *target)
+	if err != nil {
 		return fail(err)
 	}
 	temp, err := os.MkdirTemp("", "argo-workflows-helm-")
@@ -199,6 +208,8 @@ func renderCheck(args []string) int {
 		command = append(command, "--api-versions", api)
 	}
 	stdout, stderr, exitCode, executionErr := toolRun(ctx, *helm, command, env)
+	currentInputs, inputErr := renderInputs(ctx, chartPath, *helm, *root, values)
+	inputsUnchanged := inputErr == nil && reflect.DeepEqual(inputs, currentInputs)
 	rawStdout, rawStderr, rawExit = stdout, stderr, exitCode
 	if err := os.MkdirAll(outputPath, 0755); err != nil {
 		return fail(err)
@@ -210,7 +221,7 @@ func renderCheck(args []string) int {
 		return fail(err)
 	}
 	hash := sha256.Sum256(stdout)
-	report := map[string]any{"command": append([]string{*helm}, command...), "toolVersion": toolVersion, "exitCode": exitCode, "targetVersion": version, "releaseName": *release, "namespace": *namespace, "kubeVersion": *kube, "apiVersions": []string(apiVersions), "stdoutSha256": hex.EncodeToString(hash[:]), "generatedFile": filepath.Join(outputPath, "rendered.yaml")}
+	report := map[string]any{"command": append([]string{*helm}, command...), "toolVersion": toolVersion, "exitCode": exitCode, "targetVersion": version, "releaseName": *release, "namespace": *namespace, "kubeVersion": *kube, "apiVersions": []string(apiVersions), "stdoutSha256": hex.EncodeToString(hash[:]), "generatedFile": filepath.Join(outputPath, "rendered.yaml"), "chart": chartPath, "inputSha256": inputs, "inputsUnchanged": inputsUnchanged}
 	save := func() {
 		data, _ := json.MarshalIndent(report, "", "  ")
 		if err := os.WriteFile(filepath.Join(outputPath, "render-report.json"), append(data, '\n'), 0644); err != nil {
@@ -220,6 +231,9 @@ func renderCheck(args []string) int {
 	save()
 	if executionErr != nil {
 		return fail(fmt.Errorf("Helm exited %d: %s: %w", exitCode, stderr, executionErr))
+	}
+	if !inputsUnchanged {
+		return fail(fmt.Errorf("render inputs changed during Helm execution; discard this output and run render-check again"))
 	}
 	if err := os.WriteFile(filepath.Join(outputPath, "rendered.yaml"), stdout, 0644); err != nil {
 		return fail(err)
@@ -321,4 +335,87 @@ func lintOfficial(args []string) int {
 	}
 	emit(report)
 	return 2
+}
+
+// Bind render results to the selected local chart, values, executable and pin.
+// Inputs are bounded and regular files; chart symlinks would hide dependencies.
+func renderInputs(ctx context.Context, chart, helm, root string, values []string) (map[string]string, error) {
+	result := map[string]string{}
+	remaining := int64(128 * 1024 * 1024)
+	add := func(name string) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		absolute, err := filepath.Abs(name)
+		if err != nil {
+			return err
+		}
+		info, err := os.Stat(absolute)
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("render input is not a regular file: %s", absolute)
+		}
+		if info.Size() > remaining {
+			return fmt.Errorf("render input provenance exceeds 128 MiB")
+		}
+		file, err := os.Open(absolute)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		hash := sha256.New()
+		count, err := io.Copy(hash, io.LimitReader(file, remaining+1))
+		if err != nil {
+			return err
+		}
+		remaining -= count
+		if remaining < 0 {
+			return fmt.Errorf("render input provenance exceeds 128 MiB")
+		}
+		result[absolute] = hex.EncodeToString(hash.Sum(nil))
+		return nil
+	}
+	err := filepath.WalkDir(chart, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("chart symlinks prevent complete input provenance: %s", path)
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if len(result) >= 20000 {
+			return fmt.Errorf("render input provenance exceeds 20000 files")
+		}
+		return add(path)
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, value := range values {
+		if err := add(value); err != nil {
+			return nil, err
+		}
+	}
+	if err := add(helm); err != nil {
+		return nil, err
+	}
+	config, err := filepath.Abs(filepath.Join(root, ".argo-workflows-ls.yaml"))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(config); os.IsNotExist(err) {
+		result[config] = "absent"
+	} else if err != nil {
+		return nil, err
+	} else if err := add(config); err != nil {
+		return nil, err
+	}
+	return result, nil
 }

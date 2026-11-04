@@ -166,7 +166,6 @@ func AnalyzeSchema(ctx context.Context, snapshot source.Snapshot, version string
 		result.Diagnostics = append(result.Diagnostics, references...)
 		if referenceErr != nil {
 			result.NotEvaluated = append(result.NotEvaluated, referenceErr.Error())
-			continue
 		}
 		if err = schema.Validate(value); err != nil {
 			validation, ok := err.(*jsonschema.ValidationError)
@@ -204,7 +203,9 @@ func AnalyzeSchema(ctx context.Context, snapshot source.Snapshot, version string
 			result.NotEvaluated = append(result.NotEvaluated, ctx.Err().Error())
 			return result
 		}
-		result.Resources = append(result.Resources, root.Span())
+		if referenceErr == nil {
+			result.Resources = append(result.Resources, root.Span())
+		}
 	}
 	result.Completed = ctx.Err() == nil && len(result.NotEvaluated) == 0
 	sort.SliceStable(result.Diagnostics, func(i, j int) bool {

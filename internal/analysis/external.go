@@ -2,6 +2,8 @@ package analysis
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/k8s-crd-toolkit/yamlview"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
@@ -146,6 +148,15 @@ func external(ctx context.Context, w workspace.Workspace, query *externalQuery) 
 	resources, complete, progress, remaining := externalResources(ctx, w, query != nil)
 	diagnostics := []Diagnostic{}
 	bindings := []externalBinding{}
+	candidatesByIdentity := make(map[externalIdentity][]resource, len(resources))
+	for _, candidate := range resources {
+		namespace := candidate.namespace
+		if candidate.kind == "ClusterWorkflowTemplate" {
+			namespace = ""
+		}
+		key := externalIdentity{candidate.document.Target.ID, candidate.kind, namespace, candidate.name}
+		candidatesByIdentity[key] = append(candidatesByIdentity[key], candidate)
+	}
 	type resourcePosition struct {
 		uri   source.URI
 		start int
@@ -190,7 +201,51 @@ func external(ctx context.Context, w workspace.Workspace, query *externalQuery) 
 			}
 		}
 	}
+	resourceHashes := make(map[resourcePosition][32]byte, len(resources))
+	snapshotHashes := map[source.URI][32]byte{}
+	for _, r := range resources {
+		digest, ok := snapshotHashes[r.document.Snapshot.URI()]
+		if !ok {
+			digest = sha256.Sum256([]byte(r.document.Snapshot.Text()))
+			snapshotHashes[r.document.Snapshot.URI()] = digest
+		}
+		resourceHashes[resourcePosition{r.document.Snapshot.URI(), r.root.Span().Start}] = resourceDigest(r, digest)
+	}
 	for _, caller := range resources {
+		finish := func() {
+			uri := caller.document.Snapshot.URI()
+			remaining[uri]--
+			done := progress[uri]
+			if done.Resources == nil {
+				done.Resources = map[source.Span]bool{}
+			}
+			done.Resources[caller.root.Span()] = true
+			done.Completed = remaining[uri] == 0
+			progress[uri] = done
+		}
+		var cacheKey [32]byte
+		diagnosticStart := len(diagnostics)
+		if query == nil {
+			hashes := [][32]byte{resourceHashes[resourcePosition{caller.document.Snapshot.URI(), caller.root.Span().Start}]}
+			externalCalls(caller, func(ref, call workflowValue, whole bool) {
+				if key, ok := candidateIdentity(caller, ref); ok {
+					for _, candidate := range candidatesByIdentity[key] {
+						hashes = append(hashes, resourceHashes[resourcePosition{candidate.document.Snapshot.URI(), candidate.root.Span().Start}])
+					}
+				}
+			})
+			data, _ := json.Marshal(struct {
+				Hashes            [][32]byte
+				Policy, Namespace string
+				Complete          bool
+			}{hashes, w.Config.ReferencePolicy, w.Config.DefaultNamespace, complete[caller.document.Target.ID]})
+			cacheKey = sha256.Sum256(data)
+			if cached, ok := externalFact(ctx, cacheKey); ok {
+				diagnostics = append(diagnostics, cached...)
+				finish()
+				continue
+			}
+		}
 		var local *localRenameBindings
 		if query != nil {
 			local = localFor(caller)
@@ -245,19 +300,15 @@ func external(ctx context.Context, w workspace.Workspace, query *externalQuery) 
 			if cluster {
 				wantedKind = "ClusterWorkflowTemplate"
 			}
-			candidates := []resource{}
-			for _, candidate := range resources {
-				if ctx.Err() != nil {
-					return
-				}
-				if candidate.document.Target.ID != caller.document.Target.ID || candidate.kind != wantedKind || candidate.name != name {
-					continue
-				}
-				if !cluster && (caller.namespace == "" || candidate.namespace != caller.namespace) {
-					continue
-				}
-				candidates = append(candidates, candidate)
+			namespace := caller.namespace
+			if cluster {
+				namespace = ""
 			}
+			candidates := candidatesByIdentity[externalIdentity{caller.document.Target.ID, wantedKind, namespace, name}]
+			if !cluster && caller.namespace == "" {
+				candidates = nil
+			}
+
 			if whole && parameters != nil {
 				parameters.resolve(ctx, query, caller, candidates, complete[caller.document.Target.ID], localFor)
 			}
@@ -576,50 +627,14 @@ func external(ctx context.Context, w workspace.Workspace, query *externalQuery) 
 				emit(templateValue, "WF_TEMPLATE_REF_UNRESOLVED", "Error", "resolved resource does not declare template "+template)
 			}
 		}
-		if ref := workflowMember(caller.semanticSpec, "workflowTemplateRef"); ref.present {
-			resolve(ref, caller.semanticSpec, true)
-		}
-		hooks := func(n workflowValue) {
-			for _, h := range workflowMember(n, "hooks").Members() {
-				if ref := workflowMember(h.Value, "templateRef"); ref.present {
-					resolve(ref, h.Value, false)
-				}
-			}
-		}
-		hooks(caller.semanticSpec)
-		for _, t := range workflowMember(caller.semanticSpec, "templates").Elements() {
-			if ctx.Err() != nil {
-				return diagnostics, bindings, complete, progress
-			}
-			hooks(t)
-			for _, task := range workflowMember(workflowMember(t, "dag"), "tasks").Elements() {
-				if ref := workflowMember(task, "templateRef"); ref.present {
-					resolve(ref, task, false)
-				}
-				hooks(task)
-			}
-			for _, group := range workflowMember(t, "steps").Elements() {
-				for _, step := range group.Elements() {
-					if ref := workflowMember(step, "templateRef"); ref.present {
-						resolve(ref, step, false)
-					}
-					hooks(step)
-				}
-			}
-		}
+		externalCalls(caller, resolve)
 		if ctx.Err() != nil {
 			return diagnostics, bindings, complete, progress
 		}
-
-		uri := caller.document.Snapshot.URI()
-		remaining[uri]--
-		done := progress[uri]
-		if done.Resources == nil {
-			done.Resources = map[source.Span]bool{}
+		if query == nil {
+			retainExternalFact(ctx, cacheKey, diagnostics[diagnosticStart:])
 		}
-		done.Resources[caller.root.Span()] = true
-		done.Completed = remaining[uri] == 0
-		progress[uri] = done
+		finish()
 	}
 	if parameters != nil {
 		bindings = parameters.finish(query, bindings)

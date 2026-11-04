@@ -206,6 +206,9 @@ func referenceDiagnostics(ctx context.Context, snapshot source.Snapshot, sourceR
 	emit := func(node workflowValue, code, message string) {
 		loc := nodeLocation(snapshot, node.node)
 		severity := "Error"
+		if code == "WF_REFERENCE_INCOMPLETE" {
+			severity = "Warning"
+		}
 		if code == "WF_DYNAMIC_REFERENCE" {
 			severity = "Information"
 		}
@@ -248,6 +251,9 @@ func referenceDiagnostics(ctx context.Context, snapshot source.Snapshot, sourceR
 				refs, err := scalarReferences(ctx, workflowString(node))
 				if err != nil {
 					analysisErr = err
+					if ctx.Err() == nil {
+						emit(node, "WF_REFERENCE_INCOMPLETE", "Reference analysis incomplete: "+err.Error())
+					}
 					return
 				}
 				for _, ref := range refs {

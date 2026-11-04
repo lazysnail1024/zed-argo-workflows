@@ -18,10 +18,10 @@ import (
 )
 
 type pendingAction struct {
-	uri, title, version, fingerprint string
-	epoch                            uint64
-	revision                         source.Revision
-	plan                             edit.Plan
+	uri, title, version, fingerprint, scope string
+	epoch                                   uint64
+	revision                                source.Revision
+	plan                                    edit.Plan
 }
 
 func fingerprint(w workspace.Workspace) string {
@@ -43,6 +43,9 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 	if !s.versionedEdits {
 		return false, 0, s.failure(m.ID, -32602, "client does not support versioned documentChanges")
 	}
+	if m.Method == "textDocument/codeAction" && len(s.actions) >= 128 {
+		s.actions = map[string]pendingAction{}
+	}
 	ctx, cancel := context.WithTimeout(s.context(), 5*time.Second)
 	defer cancel()
 	ctx = analysis.WithInvocation(ctx)
@@ -63,8 +66,8 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 			return false, 0, s.failure(m.ID, -32602, "experimental target edits are disabled")
 		}
 		b, opened := s.buffers[action.uri]
-		w, err := s.workspace(s.root(action.uri), "")
-		if err != nil || !opened || s.epoch != action.epoch || b.snapshot.Revision() != action.revision || fingerprint(w) != action.fingerprint {
+		w, err := s.workspace(s.root(action.uri), action.scope)
+		if err != nil || !opened || b.snapshot.Revision() != action.revision || fingerprint(w) != action.fingerprint {
 			return false, 0, s.failure(m.ID, -32801, "code action input changed")
 		}
 		if _, err := edit.Apply(b.snapshot, b.snapshot.Revision()+1, action.plan); err != nil {
@@ -168,19 +171,17 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 			return false, 0, s.failure(m.ID, -32803, err.Error())
 		}
 		result := []map[string]any{}
-		if len(s.actions) > 128 {
-			s.actions = map[string]pendingAction{}
-		}
 		fixes := analysis.FieldFixes(ctx, b.snapshot, d.Target.Version, p.Range)
 		fixes = append(fixes, analysis.ValueFixes(ctx, w, d, p.Range)...)
-		requestFingerprint := fingerprint(w)
+		scoped := scopeWorkspace(w, d.Target.ID)
+		requestFingerprint := fingerprint(scoped)
 		for _, fix := range fixes {
 			if fix.Code == "FIX_FIELD_NAME" && analysis.SafeScopePlan(ctx, w, d, fix.Plan) != nil {
 				continue
 			}
 			s.actionSequence++
 			token := fmt.Sprintf("%d:%d", s.epoch, s.actionSequence)
-			s.actions[token] = pendingAction{uri: uri, title: fix.Title, version: d.Target.Version, fingerprint: requestFingerprint, epoch: s.epoch, revision: b.snapshot.Revision(), plan: fix.Plan}
+			s.actions[token] = pendingAction{uri: uri, title: fix.Title, version: d.Target.Version, scope: d.Target.Scope, fingerprint: requestFingerprint, epoch: s.epoch, revision: b.snapshot.Revision(), plan: fix.Plan}
 			result = append(result, map[string]any{"title": fix.Title, "kind": "quickfix", "data": map[string]any{"token": token}})
 		}
 		return false, 0, s.reply(m.ID, result)

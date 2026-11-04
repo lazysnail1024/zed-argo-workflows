@@ -131,7 +131,14 @@ func CompleteExternalNames(ctx context.Context, w workspace.Workspace, uri strin
 		if cluster {
 			wanted = "ClusterWorkflowTemplate"
 		}
-		prefix := strings.Trim(snapshot.Text()[field.span.Start:field.span.End], "\"'")
+		end := offset
+		if end > field.span.End {
+			end = field.span.End
+		}
+		if end < field.span.Start {
+			continue
+		}
+		prefix := strings.Trim(snapshot.Text()[field.span.Start:end], "\"'")
 		if strings.Contains(prefix, "{{") {
 			continue
 		}

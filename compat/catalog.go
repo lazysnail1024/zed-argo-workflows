@@ -63,7 +63,7 @@ func Resolve(version string) error {
 		return fmt.Errorf("invalid embedded catalog: %w", err)
 	}
 	if _, ok := index[version]; !ok {
-		return fmt.Errorf("unknown target version: %s", version)
+		return fmt.Errorf("unknown target version: %s; use accepted target 3.6.0 or an exact experimental version from compat/catalog.lock.json; remove an editor targetVersion override to restore the file pin", version)
 	}
 	return nil
 }

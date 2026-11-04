@@ -10,7 +10,9 @@ import (
 
 // Facts is one detached immutable handoff of existing parse/projection data.
 // It contains no context, domain result, cancellation outcome or schema document.
-// The owner accepts it only from a completed current-epoch worker. Each new
+// The owner accepts it only from a completed current-epoch worker. Older facts
+// may be retained across changes, but restoration requires freshly acquired
+// byte-identical snapshots and target versions. Each new
 // invocation copies the outer maps; all consumers read the underlying values.
 type Facts struct {
 	boundary    string
@@ -22,7 +24,7 @@ type Facts struct {
 // Text includes source/URI/boundary bytes and expanded JSON strings/keys/numbers;
 // nodes include CST nodes/documents and JSON containers, keys and scalar values.
 const maxFactText = 8 * 1024 * 1024
-const maxFactNodes = 128000
+const maxFactNodes = 512000
 
 // FactBoundary admits one complete acquired scope and binds all current options
 // and targets. Disk acquisition and buffer authority must precede this check.

@@ -6,10 +6,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"sort"
+	"time"
+
 	"github.com/lazysnail1024/zed-argo-workflows/internal/analysis"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
-	"io"
-	"time"
 )
 
 type queuedRequest struct {
@@ -17,14 +19,21 @@ type queuedRequest struct {
 	epoch   uint64
 }
 type workerResult struct {
-	output, log []byte
-	state       session
-	err         error
-	canceled    bool
+	reconciliation  bool
+	inputIdentities map[workspaceKey]string
+	output, log     []byte
+	state           session
+	err             error
+	canceled        bool
+	epoch           uint64
+	background      bool
+	uri             string
+	final           bool
 }
 
-// Serve owns mutable state and transport writes. One bounded worker receives
-// immutable session snapshots; only the owner may accept its epoch-bound output.
+// Serve owns mutable state and all transport writes. At most one foreground
+// request and one background publication worker run on immutable snapshots.
+// Publication is accepted per URI, so a later timeout cannot discard progress.
 func Serve(in io.Reader, out, log io.Writer) int {
 	s := session{out: out, log: log, buffers: map[string]buffer{}, actions: map[string]pendingAction{}, pending: map[string]bool{}}
 	type input struct {
@@ -48,12 +57,11 @@ func Serve(in io.Reader, out, log io.Writer) int {
 			}
 		}
 	}()
-	finished := make(chan workerResult, 1)
-	var cancel context.CancelFunc
+	finished := make(chan workerResult, 16)
+	var foregroundCancel, backgroundCancel, reconciliationCancel context.CancelFunc
+	reconciling := false
 	var active *queuedRequest
-	activeEpoch := uint64(0)
-	var publishing []string
-	running, canceled := false, false
+	foregroundRunning, backgroundRunning, canceled := false, false, false
 	queue := []queuedRequest{}
 	due := time.Time{}
 	timer := time.NewTicker(20 * time.Millisecond)
@@ -66,11 +74,17 @@ func Serve(in io.Reader, out, log io.Writer) int {
 		clone.factInput = nil
 		clone.factBoundary = ""
 		clone.factMixed = false
-		if clone.factsEpoch != clone.epoch {
-			clone.facts = nil
+
+		clone.acquiredInputs = map[workspaceKey]string{}
+		clone.queryKey = ""
+		clone.queryResults = map[string]json.RawMessage{}
+		for key, value := range s.queryResults {
+			clone.queryResults[key] = value
 		}
+		clone.ctx = analysis.WithExternalFacts(clone.ctx, s.externalFacts)
 		clone.pending = nil
 		clone.workspaces = map[workspaceKey]workspace.Workspace{}
+		clone.externalResults = map[string]externalResult{}
 		clone.roots = append([]string(nil), s.roots...)
 		clone.buffers = map[string]buffer{}
 		for uri, b := range s.buffers {
@@ -83,74 +97,111 @@ func Serve(in io.Reader, out, log io.Writer) int {
 		return clone
 	}
 	abort := func(code int, reason string) {
-		if running {
-			cancel()
+		if reconciling {
+			reconciliationCancel()
+		}
+		if foregroundRunning {
+			foregroundCancel()
 			if active != nil && !canceled {
 				_ = s.failure(active.message.ID, code, reason)
 				canceled = true
 			}
 		}
+		if backgroundRunning {
+			backgroundCancel()
+		}
 	}
 	defer func() {
-		if cancel != nil {
-			cancel()
+		if reconciliationCancel != nil {
+			reconciliationCancel()
+		}
+		if foregroundCancel != nil {
+			foregroundCancel()
+		}
+		if backgroundCancel != nil {
+			backgroundCancel()
 		}
 	}()
-	for {
-		// Queries bypass diagnostic debounce. Queue size and worker count are fixed.
-		if !running && !s.shutdown {
-			var request *queuedRequest
-			for len(queue) > 0 && request == nil {
-				q := queue[0]
-				queue = queue[1:]
-				if q.epoch != s.epoch {
-					_ = s.failure(q.message.ID, -32801, "input changed before request execution")
-				} else {
-					request = &q
+	launch := func(request *queuedRequest, uris []string) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx = analysis.WithInvocation(workspace.WithSnapshotBudget(ctx, s.bufferBytes))
+		state := snapshot(ctx)
+		background := request == nil
+		if background {
+			backgroundRunning = true
+			backgroundCancel = cancel
+		} else {
+			foregroundRunning = true
+			foregroundCancel = cancel
+			active = request
+			canceled = false
+		}
+		go func() {
+			var output, logs bytes.Buffer
+			state.out = &output
+			state.log = &logs
+			send := func(result workerResult) bool {
+				select {
+				case finished <- result:
+					return true
+				case <-stop:
+					return false
 				}
 			}
-			publish := request == nil && len(s.pending) > 0 && !due.IsZero() && !time.Now().Before(due)
-			if request != nil || publish {
-				ctx, c := context.WithTimeout(context.Background(), 5*time.Second)
-				cancel = c
-				ctx = workspace.WithSnapshotBudget(ctx, s.bufferBytes)
-				ctx = analysis.WithInvocation(ctx)
-				clone := snapshot(ctx)
-				uris := []string{}
-				if publish {
-					for uri := range s.pending {
-						uris = append(uris, uri)
+			var err error
+			if request != nil {
+				_, _, err = state.handle(request.message)
+			} else {
+				for _, uri := range uris {
+					if ctx.Err() != nil {
+						break
 					}
-					due = time.Time{}
-				}
-				publishing = uris
-				active = request
-				activeEpoch = s.epoch
-				running = true
-				canceled = false
-				go func(state session, q *queuedRequest, uris []string) {
-					var output, logs bytes.Buffer
-					state.out = &output
-					state.log = &logs
-					var err error
-					if q != nil {
-						_, _, err = state.handle(q.message)
-					} else {
-						for _, uri := range uris {
-							if state.context().Err() != nil {
-								break
-							}
-							if err = state.publish(uri); err != nil {
-								break
-							}
+					output.Reset()
+					err = state.publish(uri)
+					if err != nil {
+						break
+					}
+					if ctx.Err() == nil {
+						if !send(workerResult{output: append([]byte(nil), output.Bytes()...), epoch: state.epoch, background: true, uri: uri}) {
+							return
 						}
 					}
-					state.facts = nil
-					if err == nil && state.factInput != nil && state.context().Err() == nil {
-						state.facts = analysis.CaptureFacts(state.context(), *state.factInput)
+				}
+				output.Reset()
+			}
+			state.externalFacts = nil
+			if background {
+				state.externalFacts = analysis.CaptureExternalFacts(state.context())
+			}
+			state.facts = nil
+			if err == nil && state.factInput != nil && ctx.Err() == nil {
+				state.facts = analysis.CaptureFacts(ctx, *state.factInput)
+			}
+			send(workerResult{output: append([]byte(nil), output.Bytes()...), log: logs.Bytes(), state: state, err: err, canceled: ctx.Err() != nil, epoch: state.epoch, background: background, final: true})
+		}()
+	}
+	for {
+		if !s.shutdown {
+			if !foregroundRunning {
+				for len(queue) > 0 {
+					q := queue[0]
+					queue = queue[1:]
+					if q.epoch != s.epoch {
+						_ = s.failure(q.message.ID, -32801, "input changed before request execution")
+						continue
 					}
-					finished <- workerResult{output.Bytes(), logs.Bytes(), state, err, state.context().Err() != nil}
-				}(clone, request, uris)
+					launch(&q, nil)
+					break
+				}
+			}
+			if !backgroundRunning && len(s.pending) > 0 && !due.IsZero() && !time.Now().Before(due) {
+				uris := make([]string, 0, len(s.pending))
+				for uri := range s.pending {
+					uris = append(uris, uri)
+				}
+				sort.Strings(uris)
+				due = time.Time{}
+				launch(nil, uris)
 			}
 		}
 		select {
@@ -168,8 +219,10 @@ func Serve(in io.Reader, out, log io.Writer) int {
 					ID json.RawMessage `json:"id"`
 				}
 				if json.Unmarshal(m.Params, &p) == nil {
-					if active != nil && bytes.Equal(active.message.ID, p.ID) {
-						abort(-32800, "request cancelled")
+					if active != nil && bytes.Equal(active.message.ID, p.ID) && !canceled {
+						foregroundCancel()
+						_ = s.failure(active.message.ID, -32800, "request cancelled")
+						canceled = true
 					}
 					kept := queue[:0]
 					for _, q := range queue {
@@ -209,59 +262,137 @@ func Serve(in io.Reader, out, log io.Writer) int {
 			}
 			if done {
 				abort(-32800, "server exiting")
-				if running {
-					select {
-					case <-finished:
-					case <-time.After(5 * time.Second):
-						return 2
-					}
-				}
 				return code
 			}
-			if s.epoch != epoch {
-				s.facts = nil
+			if epoch != s.epoch {
 				abort(-32801, "input changed during request")
 				due = time.Now().Add(120 * time.Millisecond)
 			}
 		case result := <-finished:
-			cancel()
-			running = false
-			if !canceled && activeEpoch == s.epoch && !result.canceled {
-				if result.err != nil {
-					fmt.Fprintln(log, "LSP worker:", result.err)
-					return 2
+			if result.reconciliation {
+				reconciling = false
+				reconciliationCancel()
+				if !s.shutdown && result.epoch == s.epoch && !result.canceled {
+					changedRoots := map[string]bool{}
+					for key, current := range result.inputIdentities {
+						if s.acquiredInputs[key] != current {
+							changedRoots[key.root] = true
+							s.acquiredInputs[key] = current
+						}
+					}
+					if len(changedRoots) > 0 {
+						s.epoch++
+						abort(-32801, "workspace inputs changed during reconciliation")
+						for uri := range s.buffers {
+							if changedRoots[s.root(uri)] {
+								s.pending[uri] = true
+							}
+						}
+						due = time.Now().Add(120 * time.Millisecond)
+					}
 				}
-				if _, err := out.Write(result.output); err != nil {
-					return 2
-				}
-				// Publication work remains pending until this exact snapshot is accepted.
-				for _, uri := range publishing {
-					delete(s.pending, uri)
-				}
-				s.actions = result.state.actions
-				s.actionSequence = result.state.actionSequence
-				s.facts = result.state.facts
-				s.factsEpoch = s.epoch
-			} else if active != nil && !canceled {
-				_ = s.failure(active.message.ID, -32800, "request timed out or cancelled")
+				continue
 			}
 			if len(result.log) > 0 {
 				_, _ = log.Write(result.log)
 			}
-			active = nil
-			publishing = nil
+			if result.background && !result.final {
+				if !s.shutdown && result.epoch == s.epoch {
+					if _, err := out.Write(result.output); err != nil {
+						return 2
+					}
+					delete(s.pending, result.uri)
+				}
+				continue
+			}
+			if result.background {
+				backgroundCancel()
+				backgroundRunning = false
+			} else {
+				foregroundCancel()
+				foregroundRunning = false
+			}
+			current := result.epoch == s.epoch && !s.shutdown
+			if current && !result.canceled && (!canceled || result.background) {
+				if result.err != nil {
+					fmt.Fprintln(log, "LSP worker:", result.err)
+					return 2
+				}
+				if !result.background {
+					if _, err := out.Write(result.output); err != nil {
+						return 2
+					}
+					s.actions = result.state.actions
+					s.actionSequence = result.state.actionSequence
+					s.queryResults = result.state.queryResults
+					s.queryBytes = result.state.queryBytes
+				}
+				if s.acquiredInputs == nil {
+					s.acquiredInputs = map[workspaceKey]string{}
+				}
+				for key, value := range result.state.acquiredInputs {
+					s.acquiredInputs[key] = value
+				}
+				if result.state.externalFacts != nil {
+					s.externalFacts = result.state.externalFacts
+				}
+				if result.state.facts != nil {
+					s.facts = result.state.facts
+					s.factsEpoch = s.epoch
+				}
+			} else if !result.background && active != nil && !canceled {
+				_ = s.failure(active.message.ID, -32800, "request timed out or cancelled")
+			}
+			if result.background && current && result.canceled {
+				// A stable input that exhausts its budget terminates visibly. New input,
+				// an explicit save or the next reconciliation may retry; no hot retry loop.
+				for uri := range s.pending {
+					params := map[string]any{"uri": uri, "diagnostics": []map[string]any{analysisStatus("WF_ANALYSIS_INCOMPLETE", "analysis deadline exceeded")}}
+					if b, ok := s.buffers[uri]; ok {
+						params["version"] = b.version
+					}
+					if err := s.write(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": params}); err != nil {
+						return 2
+					}
+					delete(s.pending, uri)
+				}
+			}
+			if !result.background {
+				active = nil
+			}
 			if !s.shutdown && len(s.pending) > 0 && due.IsZero() {
 				due = time.Now().Add(120 * time.Millisecond)
 			}
 		case <-scan.C:
-			if !s.shutdown {
-				s.epoch++
-				s.facts = nil
-				abort(-32801, "workspace reconciliation")
-				for uri := range s.buffers {
-					s.pending[uri] = true
+			if !s.shutdown && !reconciling && len(s.acquiredInputs) > 0 {
+				// Reconciliation is one bounded I/O probe. It does not run analysis or
+				// invalidate a revision until freshly acquired input actually differs.
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				reconciliationCancel = cancel
+				reconciling = true
+				state := snapshot(workspace.WithSnapshotBudget(ctx, s.bufferBytes))
+				keys := []workspaceKey{}
+				for key := range s.acquiredInputs {
+					for _, root := range s.roots {
+						if root == key.root {
+							keys = append(keys, key)
+							break
+						}
+					}
 				}
-				due = time.Now().Add(120 * time.Millisecond)
+				go func() {
+					for _, key := range keys {
+						if ctx.Err() != nil {
+							break
+						}
+						_, _ = state.workspace(key.root, key.scope)
+					}
+					result := workerResult{reconciliation: true, epoch: state.epoch, inputIdentities: state.acquiredInputs, canceled: ctx.Err() != nil}
+					select {
+					case finished <- result:
+					case <-stop:
+					}
+				}()
 			}
 		case <-timer.C:
 		}

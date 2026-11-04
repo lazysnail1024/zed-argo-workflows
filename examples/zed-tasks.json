@@ -1,0 +1,10 @@
+[
+  {
+    "label": "Argo Workflows: render and check Helm chart (explicit)",
+    "command": "mkdir -p \"$ZED_WORKTREE_ROOT/.argo-ls\" && output=$(mktemp -d \"$ZED_WORKTREE_ROOT/.argo-ls/render-XXXXXX\") && /absolute/path/to/bundle/native/server.bin render-check --root \"$ZED_WORKTREE_ROOT\" --helm-binary /absolute/path/to/helm3 --chart \"$ZED_WORKTREE_ROOT/chart\" --values \"$ZED_WORKTREE_ROOT/values.yaml\" --target-version 3.6.0 --output \"$output\"; result=$?; printf '\\nRender evidence: %s\\n' \"$output\"; exit \"$result\"",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  }
+]

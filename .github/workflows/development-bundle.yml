@@ -1,0 +1,50 @@
+name: Development bundle (Linux amd64)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  development-bundle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GOWORK: 'off'
+      CGO_ENABLED: '1'
+      GOFLAGS: ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Build and exercise the native consumer
+        run: |
+          mkdir -p build artifacts/ci
+          go build -mod=vendor -buildvcs=true -trimpath -o build/argo-workflows-ls ./cmd/argo-workflows-ls
+          go version -m build/argo-workflows-ls > artifacts/ci/native-build.txt
+          python3 tests/e2e/wf-remediation-semantics.py build/argo-workflows-ls artifacts/ci/semantics
+          python3 tests/e2e/wf-remediation-lifecycle.py build/argo-workflows-ls artifacts/ci/lifecycle
+          python3 tests/e2e/wf-remediation-rename.py build/argo-workflows-ls artifacts/ci/rename
+          python3 tests/e2e/wf-remediation-targets.py build/argo-workflows-ls artifacts/ci/targets
+      - name: Package development installation with source identity
+        run: |
+          git archive --format=tar HEAD > build/source.tar
+          python3 scripts/package-dev.py --binary build/argo-workflows-ls --sha256 "$(sha256sum build/argo-workflows-ls | cut -d' ' -f1)" --platform linux/amd64 --source-archive build/source.tar --source-sha256 "$(sha256sum build/source.tar | cut -d' ' -f1)" > artifacts/ci/package.json
+          sha256sum dist/*.zip > dist/SHA256SUMS
+      - name: Verify actual development packaging
+        run: python3 tests/e2e/dev-bundle.py build/argo-workflows-ls build/source.tar artifacts/ci/dev-bundle-e2e
+      - name: Prepare the pinned Rust adapter toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal --target wasm32-wasip2
+      - name: Build the actual bundled adapter
+        run: cargo build --locked --release --target wasm32-wasip2 --manifest-path dist/zed-argo-workflows-dev-linux-amd64/Cargo.toml
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: development-linux-amd64-${{ github.sha }}
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS
+            artifacts/ci
+          if-no-files-found: error

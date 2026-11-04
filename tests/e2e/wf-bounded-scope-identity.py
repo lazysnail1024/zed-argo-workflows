@@ -27,7 +27,7 @@ for name in ["application", "root"]:
     cmd = [str(BINARY), "check", "--root", str(work), "--scope", name, "--format", "json"]
     run = m.command(dest, "selected-cli", cmd)
     report = json.loads(run.stdout)
-    record("selected-cli-" + name, {"exitIncomplete": run.returncode == 2, "oneFile": report.get("filesAnalyzed") == 1, "oneResource": report.get("resourcesAnalyzed") == 1, "exactDiagnostic": [d["code"] for d in report.get("diagnostics", [])] == ["SCHEMA_TYPE"], "noConfigurationError": report.get("configurationErrors") == []}, report)
+    record("selected-cli-" + name, {"acceptedTargetErrorExit": run.returncode == 1 and report.get("analysisComplete") is True, "oneFile": report.get("filesAnalyzed") == 1, "oneResource": report.get("resourcesAnalyzed") == 1, "exactDiagnostic": [d["code"] for d in report.get("diagnostics", [])] == ["SCHEMA_TYPE"], "noConfigurationError": report.get("configurationErrors") == []}, report)
     client = m.LSP(dest, work)
     try:
         path = work / "selected/case.yaml"
@@ -90,7 +90,7 @@ for label, config, selected, accepted in [
     dest, work = m.setup(label, {"outside.yaml": BASE.replace("  entrypoint: main", "  parallelism: wrong\n  entrypoint: main")}, config)
     run = m.command(dest, "check", [BINARY, "check", "--root", work, "--scope", selected, "--format", "json"])
     report = json.loads(run.stdout)
-    record(label, {"exitIncomplete": run.returncode == 2, "counts": report["filesAnalyzed"] == int(accepted) and report["resourcesAnalyzed"] == int(accepted), "selection": ([d["code"] for d in report["diagnostics"]] == ["SCHEMA_TYPE"] and not report["configurationErrors"]) if accepted else bool(report["configurationErrors"])}, report)
+    record(label, {"targetExit": run.returncode == (1 if accepted else 2) and report.get("analysisComplete") is bool(accepted), "counts": report["filesAnalyzed"] == int(accepted) and report["resourcesAnalyzed"] == int(accepted), "selection": ([d["code"] for d in report["diagnostics"]] == ["SCHEMA_TYPE"] and not report["configurationErrors"]) if accepted else bool(report["configurationErrors"])}, report)
 
 dest, work = m.setup("config-overlay-root", {"selected/case.yaml": BASE.replace("  entrypoint: main", "  parallelism: wrong\n  entrypoint: main")}, m.CONFIG + 'scopes:\n  - name: application\n    include: ["selected/*.yaml"]\n')
 client = m.LSP(dest, work)

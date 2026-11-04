@@ -49,7 +49,7 @@ cargo build --locked --offline --release --target wasm32-wasip2 \
   --manifest-path dist/zed-argo-workflows-dev-linux-amd64/Cargo.toml
 ```
 
-The process consumer preserves commands, raw output/exit codes, input and package hashes, and assertions for deterministic archives, usable assets/notices, real native identity, and invalid input refusal. Real Zed installation separately verifies no override, fresh-cache startup, diagnostics, cache repair, and coexistence. Bundle cache content must match embedded bytes before the existing identity handshake. Unexpected cache file types fail safely. A failed repair (for example an in-use Windows executable or an interrupted temporary write) requires stopping the server and removing the affected cache entry before retrying.
+The process consumer preserves commands, raw output/exit codes, input and package hashes, and assertions for deterministic archives, usable assets/notices, real native identity, and invalid input refusal. Real Zed installation separately verifies no override, fresh-cache startup, diagnostics, cache repair, and coexistence. For explicit-path launch failure, set `lsp.argo-workflows-ls.settings.serverPath` to a nonexistent absolute path and restart the language server: the visible failure must identify the configuration key, exact path, underlying operating-system cause, and advice to correct or remove the override. No bundled server may start while that invalid override remains. Remove the override and restart; the bundled server must recover with a real schema diagnostic and correct hover. Retain the settings input, extension/native hashes, Zed log, and failure/recovery observations. A bundled-path execution failure must instead identify the bundled path and advise checking executable permissions or reinstalling the development bundle. Bundle cache content must match embedded bytes before the existing identity handshake. Unexpected cache file types fail safely. A failed repair (for example an in-use Windows executable or an interrupted temporary write) requires stopping the server and removing the affected cache entry before retrying.
 
 ## Behavioral verification
 
@@ -100,3 +100,27 @@ python3 tests/e2e/wf-quickfixes.py build/argo-workflows-ls artifacts/local-quick
 
 The runner records inputs, independent expected results, protocol output, exit codes, and hashes. These are CLI/LSP checks, not editor acceptance.
 
+
+
+## Audit remediation process checks
+
+Build with the pinned Go toolchain and vendored dependencies, then run:
+
+```sh
+python3 tests/e2e/wf-remediation-semantics.py build/argo-workflows-ls artifacts/remediation/semantics
+python3 tests/e2e/wf-remediation-lifecycle.py build/argo-workflows-ls artifacts/remediation/lifecycle
+python3 tests/e2e/wf-remediation-rename.py build/argo-workflows-ls artifacts/remediation/rename
+python3 tests/e2e/wf-remediation-targets.py build/argo-workflows-ls artifacts/remediation/targets
+python3 tests/e2e/wf-default-target-provenance.py build/argo-workflows-ls artifacts/remediation/default-target
+python3 tests/e2e/wf-remediation-load.py build/argo-workflows-ls artifacts/remediation/load
+python3 tests/e2e/wf-remediation-render.py build/argo-workflows-ls /absolute/path/to/helm3 artifacts/remediation/render
+```
+
+Use fresh artifact directories. Load measurements require an otherwise idle machine; repeat with five independent processes, recording the actual binary SHA-256, hardware, cold/warm state, input dimensions and protocol traffic. The scripts retain real stdout/stderr, expectations, input hashes and results. This supplements the existing multi-scope and dense-reference suites.
+
+The manual development-bundle workflow only builds the Linux amd64 development installation. It builds the actual bundled WASM adapter and exercises the package consumer before uploading a ZIP, checksum and native process evidence; it does not publish a release or register an extension, compile an adapter for ordinary marketplace installation, or establish real Zed acceptance. Native macOS, Windows, Linux arm64 and editor installation/upgrade require their own clean-host execution before support claims expand. A formal publishing workflow remains gated on platform artifacts, locked provenance, independent edit-safety acceptance and explicit publication authorization.
+
+
+Runtime retention is separate from semantic admission limits. Parse/projection facts retain at most 8 MiB of source/projected text and 512,000 measured nodes; the 100,000 logical alias/merge expansion limit remains unchanged. Completed external-reference checks retain at most 20,000 per-resource entries and 4 MiB of accounted diagnostic data, keyed by exact caller input, scope/target/configuration, complete candidate sets, namespace, policy and completeness. A changed resource invalidates its callers through those dependency keys. Read-only query results retain at most 16 entries and 4 MiB, and require fresh, complete scope acquisition with the same input fingerprint. Edits still recheck full input and semantic safety. Temporary edit simulations are not captured into external-check retention.
+
+There is at most one foreground analysis worker, one background diagnostic worker and one bounded periodic I/O reconciliation probe. The probe compares newly acquired input signatures before invalidating active work. Publication commits each completed URI under its input epoch; remaining work at a deadline receives an explicit incomplete status and does not enter an immediate retry loop. Filesystem changes reported by the client invalidate work immediately; periodic acquisition repairs missed notifications.

@@ -22,6 +22,7 @@ type Scope struct {
 	TargetVersion string   `json:"targetVersion"`
 }
 type Config struct {
+	targetSource     string
 	SchemaVersion    int      `json:"schemaVersion"`
 	TargetVersion    string   `json:"targetVersion"`
 	ReferencePolicy  string   `json:"referencePolicy"`
@@ -111,7 +112,7 @@ func matches(patterns []string, name string) bool {
 	return false
 }
 func loadConfig(root string, overlay *string) (Config, []byte, error) {
-	c := Config{SchemaVersion: 1, TargetVersion: compat.DefaultVersion, ReferencePolicy: "open"}
+	c := Config{SchemaVersion: 1, TargetVersion: compat.DefaultVersion, ReferencePolicy: "open", targetSource: "default"}
 	var raw []byte
 	var err error
 	if overlay != nil {
@@ -145,6 +146,17 @@ func loadConfig(root string, overlay *string) (Config, []byte, error) {
 	}
 	if err = yaml.UnmarshalStrict(raw, &c); err != nil {
 		return c, nil, err
+	}
+	// Presence matters: an explicit pin equal to the default still comes from
+	// root configuration, while a configuration containing only policy does not.
+	var selection struct {
+		TargetVersion *string `json:"targetVersion"`
+	}
+	if err = yaml.Unmarshal(raw, &selection); err != nil {
+		return c, nil, err
+	}
+	if selection.TargetVersion != nil {
+		c.targetSource = "root"
 	}
 	if c.SchemaVersion != 1 {
 		return c, nil, fmt.Errorf("unsupported configuration schemaVersion")
@@ -270,10 +282,7 @@ func load(ctx context.Context, root, selected, override string, overlay *string,
 		}
 		name := input.ScopeNames[snapshot.URI()]
 		version := config.TargetVersion
-		from := "root"
-		if len(raw) == 0 {
-			from = "default"
-		}
+		from := config.targetSource
 		for _, scope := range config.Scopes {
 			if scope.Name == name && scope.TargetVersion != "" {
 				version = scope.TargetVersion
@@ -319,7 +328,7 @@ func OpenDocument(w Workspace, snapshot source.Snapshot, override string) (Docum
 	}
 	name := "root"
 	version := w.Config.TargetVersion
-	from := "root"
+	from := w.Config.targetSource
 	if len(w.Config.Scopes) > 0 {
 		name = "unassigned"
 		count := 0

@@ -21,24 +21,25 @@ type renameOccurrence struct {
 	dot  int
 }
 type localRenameBindings struct {
-	ctx              context.Context
-	shared           map[source.Span]bool
-	symbols          map[renameKey][]renameOccurrence
-	positions        map[source.Span]renameKey
-	templates        []yamlview.Node
-	calls            map[renameKey]int
-	snapshot         source.Snapshot
-	err              error
-	blocked          map[renameKey]bool
-	readOnly         bool
-	declarations     map[renameKey][]renameOccurrence
-	visibility       map[source.Span]map[renameKey]bool
-	externalOutputs  []queryOutputReference
-	queryOrigin      string
-	queryPositions   map[source.Span]map[renameKey]bool
-	queryAmbiguous   map[source.Span]map[renameKey]bool
-	argumentContexts map[source.Span]map[renameKey]bool
-	declarationCount map[renameKey]int
+	staticExternalCalls bool
+	ctx                 context.Context
+	shared              map[source.Span]bool
+	symbols             map[renameKey][]renameOccurrence
+	positions           map[source.Span]renameKey
+	templates           []yamlview.Node
+	calls               map[renameKey]int
+	snapshot            source.Snapshot
+	err                 error
+	blocked             map[renameKey]bool
+	readOnly            bool
+	declarations        map[renameKey][]renameOccurrence
+	visibility          map[source.Span]map[renameKey]bool
+	externalOutputs     []queryOutputReference
+	queryOrigin         string
+	queryPositions      map[source.Span]map[renameKey]bool
+	queryAmbiguous      map[source.Span]map[renameKey]bool
+	argumentContexts    map[source.Span]map[renameKey]bool
+	declarationCount    map[renameKey]int
 }
 
 // Queries retain independently proven occurrences after an unrelated failure.
@@ -602,28 +603,47 @@ func collectLocalBindings(ctx context.Context, s source.Snapshot, version string
 		b.declarationCount = semanticDeclarations(projected, kind)
 		b.shared = sharedOrigins(ctx, s, doc, version)
 	}
-	var closed func(yamlview.Node) bool
-	closed = func(n yamlview.Node) bool {
+	var closed func(yamlview.Node, []string) bool
+	closed = func(n yamlview.Node, path []string) bool {
 		if n.Kind() == yamlview.Alias || n.Damaged() {
 			return false
 		}
 		for _, m := range n.Members() {
-			switch stringValue(m.Key) {
-			case "<<", "inline", "workflowTemplateRef", "templateRef", "globalName":
+			key := stringValue(m.Key)
+			part := key
+			if len(path) > 0 && path[len(path)-1] == "hooks" {
+				part = "*"
+			}
+			next := append(append([]string(nil), path...), part)
+			if key == "<<" {
 				return false
 			}
-			if !closed(m.Value) {
+			if renameControlPath(next) {
+				if key != "templateRef" {
+					return false
+				}
+				// A static external call addresses a WorkflowTemplate identity, never a
+				// template declared by this private Workflow/CronWorkflow resource.
+				for _, field := range []string{"name", "template"} {
+					value, _, exact := exactName(member(m.Value, field))
+					if !exact || strings.Contains(value, "{{") {
+						return false
+					}
+				}
+				b.staticExternalCalls = true
+			}
+			if !closed(m.Value, next) {
 				return false
 			}
 		}
 		for _, v := range n.Elements() {
-			if !closed(v) {
+			if !closed(v, append(append([]string(nil), path...), "*")) {
 				return false
 			}
 		}
 		return true
 	}
-	if !readOnly && !closed(root) {
+	if !readOnly && !closed(root, nil) {
 		return b, fmt.Errorf("derived, inherited, external or exported bindings prevent local rename")
 	}
 	effectiveRoot := workflowRoot(projected, root)
@@ -796,6 +816,9 @@ func renameSelection(ctx context.Context, s source.Snapshot, version string, pos
 	for key, occurrences := range b.symbols {
 		for _, o := range occurrences {
 			if at >= o.span.Start && at < o.span.End {
+				if b.staticExternalCalls && key.kind != "template" {
+					return b, key, o, fmt.Errorf("external call arguments and outputs require a cross-resource binding proof; only independent local template names can be renamed")
+				}
 				if b.blocked[key] {
 					return b, key, o, fmt.Errorf("indirect or dynamic access prevents proving all references to %q", key.name)
 				}
@@ -1009,4 +1032,21 @@ func (b *localRenameBindings) scanValue(owner int, n workflowValue, visible map[
 	for _, value := range n.Elements() {
 		b.scanValue(owner, value, visible, false)
 	}
+}
+
+// Only Argo control fields can introduce external or exported identities.
+// Ordinary data maps (including labels and annotations) do not bind symbols.
+func renameControlPath(path []string) bool {
+	p := strings.Join(path, "/")
+	p = strings.TrimPrefix(p, "spec/workflowSpec/")
+	p = strings.TrimPrefix(p, "spec/")
+	if p == "workflowTemplateRef" {
+		return true
+	}
+	for _, prefix := range []string{"hooks/*/", "templates/*/hooks/*/", "templates/*/dag/tasks/*/", "templates/*/steps/*/*/", "templates/*/dag/tasks/*/hooks/*/", "templates/*/steps/*/*/hooks/*/"} {
+		if p == prefix+"inline" || p == prefix+"templateRef" {
+			return true
+		}
+	}
+	return p == "templates/*/outputs/parameters/*/globalName" || p == "templates/*/outputs/artifacts/*/globalName"
 }

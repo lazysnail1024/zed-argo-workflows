@@ -2,16 +2,18 @@
 
 Offline YAML support for Argo Workflows `Workflow`, `CronWorkflow`, `WorkflowTemplate`, and `ClusterWorkflowTemplate`: diagnostics, completion, hover, navigation, references, and restricted safe edits. It does not connect to a cluster or execute workflows.
 
-**Install a precompiled development bundle for your platform.** There is no registry installation or hosted executable download yet. The default and accepted local-editing target is **3.6.0**. Other known versions are explicitly experimental; their checks remain incomplete and semantic edits are disabled.
+**Install a precompiled development bundle for your platform.** There is no registry installation or hosted executable download yet. The source checkout includes a manual development-bundle workflow that prepares a Linux amd64 ZIP and SHA256SUMS as an Actions artifact when a maintainer runs it; no successful hosted run is claimed here. The default and accepted local-editing target is **3.6.0**. Other known versions are explicitly experimental; their checks remain incomplete and semantic edits are disabled.
 
 ## Install
 
 You need Zed with YAML support enabled and Rust through **rustup**. The bundle pins Rust **1.99.1** and `wasm32-wasip2`; Zed builds the Rust adapter when installing it. Initial Rust toolchain and dependency downloads require network access. The native server is already included: no Go or C compiler, manual Cargo build, or `settings.serverPath` is needed.
 
-1. Unzip the provided platform-specific `zed-argo-workflows-dev-<os>-<arch>.zip` and keep its extracted folder in place.
+1. Obtain the ZIP and `SHA256SUMS` from the same identified build or maintainer delivery. On Linux, run `sha256sum -c SHA256SUMS` in their directory before extraction. Unzip the provided platform-specific `zed-argo-workflows-dev-<os>-<arch>.zip` and keep its extracted folder in place.
 2. In Zed's Extensions page choose **Install Dev Extension**, or run `zed: install dev extension`.
 3. Select the extracted folder containing `extension.toml` (not the ZIP or its parent).
 4. Open a project folder and a Workflows YAML file, such as the example below.
+
+To upgrade, extract a verified newer bundle into a new directory, then install that directory as the dev extension and restart the language server. Keep the previous bundle until the new one starts successfully; reinstall its directory to roll back.
 
 Use the bundle matching your host OS and architecture; a mismatched bundle refuses startup. Only the locally verified Linux amd64 bundle is currently delivered; other platform packages require their own native-host and editor verification. The adapter materializes the embedded server into its extension work directory and verifies its identity before starting it. No executable is downloaded during installation or startup. Remove any old `lsp.argo-workflows-ls.settings.serverPath` override to use the bundled server; an explicit override takes priority and an invalid override fails without fallback.
 
@@ -81,14 +83,23 @@ Exit codes are **0** for complete analysis without errors, **1** for errors (or 
 
 Explicit `render-check` and `lint-official` commands use user-selected local Helm or Argo executables. They never run on save and do not fetch dependencies automatically. Their own incomplete/tool-result status is separate from the core check.
 
+## Explicit Helm render task
+
+Copy the entry in [examples/zed-tasks.json](examples/zed-tasks.json) into your project's `.zed/tasks.json` (merge with existing tasks). This POSIX/Linux example requires a shell and `mktemp`. Replace both absolute executable paths, chart and values paths before running it with **task: spawn**. The task explicitly selects Helm 3, chart, values and target 3.6.0 and creates a new evidence directory on each invocation. It never runs on save or downloads chart dependencies.
+
+The terminal shows the check report and evidence directory. Inspect `render-report.json` for the command, Helm version, exact input SHA-256 values and target; `helm.stdout`/`helm.stderr` preserve render output. A Helm failure is a tool error; successful rendering followed by Argo errors returns the check's diagnostic report. `rendered.yaml` is the source of diagnostic locations: no Helm-source mapping is guessed. Inputs changed during execution cause an explicit refusal; rerun after editing. Cancel the task in the terminal to stop it; commands also have a 30-second budget. Missing executables, wrong Helm major versions and incomplete checks remain visible failures.
+
+Chart symlinks and input sets exceeding 128 MiB or 20,000 chart files cannot provide complete provenance and are refused. Ordinary `templates/` directories without `Chart.yaml` and plain Argo expressions continue to use normal YAML analysis.
+
 ## Troubleshooting and limits
 
 - If startup fails, check that the bundle matches your OS and architecture. Remove stale `serverPath` overrides. The adapter refuses invalid overrides and damaged metadata; reinstall the bundle if its files were modified.
 - Use `zed: open log` for adapter build and startup errors. Ensure rustup and the pinned toolchain are available to Zed.
 - Confirm the file uses YAML mode and the language server is enabled. Keep general YAML support enabled; existing schema associations may produce duplicate diagnostics.
-- Use `explain-config` to inspect effective targets. Remove stale Zed target overrides before troubleshooting file pins.
+- Hover a supported field to see the effective target, accepted/experimental status, scope and selection source. Use `explain-config` to inspect effective targets. Remove stale Zed target overrides before troubleshooting file pins.
+- `WF_ANALYSIS_UNAVAILABLE` means acquisition or configuration failed; `WF_ANALYSIS_INCOMPLETE` means only part of the input could be checked. Fix the reported cause to recheck. An empty successful diagnostic list is not used for these failures.
 - Analysis is bounded and local. Unsupported dynamic or nested inheritance behavior is not executed or guessed. External ConfigMap values are not read. Derived, encoded or shared origins do not acquire invented navigation/edit spans.
-- Rename requires a proven closed local identity. Inherited, cross-file, ambiguous or alias-dependent edits remain refused even when static analysis completes. A selected Workflow or CronWorkflow containing `templateRef` or `workflowTemplateRef` refuses all local Rename operations, even for an otherwise local symbol; an external call in a different resource does not by itself trigger this restriction. Quick Fixes preserve exact locations and current document versions.
+- Rename requires a proven closed local identity. Inherited, cross-file, ambiguous or alias-dependent edits remain refused even when static analysis completes. A private Workflow or CronWorkflow can rename a proven local template name beside an unrelated static `templateRef`; the external name, arguments and public template remain unchanged. Other symbol kinds beside external calls still require a cross-resource proof and are refused. Dynamic external references, `workflowTemplateRef` inheritance, inline templates and shared aliases remain conservative refusals. Quick Fixes preserve exact locations and current document versions.
 
 Detailed implementation boundaries and contributor checks are in [Development](DEVELOPMENT.md). Native builds, stdio behavior and real Zed installation are separate verification layers; no five-platform or registry-release claim is implied.
 

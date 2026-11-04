@@ -64,6 +64,7 @@ class LSP:
     def __init__(self, dest, work):
         self.dest, self.work = dest, work
         self.raw, self.sent, self.received, self.q = bytearray(), [], [], queue.Queue()
+        self.received_times = []
         self.next_id = 0
         self.p = subprocess.Popen([str(BINARY), 'serve', '--stdio'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.stderr_raw = bytearray()
@@ -88,6 +89,7 @@ class LSP:
                     data = self.p.stdout.read(int(headers['content-length']))
                     self.raw.extend(data)
                     value = json.loads(data)
+                    self.received_times.append(time.monotonic())
                     self.received.append(value)
                     self.q.put(value)
             except Exception as e: self.q.put(e)
@@ -133,7 +135,7 @@ class LSP:
             (self.dest / 'lsp.stdout.raw').write_bytes(self.raw)
             self.stderr_reader.join(timeout=1)
             (self.dest / 'lsp.stderr.raw').write_bytes(self.stderr_raw)
-            save(self.dest / 'traffic.json', {'sent': self.sent, 'received': self.received})
+            save(self.dest / 'traffic.json', {'sent': self.sent, 'received': self.received, 'receivedMonotonic': self.received_times})
             save(self.dest / 'lsp.command.json', {'argv': [str(BINARY), 'serve', '--stdio'], 'exitCode': self.p.returncode})
 
 REN_DAG = '''apiVersion: argoproj.io/v1alpha1
