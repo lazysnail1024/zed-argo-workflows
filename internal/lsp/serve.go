@@ -371,7 +371,6 @@ func Serve(in io.Reader, out, log io.Writer) int {
 				}
 				if result.state.facts != nil {
 					s.facts = result.state.facts
-					s.factsEpoch = s.epoch
 				}
 			} else if !result.background && active != nil && !canceled {
 				_ = s.failure(active.message.ID, -32800, "request timed out or cancelled")

@@ -63,6 +63,9 @@ resource limits, artifact layout and distinction from real editor acceptance are
 documented in [Automated acceptance](docs/CI.md). The manual development-bundle
 workflow is only a packaging subset.
 
+The [design ablation record](docs/ABLATION.md) documents the 2026-11-05 removals,
+retained controls, baseline comparisons and CLI report/deadline regression.
+
 Use real CLI/LSP consumers with independent inputs and expectations. Preserve raw output, exit codes, source and executable hashes, and failed runs. Run related checks at the end of a coherent change. Do not infer acceptance from compilation alone.
 
 ```sh

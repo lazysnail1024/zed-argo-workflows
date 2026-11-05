@@ -64,20 +64,10 @@ fn existing_directory(path: &Path) -> Result<bool, String> {
 }
 
 fn directory(path: &Path) -> Result<(), String> {
-    directory_with_create(path, |path| fs::create_dir(path))
-}
-
-fn directory_with_create(
-    path: &Path,
-    create: impl FnOnce(&Path) -> std::io::Result<()>,
-) -> Result<(), String> {
-    if existing_directory(path)? {
-        return Ok(());
-    }
-    match create(path) {
+    match fs::create_dir(path) {
         Ok(()) => Ok(()),
-        // Another process can create the shared root after our initial check.
-        // Recheck its type instead of treating that benign race as a failure.
+        // Creation is atomic: an existing root, including another installer's
+        // winning creation, is usable only when it is a regular directory.
         Err(error)
             if error.kind() == std::io::ErrorKind::AlreadyExists && existing_directory(path)? =>
         {
