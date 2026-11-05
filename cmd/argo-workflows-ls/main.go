@@ -89,7 +89,9 @@ func runContext(parent context.Context, args []string) int {
 		defer cancel()
 		ctx = analysis.WithInvocation(ctx)
 		input, err := workspace.LoadContext(ctx, *root, *scope, *target)
+		var analysisErr error
 		if err != nil {
+			analysisErr = ctx.Err()
 			configurationErrors = append(configurationErrors, err.Error())
 		} else {
 			for _, t := range input.Targets {
@@ -134,6 +136,9 @@ func runContext(parent context.Context, args []string) int {
 				}
 			})
 			externalDiagnostics, completion := analysis.ExternalDiagnostics(ctx, input)
+			// Freeze the terminal analysis state before assembling and publishing
+			// its report. Output backpressure must not change a completed result.
+			analysisErr = ctx.Err()
 			for _, document := range input.Documents {
 				if !completion[document.Snapshot.URI()].Completed {
 					incompleteTargets[document.Target.ID] = true
@@ -143,7 +148,7 @@ func runContext(parent context.Context, args []string) int {
 				}
 			}
 			for i := range targets {
-				targets[i].AnalysisComplete = !targets[i].Experimental && !incompleteTargets[targets[i].ID] && !input.IncompleteScopes[targets[i].ID] && len(input.NotEvaluated) == 0 && ctx.Err() == nil
+				targets[i].AnalysisComplete = !targets[i].Experimental && !incompleteTargets[targets[i].ID] && !input.IncompleteScopes[targets[i].ID] && len(input.NotEvaluated) == 0 && analysisErr == nil
 			}
 			for uri, local := range localResults {
 				done := completion[uri]
@@ -165,10 +170,10 @@ func runContext(parent context.Context, args []string) int {
 				configurationErrors = append(configurationErrors, "file is not part of the selected scope")
 			}
 		}
-		if ctx.Err() != nil {
-			notEvaluated = append(notEvaluated, ctx.Err().Error())
+		if analysisErr != nil {
+			notEvaluated = append(notEvaluated, analysisErr.Error())
 		}
-		complete := len(configurationErrors) == 0 && len(notEvaluated) == 0 && ctx.Err() == nil
+		complete := len(configurationErrors) == 0 && len(notEvaluated) == 0 && analysisErr == nil
 		if *format == "json" {
 			emit(map[string]any{"reportSchemaVersion": 1, "product": "argo-workflows", "toolVersion": buildinfo.ServerVersion, "catalogHash": compat.Hash(), "inputSource": "disk", "validationScope": "local-editing-contract", "analysisComplete": complete, "notEvaluated": notEvaluated, "filesAnalyzed": filesAnalyzed, "resourcesAnalyzed": resourcesAnalyzed, "targets": targets, "diagnostics": diagnostics, "configurationErrors": configurationErrors, "elapsedMilliseconds": time.Since(started).Milliseconds()})
 		} else {
@@ -179,7 +184,7 @@ func runContext(parent context.Context, args []string) int {
 				fmt.Fprintln(os.Stderr, "analysis incomplete:", notEvaluated, configurationErrors)
 			}
 		}
-		if ctx.Err() != nil {
+		if analysisErr != nil {
 			return 3
 		}
 		if !complete {

@@ -32,7 +32,7 @@ NATIVE = (
     "wf-local-rename", "wf-bounded-scalars", "wf-bounded-completion",
     "wf-toolkit-budget", "wf-remediation-helm-boundary",
     "wf-reaudit-rename", "wf-reaudit-actions", "wf-reaudit-queries",
-    "wf-reaudit-reconciliation",
+    "wf-reaudit-reconciliation", "wf-report-deadline",
 )
 EXTENDED = (
     "wf-audit-gaps", "wf-lifecycle", "wf-lifecycle-gaps",

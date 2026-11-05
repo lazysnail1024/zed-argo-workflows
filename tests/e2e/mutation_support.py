@@ -42,6 +42,15 @@ class Mutation:
 
 MUTATIONS = (
     Mutation(
+        "report-deadline-exit", "core", "completed report / slow stdout", "cmd/argo-workflows-ls/main.go",
+        (("\t\tif analysisErr != nil {\n\t\t\treturn 3\n\t\t}",
+          "\t\tif ctx.Err() != nil {\n\t\t\treturn 3\n\t\t}"),),
+        "wf-report-deadline.py",
+        tuple((name, "exitMatchesPublishedOutcome") for name in (
+            "json-success", "json-error", "human-success",
+        )),
+    ),
+    Mutation(
         "unknown-target", "core", "ablate-wf2.py", "compat/catalog.go",
         ((
             'return fmt.Errorf("unknown target version: %s; use accepted target 3.6.0 or an exact experimental version from compat/catalog.lock.json; remove an editor targetVersion override to restore the file pin", version)',

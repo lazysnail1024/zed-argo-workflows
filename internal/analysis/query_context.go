@@ -81,7 +81,7 @@ func queryField(ctx context.Context, snapshot source.Snapshot, version string, p
 		retryValue := false
 		for _, doc := range view.Documents() {
 			root := doc.Root()
-			path, _, name, found := markerPath(queryCtx, root, marker, span.Start+len(before), nil)
+			path, name, found := markerPath(queryCtx, root, marker, span.Start+len(before), nil)
 			if !found {
 				continue
 			}
@@ -196,22 +196,22 @@ func queryKeyMarker(ctx context.Context, root yamlview.Node) string {
 	return marker
 }
 
-func markerPath(ctx context.Context, node yamlview.Node, marker string, markerStart int, path []string) ([]string, yamlview.Node, string, bool) {
+func markerPath(ctx context.Context, node yamlview.Node, marker string, markerStart int, path []string) ([]string, string, bool) {
 	if ctx.Err() != nil {
-		return nil, yamlview.Node{}, "", false
+		return nil, "", false
 	}
 	if node.Kind() == yamlview.Mapping {
 		for _, m := range node.Members() {
 			name := stringValue(m.Key)
 			if name == marker && m.Key.Span().Start == markerStart {
-				return path, node, name, true
+				return path, name, true
 			}
 			next := append(append([]string(nil), path...), name)
 			if m.Value.Kind() == yamlview.Scalar && m.Value.Span().Start == markerStart && stringValue(m.Value) == marker {
-				return next, node, name, true
+				return next, name, true
 			}
-			if p, n, k, ok := markerPath(ctx, m.Value, marker, markerStart, next); ok {
-				return p, n, k, true
+			if p, k, ok := markerPath(ctx, m.Value, marker, markerStart, next); ok {
+				return p, k, true
 			}
 		}
 	}
@@ -219,14 +219,14 @@ func markerPath(ctx context.Context, node yamlview.Node, marker string, markerSt
 		for i, n := range node.Elements() {
 			next := append(append([]string(nil), path...), strconv.Itoa(i))
 			if n.Kind() == yamlview.Scalar && n.Span().Start == markerStart && stringValue(n) == marker {
-				return next, node, "", true
+				return next, "", true
 			}
-			if p, parent, k, ok := markerPath(ctx, n, marker, markerStart, next); ok {
-				return p, parent, k, true
+			if p, k, ok := markerPath(ctx, n, marker, markerStart, next); ok {
+				return p, k, true
 			}
 		}
 	}
-	return nil, yamlview.Node{}, "", false
+	return nil, "", false
 }
 
 // Use CST collection boundaries to inherit flow context across physical lines.

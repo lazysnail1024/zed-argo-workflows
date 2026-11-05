@@ -10,28 +10,6 @@ import (
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
 )
 
-// PreparseBatch warms only immutable CST views for a small, ordered batch.
-// The caller still evaluates every document sequentially in its original
-// invocation: projections, target selection and expansion admission are not
-// worker work. Large documents and cache misses outside the batch retain the
-// ordinary parseView path.
-func PreparseBatch(ctx context.Context, documents []workspace.Document) int {
-	if len(documents) == 0 {
-		return 0
-	}
-	workers := min(4, runtime.GOMAXPROCS(0), len(documents))
-	if workers < 2 {
-		return 1
-	}
-	batch := planViews(ctx, documents, workers)
-	if len(batch.pending) < 2 {
-		return batch.count
-	}
-	batch.start(ctx)
-	batch.admit(ctx)
-	return batch.count
-}
-
 // VisitPreparsedDocuments overlaps one bounded batch of immutable CST parsing
 // with sequential validation of the current batch. Only the owner plans work,
 // admits views and invokes visit; workers never access invocation maps or the

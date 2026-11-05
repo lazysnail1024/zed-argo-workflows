@@ -12,8 +12,7 @@ import sys
 
 
 def exercise(invoke, record, fixture, inputs, output, common, wasm_inputs):
-    prefix = "tools" if (fixture / "tools/candidate.py").is_file() else "scripts"
-    tool = [sys.executable, fixture / prefix / "candidate.py"]
+    tool = [sys.executable, fixture / "scripts/candidate.py"]
     version, commit = common[1], common[3]
     invoke("candidate-version-without-tag", tool + ["version", "--source-commit", commit])
     invoke("candidate-requested-version-mismatch", tool + ["version", "--source-commit", commit,
@@ -24,6 +23,29 @@ def exercise(invoke, record, fixture, inputs, output, common, wasm_inputs):
         if not separator:
             raise ValueError("Expected variant=path for existing compiled WASM")
         wasm += ["--wasm", variant + "=" + str(Path(path).absolute())]
+    # The Workflows release record has one canonical binarySha256 field. A
+    # copied schema from another product must not become an implicit fallback.
+    rejected = []
+    native_folder = inputs / "linux-amd64"
+    native_record = next(native_folder.glob("release-*.json"))
+    original_native = native_record.read_bytes()
+    for case in ("missing-native-hash", "wrong-native-hash", "legacy-native-hash"):
+        changed = json.loads(original_native)
+        if case == "wrong-native-hash":
+            changed["binarySha256"] = "0" * 64
+        else:
+            expected = changed.pop("binarySha256")
+            if case == "legacy-native-hash":
+                changed["package"]["binarySHA256"] = expected
+        destination = output / ("candidate-refused-" + case)
+        try:
+            native_record.write_text(json.dumps(changed), encoding="utf-8")
+            invoke("candidate-" + case + "-refused", tool + ["adapter", "--native-assets", native_folder,
+                   "--platform", "linux/amd64", *common, *wasm, "--output", destination],
+                   "Candidate native SHA-256 mismatch")
+            rejected.append(destination)
+        finally:
+            native_record.write_bytes(original_native)
     adapters = output / "candidate-adapter-controls"
     platforms = ["linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64", "windows/amd64"]
     for platform in platforms:
@@ -51,7 +73,6 @@ def exercise(invoke, record, fixture, inputs, output, common, wasm_inputs):
     name = sorted(metadata["wasm"])[0]
     artifact = chosen / name
     original_wasm = artifact.read_bytes()
-    rejected = []
 
     def refuse(name, reason):
         destination = output / ("candidate-refused-" + name)

@@ -15,12 +15,14 @@ from release import (ROOT, PLATFORMS, asset_name, canonical, clean_source,
                      collect_assets, content, digest, identity_matches,
                      output_directory, publish_directory, version_matches)
 
+WASM_VARIANTS = {"source", "developer-package"}
 
-def configuration():
+
+def extension_manifest():
     extension = tomllib.loads(content(ROOT / "extension.toml").decode())
-    variants = {"argocd-lsp": {"developer-package"},
-                "argo-workflows-lsp": {"source", "developer-package"}}
-    return extension, variants[extension["id"]]
+    if extension["id"] != "argo-workflows-lsp":
+        raise ValueError("Candidate requires the Workflows extension ID")
+    return extension
 
 
 def candidate_version(commit, requested=""):
@@ -52,8 +54,7 @@ def native_binary(folder, version, commit):
     if record.get("binaryAsset") != name:
         raise ValueError("Candidate native asset name mismatch")
     binary = content(folder / name)
-    expected = record.get("binarySha256", record["package"].get("binarySHA256"))
-    if not binary or digest(binary) != expected:
+    if not binary or digest(binary) != record.get("binarySha256"):
         raise ValueError("Candidate native SHA-256 mismatch")
     return platform, binary
 
@@ -86,7 +87,7 @@ def check_wasm(data, native_binaries):
 
 
 def adapter_metadata(version, commit, platform):
-    extension, _ = configuration()
+    extension = extension_manifest()
     return {"schemaVersion": 1, "kind": "adapter-ci-candidate", "extensionId": extension["id"],
             "repository": extension["repository"], "version": version, "sourceCommit": commit,
             "buildHost": platform, "target": "wasm32-wasip2", "sourceFiles": source_files(),
@@ -100,14 +101,13 @@ def stage_adapter(native_assets, wasm_inputs, output, version, commit, platform)
     native_platform, binary = native_binary(native_assets, version, commit)
     if platform != native_platform:
         raise ValueError("Adapter build host differs from its native release platform")
-    _, variants = configuration()
     paths = {}
     for item in wasm_inputs:
         name, separator, path = item.partition("=")
-        if not separator or name not in variants or name in paths:
+        if not separator or name not in WASM_VARIANTS or name in paths:
             raise ValueError("Unexpected or duplicate candidate WASM variant")
         paths[name] = Path(path)
-    if set(paths) != variants:
+    if set(paths) != WASM_VARIANTS:
         raise ValueError("Missing required candidate WASM variant")
     files, inventory = {}, {}
     for name, path in sorted(paths.items()):
@@ -127,7 +127,7 @@ def collect_candidate(native_inputs, adapter_inputs, output, version, commit):
     version_matches(version)
     clean_source(commit)
     output = output_directory(output)
-    _, variants = configuration()
+    names = {name + ".wasm" for name in WASM_VARIANTS}
     with tempfile.TemporaryDirectory(prefix=".candidate-", dir=output.parent) as temporary:
         stage = Path(temporary) / "candidate"
         stage.mkdir()
@@ -146,7 +146,6 @@ def collect_candidate(native_inputs, adapter_inputs, output, version, commit):
                 raise ValueError("Candidate adapter source identity or metadata mismatch")
             if record.get("nativeBinarySha256") != digest(binaries[platform]):
                 raise ValueError("Candidate adapter/native build mismatch")
-            names = {name + ".wasm" for name in variants}
             if (set(record.get("wasm", {})) != names
                     or {item.name for item in path.parent.iterdir()} != names | {"adapter.json"}):
                 raise ValueError("Unexpected or missing candidate adapter files; native payloads are forbidden")
@@ -164,7 +163,7 @@ def collect_candidate(native_inputs, adapter_inputs, output, version, commit):
             raise ValueError("Candidate requires adapter evidence from all five native hosts")
         files = {path.relative_to(stage).as_posix(): digest(content(path))
                  for path in sorted(stage.rglob("*")) if path.is_file()}
-        extension, _ = configuration()
+        extension = extension_manifest()
         report = {"schemaVersion": 1, "kind": "distribution-ci-candidate", "extensionId": extension["id"],
                   "version": version, "sourceCommit": commit, "platforms": native["platforms"],
                   "nativeBuildMode": "release", "files": dict(files),

@@ -189,9 +189,6 @@ func LoadContext(ctx context.Context, root, selected, override string) (Workspac
 func Load(root, selected, override string) (Workspace, error) {
 	return load(context.Background(), root, selected, override, nil, nil, nil)
 }
-func LoadWithConfig(root, selected, override, text string) (Workspace, error) {
-	return load(context.Background(), root, selected, override, &text, nil, nil)
-}
 func LoadEditor(ctx context.Context, root, selected, override string, overlay *string, roots []string, buffers map[string]source.Snapshot) (Workspace, error) {
 	return load(ctx, root, selected, override, overlay, roots, buffers)
 }

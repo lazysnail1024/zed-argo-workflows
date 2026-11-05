@@ -447,19 +447,24 @@ fn publication_failure_without_destination_is_visible_and_retryable() {
 }
 
 #[test]
-fn concurrent_root_creation_accepts_only_a_directory() {
+fn shared_root_creation_accepts_only_a_directory() {
+    let cache = Cache::new();
+    directory(&cache.root()).unwrap();
+    let sentinel = cache.root().join("keep");
+    fs::write(&sentinel, b"shared root").unwrap();
+    directory(&cache.root()).unwrap();
+    assert_eq!(fs::read(sentinel).unwrap(), b"shared root");
+
     for directory_wins in [true, false] {
         let cache = Cache::new();
-        let result = directory_with_create(&cache.root(), |path| {
-            // The initial absence check has completed; another process creates
-            // the shared path before our actual create_dir syscall.
-            if directory_wins {
-                fs::create_dir(path).unwrap();
-            } else {
-                fs::write(path, b"unexpected file").unwrap();
-            }
-            fs::create_dir(path)
-        });
+        // The actual mkdir call observes AlreadyExists when another installer
+        // wins. No callback or check-then-create window is needed to model it.
+        if directory_wins {
+            fs::create_dir(cache.root()).unwrap();
+        } else {
+            fs::write(cache.root(), b"unexpected file").unwrap();
+        }
+        let result = directory(&cache.root());
         assert_eq!(result.is_ok(), directory_wins);
         if !directory_wins {
             assert!(result.unwrap_err().contains("regular directory"));
@@ -851,6 +856,15 @@ fn windows_paths_are_validated_using_native_rules() {
 #[test]
 fn cache_symlinks_are_never_executed_or_overwritten() {
     use std::os::unix::fs::symlink;
+    let linked_root = Cache::new();
+    let outside_root = linked_root.0.join("outside-root");
+    fs::create_dir(&outside_root).unwrap();
+    symlink(&outside_root, linked_root.root()).unwrap();
+    assert!(directory(&linked_root.root())
+        .unwrap_err()
+        .contains("regular directory"));
+    assert_eq!(fs::read_dir(&outside_root).unwrap().count(), 0);
+
     let cache = Cache::new();
     let mut host = FakeHost::new(VERSION);
     let path = install(&cache.root(), "linux-amd64", VERSION, &mut host).unwrap();

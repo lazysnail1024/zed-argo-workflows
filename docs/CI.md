@@ -23,7 +23,7 @@ smaller packaging convenience, not the complete acceptance check.
 | Schema contracts | Linux amd64, semantic shard 0 | Actual CRD boundaries and separately built synthetic schema query/branch/projection fixtures |
 | Resource adversarial | Linux amd64 | Actual cgroup memory limits, oversized aggregate input, expression depth/width, buffer/snapshot limits, alias/merge budgets, subprocess output floods, timeout/cancellation and descendant reclamation |
 | Resource load | Linux amd64 | Existing 10,000-file/50 MiB workload, cold and active diagnostics, query semantics/latency, 600 edits over 60 seconds, 10,000 open/edit/close operations, memory retention, explicit CLI cancellation |
-| Mutation core | Linux amd64 | Passing baseline plus detection of seven specific semantic mutations |
+| Mutation core | Linux amd64 | Passing baseline plus detection of eight specific semantic mutations |
 | Mutation audit | Linux amd64 | Passing baseline plus ten targeted mutations for metadata Rename, missed-watcher recovery, configuration diagnostics, isolated-scope actions, completion acquisition and cache freshness |
 | Mutation resources | Linux amd64 | Passing baseline plus output-limit and descendant-reclamation mutations under a 512 MiB cgroup |
 
@@ -119,6 +119,7 @@ snapshot as the mutants; it cannot silently test a stale prebuilt executable.
 
 | Mutation | Existing consumer / required observable change |
 | --- | --- |
+| Post-output deadline recheck | A completed report keeps its 0/1 exit status while stdout is blocked past five seconds |
 | Unknown target admission | Delivery unknown-target report envelope |
 | Document version guard | LSP stale-version buffer semantics |
 | DAG cycle detection | Local workflow diagnostic codes |
@@ -191,7 +192,18 @@ immutable syntax views. The caller admits successful views in input order under
 the same cache budget, then performs schema checks, diagnostics and global
 alias/merge admission sequentially. Large files use the ordinary path. Errors
 are not cached, and cancellation joins the current parser workers before the CLI
-returns. The complete CLI still runs inside its original five-second deadline.
+returns. Analysis still runs inside its original five-second deadline.
+
+The CLI freezes cancellation/deadline state before publishing the completed
+report. Top-level and target completeness, reasons and the exit code use that
+same terminal state; a slow stdout reader cannot retroactively change a complete
+result into exit 3. `wf-report-deadline.py` runs on every native host and blocks
+output for more than five seconds after the first byte, checking complete JSON
+success/error reports and human output against exact diagnostic inventories.
+The core mutation restores the post-output live-clock check and must invalidate
+all three exit assertions. The separate `wf-bounded-external-counts.py` consumer
+continues to require a genuinely interrupted analysis with incomplete counts,
+explicit external-analysis/deadline reasons and exit 3 within its original bound.
 
 A small, documented [vendored JSON Schema queue patch](VENDORED_PATCHES.md)
 removes repeated linear lookup during cold CRD compilation while preserving

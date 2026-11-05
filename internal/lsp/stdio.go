@@ -46,7 +46,6 @@ type session struct {
 	externalFacts   *analysis.ExternalFacts
 	externalResults map[string]externalResult
 	facts           *analysis.Facts
-	factsEpoch      uint64
 	factInput       *workspace.Workspace
 	factBoundary    string
 	factMixed       bool
@@ -494,23 +493,13 @@ func (s *session) refuseBuffer(uri string, version int32, reason string) error {
 // Domain evaluation, expansion admission and result ordering remain sequential
 // in this request's invocation; workers never share mutable analysis state.
 func appendWorkspaceSymbols(ctx context.Context, result []map[string]any, documents []workspace.Document, query string) []map[string]any {
-	for first := 0; first < len(documents); {
-		if ctx.Err() != nil {
-			return result
-		}
-		count := analysis.PreparseBatch(ctx, documents[first:])
-		for _, d := range documents[first : first+count] {
-			if ctx.Err() != nil {
-				return result
-			}
-			for _, symbol := range analysis.DomainSymbols(ctx, d.Snapshot, d.Target.Version) {
-				if strings.Contains(symbol.Name, query) {
-					result = append(result, map[string]any{"name": symbol.Name, "kind": symbol.Kind, "containerName": symbol.Container, "location": symbol.Location})
-				}
+	analysis.VisitPreparsedDocuments(ctx, documents, func(d workspace.Document) {
+		for _, symbol := range analysis.DomainSymbols(ctx, d.Snapshot, d.Target.Version) {
+			if strings.Contains(symbol.Name, query) {
+				result = append(result, map[string]any{"name": symbol.Name, "kind": symbol.Kind, "containerName": symbol.Container, "location": symbol.Location})
 			}
 		}
-		first += count
-	}
+	})
 	return result
 }
 
