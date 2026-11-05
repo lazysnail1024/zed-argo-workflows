@@ -32,6 +32,7 @@ struct FakeHost {
     sums: Option<Vec<u8>>,
     identity: Value,
     failure: Option<&'static str>,
+    download_error: Option<(String, String)>,
     events: Vec<String>,
     installed: Option<String>,
     lookups: usize,
@@ -43,6 +44,7 @@ impl FakeHost {
             sums: None,
             identity: release_identity(version),
             failure: None,
+            download_error: None,
             events: vec![],
             installed: None,
             lookups: 0,
@@ -74,6 +76,11 @@ impl Host for FakeHost {
     }
     fn fetch(&mut self, url: &str, destination: &Path, _limit: u64) -> Result<(), String> {
         self.events.push(format!("fetch:{url}"));
+        if let Some((failed_url, message)) = &self.download_error {
+            if url == failed_url {
+                return Err(message.clone());
+            }
+        }
         if self.failure == Some("offline") {
             return Err("network unavailable".into());
         }
@@ -560,14 +567,70 @@ fn invalid_checksum_manifests_never_download_binary() {
 }
 
 #[test]
+fn download_failures_identify_the_exact_stage_and_preserve_offline_versions() {
+    for message in [
+        "HTTP 403 Forbidden",
+        "HTTP 404 Not Found",
+        "request timed out",
+    ] {
+        for (asset, phase) in [
+            ("SHA256SUMS".to_owned(), "checksum manifest"),
+            (asset_name("0.2.0", "linux-amd64").unwrap(), "native server"),
+        ] {
+            let cache = Cache::new();
+            let mut old = FakeHost::new(VERSION);
+            let old_path = install(&cache.root(), "linux-amd64", VERSION, &mut old).unwrap();
+            let old_bytes = fs::read(&old_path).unwrap();
+            let url = format!("{REPOSITORY}/releases/download/v0.2.0/{asset}");
+            let mut next = FakeHost::new("0.2.0");
+            next.download_error = Some((url.clone(), message.to_owned()));
+            let error = install(&cache.root(), "linux-amd64", "0.2.0", &mut next).unwrap_err();
+            for detail in [
+                phase,
+                &url,
+                message,
+                "v0.2.0",
+                "linux-amd64",
+                "settings.serverPath",
+            ] {
+                assert!(error.contains(detail), "missing {detail:?}: {error}");
+            }
+            assert_eq!(next.events.last(), Some(&format!("fetch:{url}")));
+            assert_eq!(next.executable_calls(), 0);
+            assert_eq!(next.probes(), 0);
+            assert_eq!(cache.entries(), 1);
+            assert_eq!(fs::read(&old_path).unwrap(), old_bytes);
+            old.failure = Some("offline");
+            old.events.clear();
+            assert_eq!(
+                install(&cache.root(), "linux-amd64", VERSION, &mut old).unwrap(),
+                old_path
+            );
+            assert_eq!(old.network_calls(), 0);
+            next.download_error = None;
+            let new_path = install(&cache.root(), "linux-amd64", "0.2.0", &mut next).unwrap();
+            assert_ne!(new_path, old_path);
+            assert_eq!(fs::read(new_path).unwrap(), next.bytes);
+            assert_eq!(fs::read(old_path).unwrap(), old_bytes);
+            assert_eq!(cache.entries(), 2);
+        }
+    }
+}
+
+#[test]
 fn interrupted_fetch_chmod_or_probe_failure_leaves_retryable_cache() {
     for failure in ["interrupted", "permissions", "identity"] {
         let cache = Cache::new();
         let mut host = FakeHost::new(VERSION);
         host.failure = Some(failure);
-        assert!(install(&cache.root(), "linux-amd64", VERSION, &mut host).is_err());
+        let error = install(&cache.root(), "linux-amd64", VERSION, &mut host).unwrap_err();
         assert_eq!(cache.entries(), 0);
         if failure == "interrupted" {
+            assert!(error.contains(&format!(
+                "{REPOSITORY}/releases/download/v{VERSION}/{}",
+                asset_name(VERSION, "linux-amd64").unwrap()
+            )));
+            assert!(error.contains("connection interrupted after partial file"));
             assert_eq!(host.executable_calls(), 0);
             assert_eq!(host.probes(), 0);
         }

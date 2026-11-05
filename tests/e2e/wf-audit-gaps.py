@@ -135,8 +135,8 @@ class LSP:
         return self.wait(lambda x: x.get('id') == self.next_id)
     def diagnostics(self, uri, version):
         return self.wait(lambda x: x.get('method') == 'textDocument/publishDiagnostics' and x['params']['uri'] == uri and x['params'].get('version') == version)['params']['diagnostics']
-    def open(self, path, text, version=1):
-        self.send('textDocument/didOpen', {'textDocument': {'uri': path.as_uri(), 'version': version, 'languageId': 'yaml', 'text': text}})
+    def open(self, path, text, version=1, language_id='yaml'):
+        self.send('textDocument/didOpen', {'textDocument': {'uri': path.as_uri(), 'version': version, 'languageId': language_id, 'text': text}})
         return self.diagnostics(path.as_uri(), version)
     def change(self, path, text, version):
         self.send('textDocument/didChange', {'textDocument': {'uri': path.as_uri(), 'version': version}, 'contentChanges': [{'text': text}]})

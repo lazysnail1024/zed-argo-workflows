@@ -103,17 +103,31 @@ Explicit `render-check` and `lint-official` commands use user-selected local Hel
 
 ## Explicit Helm render task
 
+The extension registers both `YAML` (`yaml`) and `Helm` (`helm`), using the Helm
+language provided by the separate [Helm extension](https://github.com/cabrinha/helm.zed).
+Files under a chart's `templates/` directory are excluded from static Workflows
+analysis, including plain YAML there; use the explicit render task below to check
+the generated resources. Ordinary `templates/` directories without `Chart.yaml`
+and Argo expressions such as `{{workflow.name}}` remain eligible for normal
+analysis. Registering Helm does not change these boundaries.
+
+The native protocol acceptance suite checks the manifest mappings, unsaved
+changes, and closing/reopening the same URI with a different language ID. These
+stdio tests do not launch Zed. Actual Helm language selection, server attachment,
+and coexistence with YAML/Helm servers still require real Zed validation on each
+supported platform.
+
 Copy the entry in [examples/zed-tasks.json](examples/zed-tasks.json) into your project's `.zed/tasks.json` (merge with existing tasks). This POSIX/Linux example requires a shell and `mktemp`. Replace both absolute executable paths, chart and values paths before running it with **task: spawn**. The task explicitly selects Helm 3, chart, values and target 3.6.0 and creates a new evidence directory on each invocation. It never runs on save or downloads chart dependencies.
 
 The terminal shows the check report and evidence directory. Inspect `render-report.json` for the command, Helm version, exact input SHA-256 values and target; `helm.stdout`/`helm.stderr` preserve render output. A Helm failure is a tool error; successful rendering followed by Argo errors returns the check's diagnostic report. `rendered.yaml` is the source of diagnostic locations: no Helm-source mapping is guessed. Inputs changed during execution cause an explicit refusal; rerun after editing. Cancel the task in the terminal to stop it; commands also have a 30-second budget. Missing executables, wrong Helm major versions and incomplete checks remain visible failures.
 
-Chart symlinks and input sets exceeding 128 MiB or 20,000 chart files cannot provide complete provenance and are refused. Ordinary `templates/` directories without `Chart.yaml` and plain Argo expressions continue to use normal YAML analysis.
+Chart symlinks and input sets exceeding 128 MiB or 20,000 chart files cannot provide complete provenance and are refused.
 
 ## Troubleshooting and limits
 
 - If startup fails, check that the bundle matches your OS and architecture. Remove stale `serverPath` overrides. The adapter refuses invalid overrides and damaged metadata; reinstall the bundle if its files were modified.
 - Use `zed: open log` for adapter build and startup errors. Ensure rustup and the pinned toolchain are available to Zed.
-- Confirm the file uses YAML mode and the language server is enabled. Keep general YAML support enabled; existing schema associations may produce duplicate diagnostics.
+- Confirm the file uses YAML or Helm mode and the language server is enabled. Helm mode requires the separate Helm language extension, and chart template sources retain the boundary described above. Keep general YAML support enabled; existing schema associations may produce duplicate diagnostics.
 - Hover a supported field to see the effective target, accepted/experimental status, scope and selection source. Use `explain-config` to inspect effective targets. Remove stale Zed target overrides before troubleshooting file pins.
 - `WF_ANALYSIS_UNAVAILABLE` means acquisition or configuration failed; `WF_ANALYSIS_INCOMPLETE` means only part of the input could be checked. Fix the reported cause to recheck. An empty successful diagnostic list is not used for these failures.
 - The configuration file itself reports `WF_CONFIGURATION_ERROR` for invalid syntax or effective target settings. Correcting it clears that error and rechecks affected workflows; a valid configuration does not receive workflow reference-analysis warnings.

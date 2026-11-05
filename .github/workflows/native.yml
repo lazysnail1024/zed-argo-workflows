@@ -31,7 +31,29 @@ env:
   MACOSX_DEPLOYMENT_TARGET: '13.0'
 
 jobs:
+  prepare:
+    name: Resolve exact candidate source and version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14.0'
+      - name: Validate clean source and matching stable manifests without requiring a tag
+        id: version
+        env:
+          REQUESTED_VERSION: ${{ inputs.release_version }}
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: python scripts/candidate.py version --source-commit "$SOURCE_COMMIT" --requested-version "$REQUESTED_VERSION" >> "$GITHUB_OUTPUT"
+
   native:
+    needs: prepare
     name: Native / ${{ matrix.platform }}
     strategy:
       fail-fast: false
@@ -70,6 +92,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -80,7 +103,7 @@ jobs:
           python-version: '3.14.0'
       - name: Build actual native server and record source/toolchain identity
         id: build
-        run: python tests/ci/run.py build --platform "${{ matrix.platform }}" --release-version "${{ inputs.release_version }}" --output artifacts/ci/build
+        run: python tests/ci/run.py build --platform "${{ matrix.platform }}" --release-version "${{ needs.prepare.outputs.version }}" --output artifacts/ci/build
       - name: Execute CLI and stdio LSP semantic consumers
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: python tests/ci/run.py suite --suite native --binary artifacts/ci/build/${{ matrix.binary }} --output artifacts/ci/native
@@ -103,12 +126,19 @@ jobs:
         run: python tests/ci/run.py wasm --package artifacts/ci/package/package.json --output artifacts/ci/wasm-package
       - name: Verify native release staging and aggregate refusal controls
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: python tests/e2e/release-distribution.py --platform "${{ matrix.platform }}" --output artifacts/ci/release-e2e
+        run: python tests/e2e/release-distribution.py --platform "${{ matrix.platform }}" --output artifacts/ci/release-e2e --wasm source=artifacts/ci/wasm-source/zed_argo_workflows.wasm --wasm developer-package=artifacts/ci/wasm-package/zed_argo_workflows.wasm
       - name: Stage exact native release assets
-        if: ${{ inputs.release_version != '' }}
-        run: python scripts/release.py stage --build artifacts/ci/build/build.json --version "${{ inputs.release_version }}" --source-commit "${{ github.sha }}" --output artifacts/ci/release-assets
+        run: python scripts/release.py stage --build artifacts/ci/build/build.json --version "${{ needs.prepare.outputs.version }}" --source-commit "${{ github.sha }}" --output artifacts/ci/release-assets
+      - name: Validate and stage traceable adapter candidates without native payloads
+        run: python scripts/candidate.py adapter --native-assets artifacts/ci/release-assets --platform "${{ matrix.platform }}" --version "${{ needs.prepare.outputs.version }}" --source-commit "${{ github.sha }}" --wasm source=artifacts/ci/wasm-source/zed_argo_workflows.wasm --wasm developer-package=artifacts/ci/wasm-package/zed_argo_workflows.wasm --output artifacts/ci/adapter-candidate
+      - name: Retain adapter candidate inputs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: workflows-adapter-${{ matrix.artifact }}
+          path: artifacts/ci/adapter-candidate/
+          if-no-files-found: error
+          retention-days: 30
       - name: Retain per-platform release assets
-        if: ${{ inputs.release_version != '' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: workflows-release-${{ matrix.artifact }}
@@ -126,6 +156,7 @@ jobs:
           retention-days: 30
 
   extended:
+    needs: prepare
     name: Linux semantic / shard ${{ matrix.shard }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
@@ -139,6 +170,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -148,7 +180,7 @@ jobs:
           python-version: '3.14.0'
       - name: Build actual native server
         id: build
-        run: python tests/ci/run.py build --platform linux/amd64 --release-version "${{ inputs.release_version }}" --output artifacts/ci/build
+        run: python tests/ci/run.py build --platform linux/amd64 --release-version "${{ needs.prepare.outputs.version }}" --output artifacts/ci/build
       - name: Install checksum-pinned offline oracle tools
         run: python tests/ci/install-tools.py --output artifacts/ci/tools
       - name: Execute extended existing consumers
@@ -167,6 +199,7 @@ jobs:
           retention-days: 30
 
   resources:
+    needs: prepare
     name: Linux resources / ${{ matrix.suite }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -180,6 +213,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -188,7 +222,7 @@ jobs:
         with:
           python-version: '3.14.0'
       - name: Build outside measured cgroups
-        run: python tests/ci/run.py build --platform linux/amd64 --release-version "${{ inputs.release_version }}" --output artifacts/ci/build
+        run: python tests/ci/run.py build --platform linux/amd64 --release-version "${{ needs.prepare.outputs.version }}" --output artifacts/ci/build
       - name: Execute existing consumers with enforced CPU, memory and swap limits
         run: python tests/ci/resources.py --suite ${{ matrix.suite }} --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/resources
       - name: Retain resource measurements, limits, raw traffic and failed inputs
@@ -215,6 +249,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -258,3 +293,46 @@ jobs:
           if set(results) != expected or failures:
               raise SystemExit('Mandatory checks did not all succeed: ' + json.dumps(failures))
           PY
+
+  candidate:
+    name: Verify complete distribution candidate (no publication)
+    needs: [prepare, acceptance]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14.0'
+      - name: Download native assets from this exact workflow run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: workflows-release-*
+          path: artifacts/candidate-inputs/native
+      - name: Download corresponding adapter candidates
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: workflows-adapter-*
+          path: artifacts/candidate-inputs/adapters
+      - name: Verify five real platforms, licenses, source identity and all SHA-256 inventories
+        run: python scripts/candidate.py collect --native-inputs artifacts/candidate-inputs/native --adapter-inputs artifacts/candidate-inputs/adapters --version "${{ needs.prepare.outputs.version }}" --source-commit "${{ github.sha }}" --output artifacts/distribution-candidate
+      - name: Retain validated candidate for review (not an installation channel)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: workflows-distribution-candidate-${{ needs.prepare.outputs.version }}-${{ github.sha }}
+          path: artifacts/distribution-candidate/
+          if-no-files-found: error
+          retention-days: 30
+      - name: State the remaining publication and editor gates
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## Distribution candidate verified
+
+          Five native release-mode builds and portable WASM adapter evidence belong to this exact commit.
+          SHA-256 inventories, native legal archives and source identity passed the existing release collector.
+          Actions artifacts expire after 30 days. No tag, GitHub Release or Zed store installation channel was created.
+          Real Zed editor acceptance on all five platforms and official registry review remain required.
+          EOF

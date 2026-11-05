@@ -326,13 +326,19 @@ fn install_with_rename<H: Host>(
     let result = (|| {
         let url = format!("{REPOSITORY}/releases/download/v{version}");
         let sums = stage.join("SHA256SUMS");
-        host.fetch(&format!("{url}/SHA256SUMS"), &sums, MAX_CHECKSUMS)?;
+        let sums_url = format!("{url}/SHA256SUMS");
+        host.fetch(&sums_url, &sums, MAX_CHECKSUMS)
+            .map_err(|error| {
+                format!("Cannot download checksum manifest from {sums_url}: {error}")
+            })?;
         if !regular(&sums, MAX_CHECKSUMS)? {
             return Err("Missing or oversized release checksum manifest".into());
         }
         let expected = checksum(&fs::read(&sums).map_err(|error| error.to_string())?, &asset)?;
         let binary = stage.join(&asset);
-        host.fetch(&format!("{url}/{asset}"), &binary, MAX_BINARY)?;
+        let binary_url = format!("{url}/{asset}");
+        host.fetch(&binary_url, &binary, MAX_BINARY)
+            .map_err(|error| format!("Cannot download native server from {binary_url}: {error}"))?;
         if !regular(&binary, MAX_BINARY)? || digest(&binary)? != expected {
             return Err(format!(
                 "SHA-256 mismatch for {asset}; refusing to execute downloaded bytes"
