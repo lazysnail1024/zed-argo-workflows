@@ -27,6 +27,8 @@ NATIVE = (
     "wf-schema-query-targets", "wf-domain-queries", "wf-quickfixes",
     "wf-local-rename", "wf-bounded-scalars", "wf-bounded-completion",
     "wf-toolkit-budget", "wf-remediation-helm-boundary",
+    "wf-reaudit-rename", "wf-reaudit-actions", "wf-reaudit-queries",
+    "wf-reaudit-reconciliation",
 )
 EXTENDED = (
     "wf-audit-gaps", "wf-lifecycle", "wf-lifecycle-gaps",
@@ -52,6 +54,7 @@ EXTENDED = (
     "wf-preflight-budget", "wf-expr-error-text", "wf-schema-query-sibling",
     "wf-remediation-matrix", "wf-remediation-graph",
     "wf2-assets", "wf5-snippets", "wf5-official", "wf5-render", "wf-remediation-render",
+    "wf-bundle-checksums", "wf-reaudit-query-io",
 )
 AGGREGATED = {
     "wf-argument-supply": "case", "wf-inheritance-family": "version",
@@ -220,6 +223,8 @@ def suite(args):
     for name in names:
         destination = args.output / name
         argv = [sys.executable, E2E / (name + ".py"), args.binary, destination]
+        if name == "wf-bundle-checksums":
+            argv = [sys.executable, E2E / (name + ".py"), destination]
         if name in ("wf-inheritance-family", "wf-aggregate-family", "wf-dag-dependency-family"):
             argv += ["--targets", "3.6.0"]
         env = os.environ.copy()
@@ -354,7 +359,7 @@ def main():
     p = sub.add_parser("wasm")
     p.add_argument("--bundled", type=Path)
     p = sub.add_parser("mutations")
-    p.add_argument("--group", choices=("core", "resources"), required=True)
+    p.add_argument("--group", choices=("core", "audit", "resources"), required=True)
     p = sub.add_parser("schema")
     p.add_argument("--binary", type=Path, required=True)
     for p in sub.choices.values():

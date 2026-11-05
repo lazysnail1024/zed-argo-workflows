@@ -36,9 +36,24 @@ func fingerprint(w workspace.Workspace) string {
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
+
+func actionFingerprint(w workspace.Workspace) string {
+	// Editor-only targets have no raw-config hash. Their safety proof still
+	// depends on effective reference policy and namespace, while changes to an
+	// unrelated configured scope must not invalidate an isolated action.
+	input, _ := json.Marshal(struct {
+		Documents        string
+		ReferencePolicy  string
+		DefaultNamespace string
+	}{fingerprint(w), w.Config.ReferencePolicy, w.Config.DefaultNamespace})
+	sum := sha256.Sum256(input)
+	return hex.EncodeToString(sum[:])
+}
+
 func versionedEdit(uri string, b buffer, plan edit.Plan) any {
 	return map[string]any{"documentChanges": []any{map[string]any{"textDocument": map[string]any{"uri": uri, "version": b.version}, "edits": analysis.PlanEdits(b.snapshot, plan)}}}
 }
+
 func (s *session) handleEdit(m message) (bool, int, error) {
 	if !s.versionedEdits {
 		return false, 0, s.failure(m.ID, -32602, "client does not support versioned documentChanges")
@@ -66,8 +81,8 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 			return false, 0, s.failure(m.ID, -32602, "experimental target edits are disabled")
 		}
 		b, opened := s.buffers[action.uri]
-		w, err := s.workspace(s.root(action.uri), action.scope)
-		if err != nil || !opened || b.snapshot.Revision() != action.revision || fingerprint(w) != action.fingerprint {
+		w, err := s.documentWorkspace(action.uri, action.scope)
+		if err != nil || !opened || b.snapshot.Revision() != action.revision || actionFingerprint(w) != action.fingerprint {
 			return false, 0, s.failure(m.ID, -32801, "code action input changed")
 		}
 		if _, err := edit.Apply(b.snapshot, b.snapshot.Revision()+1, action.plan); err != nil {
@@ -123,7 +138,7 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		}
 		s.actionSequence++
 		token := fmt.Sprintf("%d:%d", s.epoch, s.actionSequence)
-		s.actions[token] = pendingAction{uri: uri, title: fix.Title, fingerprint: fingerprint(w), epoch: s.epoch, revision: b.snapshot.Revision(), plan: fix.Plan}
+		s.actions[token] = pendingAction{uri: uri, title: fix.Title, fingerprint: actionFingerprint(w), epoch: s.epoch, revision: b.snapshot.Revision(), plan: fix.Plan}
 		result = append(result, map[string]any{"title": fix.Title, "kind": "quickfix", "data": map[string]any{"token": token}})
 		return false, 0, s.reply(m.ID, result)
 	}
@@ -174,7 +189,7 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		fixes := analysis.FieldFixes(ctx, b.snapshot, d.Target.Version, p.Range)
 		fixes = append(fixes, analysis.ValueFixes(ctx, w, d, p.Range)...)
 		scoped := scopeWorkspace(w, d.Target.ID)
-		requestFingerprint := fingerprint(scoped)
+		requestFingerprint := actionFingerprint(scoped)
 		for _, fix := range fixes {
 			if fix.Code == "FIX_FIELD_NAME" && analysis.SafeScopePlan(ctx, w, d, fix.Plan) != nil {
 				continue

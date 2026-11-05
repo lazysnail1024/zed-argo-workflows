@@ -38,6 +38,7 @@ type externalResult struct {
 }
 type session struct {
 	acquiredInputs  map[workspaceKey]string
+	usedInputs      map[workspaceKey]bool
 	queryResults    map[string]json.RawMessage
 	queryBytes      int
 	queryKey        string
@@ -164,6 +165,10 @@ func (s *session) root(uri string) string {
 type workspaceKey struct{ root, scope string }
 
 func (s *session) workspace(root, selected string) (workspace.Workspace, error) {
+	if s.usedInputs != nil {
+		// Each publication records its own dependencies, including cache hits.
+		s.usedInputs[workspaceKey{root, selected}] = true
+	}
 	if w, ok := s.workspaces[workspaceKey{root, selected}]; ok && s.context().Err() == nil {
 		return w, nil
 	}
@@ -316,6 +321,17 @@ func (s *session) publish(uri string) error {
 	}
 	if root == "" {
 		fmt.Fprintln(s.log, "document is outside workspace roots")
+		return s.write(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": params})
+	}
+	if configPath, err := filePath(uri); err == nil && filepath.Base(configPath) == ".argo-workflows-ls.yaml" {
+		var overlay *string
+		if opened {
+			text := b.snapshot.Text()
+			overlay = &text
+		}
+		if err := workspace.ValidateConfig(s.context(), filepath.Dir(configPath), s.override, overlay); err != nil {
+			params["diagnostics"] = []map[string]any{{"range": analysis.Range{}, "code": "WF_CONFIGURATION_ERROR", "source": "argo-workflows", "severity": 1, "message": err.Error()}}
+		}
 		return s.write(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": params})
 	}
 	selected := ""
@@ -553,26 +569,18 @@ func (s *session) handle(m message) (bool, int, error) {
 			}
 		}
 	}
-	// Only complete, freshly acquired scope inputs may reuse read-only results.
-	// Disk acquisition remains authoritative even without a watcher notification.
-	if m.Method == "textDocument/definition" || m.Method == "textDocument/references" || m.Method == "textDocument/completion" {
+	// Cross-file results require fresh scope input. Completion first checks its
+	// local fields and names below, so local queries never acquire a whole scope.
+	if m.Method == "textDocument/definition" || m.Method == "textDocument/references" {
 		var p struct {
 			TextDocument protocol.TextDocumentIdentifier `json:"textDocument"`
 		}
 		if json.Unmarshal(m.Params, &p) == nil {
 			uri := string(p.TextDocument.URI)
 			if d, err := s.queryDocument(uri); err == nil {
-				if w, err := s.workspace(s.root(uri), d.Target.Scope); err == nil && len(w.NotEvaluated) == 0 {
-					complete := true
-					for _, incomplete := range w.IncompleteScopes {
-						complete = complete && !incomplete
-					}
-					if complete {
-						sum := sha256.Sum256([]byte(m.Method + string(m.Params) + fingerprint(w)))
-						s.queryKey = hex.EncodeToString(sum[:])
-						if raw, ok := s.queryResults[s.queryKey]; ok {
-							return false, 0, s.reply(m.ID, raw)
-						}
+				if w, err := s.workspace(s.root(uri), d.Target.Scope); err == nil {
+					if raw, ok := s.cachedScopeQuery(m, w); ok {
+						return false, 0, s.reply(m.ID, raw)
 					}
 				}
 			}
@@ -670,14 +678,20 @@ func (s *session) handle(m message) (bool, int, error) {
 				err = nameErr
 			}
 			items := append(fields, names...)
-			if len(items) == 0 && analysis.ExternalNamePosition(ctx, document.Snapshot, document.Target.Version, pos) {
-				if w, e := s.workspace(s.root(string(document.Snapshot.URI())), ""); e == nil {
-					external, externalErr := analysis.CompleteExternalNames(ctx, scopeWorkspace(w, document.Target.ID), string(document.Snapshot.URI()), pos)
-					if externalErr != nil {
-						err = externalErr
-					}
-					items = append(items, external...)
+			if err == nil && len(items) == 0 && analysis.ExternalNamePosition(ctx, document.Snapshot, document.Target.Version, pos) {
+				uri := string(document.Snapshot.URI())
+				w, workspaceErr := s.documentWorkspace(uri, document.Target.Scope)
+				if workspaceErr != nil {
+					return false, 0, s.failure(m.ID, -32803, workspaceErr.Error())
 				}
+				if raw, ok := s.cachedScopeQuery(m, w); ok {
+					return false, 0, s.reply(m.ID, raw)
+				}
+				external, externalErr := analysis.CompleteExternalNames(ctx, scopeWorkspace(w, document.Target.ID), uri, pos)
+				if externalErr != nil {
+					err = externalErr
+				}
+				items = append(items, external...)
 			}
 			result = items
 		} else {
