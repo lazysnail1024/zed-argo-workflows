@@ -184,7 +184,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: [core, resources]
+        group: [core, audit, resources]
     env:
       CC: gcc-13
     steps:

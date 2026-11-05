@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Compile existing fault injections and require their expected semantic failures.
+"""Compile selected fault injections and require their expected semantic failures.
 
-The selected mutations come from the repository's historical ablate-* scripts.
-Behavior belongs to the existing E2E consumers; this module only validates the
+The selected mutations include historical ablate-* recipes and targeted re-audit
+regressions. Behavior belongs to the real E2E consumers; this module validates the
 baseline, compilation, complete evidence and the particular assertion each
 mutation is supposed to invalidate. A crash or an incomplete run is never a kill.
 """
@@ -62,8 +62,8 @@ MUTATIONS = (
     Mutation(
         "stale-action", "core", "ablate-edits.py", "internal/lsp/edits.go",
         ((
-            "if err != nil || !opened || b.snapshot.Revision() != action.revision || fingerprint(w) != action.fingerprint {",
-            "if false && (err != nil || !opened || b.snapshot.Revision() != action.revision || fingerprint(w) != action.fingerprint) {",
+            "if err != nil || !opened || b.snapshot.Revision() != action.revision || actionFingerprint(w) != action.fingerprint {",
+            "if false && (err != nil || !opened || b.snapshot.Revision() != action.revision || actionFingerprint(w) != action.fingerprint) {",
         ),),
         "wf-delivery.py", (("edits", "staleAction"),), ("--cases", "edits"),
     ),
@@ -89,6 +89,113 @@ MUTATIONS = (
             "yaml-plain-argument-true", "yaml-external-argument-plain",
         )),
         ("--cases=yaml-plain-template-true,yaml-plain-template-null,yaml-plain-template-123,yaml-plain-argument-true,yaml-external-argument-plain",),
+    ),
+    Mutation(
+        "metadata-raw-binding", "audit", "reaudit R-01", "internal/analysis/localrename.go",
+        ((
+            "\tmode := renameFieldMode(path)\n",
+            """\tmode := renameFieldMode(path)
+\tif len(path) > 0 {
+\t\tswitch path[len(path)-1] {
+\t\tcase "expression", "fromExpression":
+\t\t\tmode = renameExpressionField
+\t\tcase "from", "parameter":
+\t\t\tmode = renameVariableField
+\t\t}
+\t}
+""",
+        ),),
+        "wf-reaudit-rename.py", (("metadata-expression-literal", "exact_edits"),
+                                 ("metadata-prose", "prepare_exact")),
+        ("--cases", "metadata-expression-literal,metadata-prose,metadata-tagged,input-parameter-raw,input-artifact-raw,output-parameter-raw,output-artifact-raw"),
+    ),
+    Mutation(
+        "foreground-reconciliation-baseline", "audit", "reaudit R-02", "internal/lsp/serve.go",
+        ((
+            "\t\t\t\tif result.state.externalFacts != nil {",
+            """\t\t\t\tif !result.background {
+\t\t\t\t\tfor _, identities := range publicationInputs {
+\t\t\t\t\t\tfor key, value := range result.state.acquiredInputs {
+\t\t\t\t\t\t\tif _, used := identities[key]; used { identities[key] = value }
+\t\t\t\t\t\t}
+\t\t\t\t\t}
+\t\t\t\t}
+\t\t\t\tif result.state.externalFacts != nil {""",
+        ),),
+        "wf-reaudit-reconciliation.py",
+        (("create-after-query", "current_diagnostic_inventory"),
+         ("delete-after-query", "current_diagnostic_inventory")),
+    ),
+    Mutation(
+        "obsolete-publication-scope", "audit", "reaudit R-02", "internal/lsp/serve.go",
+        ((
+            "\t\t\t\t\tpublicationInputs[result.uri] = result.inputIdentities",
+            """\t\t\t\t\tfor key, value := range publicationInputs[result.uri] {
+\t\t\t\t\t\tif _, current := result.inputIdentities[key]; !current { result.inputIdentities[key] = value }
+\t\t\t\t\t}
+\t\t\t\t\tpublicationInputs[result.uri] = result.inputIdentities""",
+        ),),
+        "wf-reaudit-reconciliation.py", (("scope-rebinding", "obsolete_scope_not_reconciled"),),
+    ),
+    Mutation(
+        "opened-scope-action", "audit", "reaudit R-04", "internal/lsp/edits.go",
+        ((
+            "w, err := s.documentWorkspace(action.uri, action.scope)",
+            "w, err := s.workspace(s.root(action.uri), action.scope)",
+        ),),
+        "wf-reaudit-actions.py", (("excluded", "immediateExactEdit"),
+                                 ("internal-directory", "immediateExactEdit")),
+    ),
+    Mutation(
+        "isolated-action-configuration", "audit", "reaudit R-04", "internal/lsp/edits.go",
+        ((
+            "}{fingerprint(w), w.Config.ReferencePolicy, w.Config.DefaultNamespace})",
+            '}{fingerprint(w), "", ""})',
+        ),),
+        "wf-reaudit-actions.py", (("isolated-config-policy", "effectiveConfigChangeRefused"),
+                                 ("isolated-config-namespace", "effectiveConfigChangeRefused")),
+    ),
+    Mutation(
+        "configuration-diagnostic-path", "audit", "reaudit R-03", "internal/lsp/stdio.go",
+        ((
+            'if configPath, err := filePath(uri); err == nil && filepath.Base(configPath) == ".argo-workflows-ls.yaml" {',
+            'if configPath, err := filePath(uri); err == nil && false && filepath.Base(configPath) == ".argo-workflows-ls.yaml" {',
+        ),),
+        "wf-reaudit-queries.py", (("configuration-recovery", "valid_config_clean"),),
+        ("--cases", "configuration"),
+    ),
+    Mutation(
+        "local-completion-scope-reads", "audit", "reaudit R-05", "internal/lsp/stdio.go",
+        ((
+            'if m.Method == "textDocument/definition" || m.Method == "textDocument/references" {',
+            'if m.Method == "textDocument/definition" || m.Method == "textDocument/references" || m.Method == "textDocument/completion" {',
+        ),),
+        "wf-reaudit-query-io.py", (("local-completion-io", "no_scope_reads"),),
+        ("--cases", "local"),
+    ),
+    Mutation(
+        "external-completion-scope-reads", "audit", "reaudit R-05", "internal/lsp/stdio.go",
+        ((
+            "w, workspaceErr := s.documentWorkspace(uri, document.Target.Scope)",
+            'w, workspaceErr := s.workspace(s.root(uri), "")',
+        ),),
+        "wf-reaudit-query-io.py", (("external-completion-io", "no_unrelated_scope_reads"),),
+        ("--cases", "external"),
+    ),
+    Mutation(
+        "scope-query-fingerprint", "audit", "reaudit R-05", "internal/lsp/query_cache.go",
+        (("m.Method + string(m.Params) + fingerprint(w)", "m.Method + string(m.Params)"),),
+        "wf-reaudit-queries.py", (("external-completion-cache", "disk_change_invalidates_query"),),
+        ("--cases", "completion"),
+    ),
+    Mutation(
+        "scope-query-configuration", "audit", "reaudit R-05", "internal/lsp/query_cache.go",
+        ((
+            "}{w.Config.ReferencePolicy, w.Config.DefaultNamespace})",
+            '}{"", ""})',
+        ),),
+        "wf-reaudit-queries.py", (("isolated-completion-namespace", "default_namespace_invalidates_query"),),
+        ("--cases", "completion"),
     ),
     Mutation(
         "process-output-budget", "resources", "ablate-bounded.py", "cmd/argo-workflows-ls/tools.go",
@@ -262,7 +369,7 @@ def build(go: str, source: Path, binary: Path, env: dict[str, str], timeout: int
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("group", choices=("core", "resources", "all"))
+    parser.add_argument("group", choices=("core", "audit", "resources", "all"))
     parser.add_argument("output", type=Path, help="new output directory (must not already exist)")
     parser.add_argument("--variants", nargs="+", help="exact names from the selected group; unknown names fail")
     parser.add_argument("--test-prefix-json", default="[]", help="JSON command prefix for consumers only; builds remain outside a memory cgroup")

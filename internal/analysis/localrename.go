@@ -453,7 +453,51 @@ func (b *localRenameBindings) scalar(owner int, n yamlview.Node, expression bool
 		offset = end + 2
 	}
 }
-func (b *localRenameBindings) scan(owner int, n yamlview.Node, visible map[renameKey]bool, expression bool) {
+func (b *localRenameBindings) scanScalar(owner int, n yamlview.Node, visible map[renameKey]bool, path []string) {
+	mode := renameFieldMode(path)
+	if mode != renameVariableField || strings.Contains(n.Raw(), "{{") {
+		b.scalar(owner, n, mode == renameExpressionField, visible)
+		return
+	}
+	text, base, ok := renameText(n)
+	if !ok {
+		if !b.readOnly {
+			b.err = fmt.Errorf("raw variable has no exact location")
+		}
+		return
+	}
+	trimmed := strings.TrimLeft(text, " \t\r\n")
+	base += len(text) - len(trimmed)
+	text = trimmed
+	expr := strings.HasPrefix(text, "=")
+	if expr {
+		text = text[1:]
+		base++
+	}
+	var refs []memberReference
+	if expr {
+		var err error
+		refs, err = expressionReferences(b.ctx, text)
+		if err != nil {
+			if !b.readOnly {
+				b.err = fmt.Errorf("invalid raw expression: %w", err)
+			}
+			return
+		}
+	} else {
+		refs = memberReferences(text)
+	}
+	if !expr && (len(refs) != 1 || strings.Join(refs[0].parts, ".") != strings.TrimSpace(text)) {
+		if !b.readOnly {
+			b.err = fmt.Errorf("raw variable is not a static dotted key")
+		}
+		return
+	}
+	for _, ref := range refs {
+		b.chain(owner, ref, base, expr, visible)
+	}
+}
+func (b *localRenameBindings) scan(owner int, n yamlview.Node, visible map[renameKey]bool, path []string) {
 	b.resumeQuery()
 	if err := b.ctx.Err(); err != nil {
 		b.err = err
@@ -462,8 +506,8 @@ func (b *localRenameBindings) scan(owner int, n yamlview.Node, visible map[renam
 	if b.err != nil {
 		return
 	}
-	if n.Kind() == yamlview.Scalar {
-		b.scalar(owner, n, expression, visible)
+	if n.Kind() == yamlview.Scalar || renameFieldMode(path) == renameVariableField && !strings.Contains(n.Raw(), "{{") {
+		b.scanScalar(owner, n, visible, path)
 		return
 	}
 	for _, m := range n.Members() {
@@ -472,44 +516,10 @@ func (b *localRenameBindings) scan(owner int, n yamlview.Node, visible map[renam
 		if b.readOnly && key == "inline" {
 			continue
 		}
-		if (key == "from" || key == "parameter") && !strings.Contains(m.Value.Raw(), "{{") {
-			text, base, ok := renameText(m.Value)
-			if !ok {
-				b.err = fmt.Errorf("raw variable has no exact location")
-				continue
-			}
-			trimmed := strings.TrimLeft(text, " \t\r\n")
-			base += len(text) - len(trimmed)
-			text = trimmed
-			expr := strings.HasPrefix(text, "=")
-			if expr {
-				text = text[1:]
-				base++
-			}
-			var refs []memberReference
-			if expr {
-				var err error
-				refs, err = expressionReferences(b.ctx, text)
-				if err != nil {
-					b.err = fmt.Errorf("invalid raw expression: %w", err)
-					continue
-				}
-			} else {
-				refs = memberReferences(text)
-			}
-			if !expr && (len(refs) != 1 || strings.Join(refs[0].parts, ".") != strings.TrimSpace(text)) {
-				b.err = fmt.Errorf("raw variable is not a static dotted key")
-				continue
-			}
-			for _, ref := range refs {
-				b.chain(owner, ref, base, expr, visible)
-			}
-		} else {
-			b.scan(owner, m.Value, visible, key == "expression" || key == "fromExpression")
-		}
+		b.scan(owner, m.Value, visible, renameChildPath(path, key))
 	}
 	for _, v := range n.Elements() {
-		b.scan(owner, v, visible, false)
+		b.scan(owner, v, visible, renameChildPath(path, "*"))
 	}
 }
 func (b *localRenameBindings) taskNames(owner int, n yamlview.Node, depends bool) {
@@ -649,8 +659,10 @@ func collectLocalBindings(ctx context.Context, s source.Snapshot, version string
 	effectiveRoot := workflowRoot(projected, root)
 	effectiveRoot.shared = b.shared
 	spec := workflowMember(effectiveRoot, "spec")
+	specPath := []string{"spec"}
 	if kind == "CronWorkflow" {
 		spec = workflowMember(spec, "workflowSpec")
+		specPath = append(specPath, "workflowSpec")
 	}
 	templates := workflowMember(spec, "templates").Elements()
 	for _, template := range templates {
@@ -705,6 +717,9 @@ func collectLocalBindings(ctx context.Context, s source.Snapshot, version string
 	for i, t := range templates {
 		all := map[renameKey]bool{}
 		edges := map[string][]string{}
+		templatePath := renameChildPath(specPath, "templates", "*")
+		taskPath := renameChildPath(templatePath, "dag", "tasks", "*")
+		stepPath := renameChildPath(templatePath, "steps", "*", "*")
 		tasks := workflowMember(workflowMember(t, "dag"), "tasks").Elements()
 		b.taskNames(i, queryNode(workflowMember(workflowMember(t, "dag"), "target")), false)
 		for _, task := range tasks {
@@ -746,9 +761,9 @@ func collectLocalBindings(ctx context.Context, s source.Snapshot, version string
 						hookVisible[k] = v
 					}
 					hookVisible[renameKey{i, "task", workflowString(workflowMember(task, "name"))}] = true
-					b.scanValue(i, m.Value, hookVisible, false)
+					b.scanValue(i, m.Value, hookVisible, renameChildPath(taskPath, m.Name))
 				} else {
-					b.scanValue(i, m.Value, visible, false)
+					b.scanValue(i, m.Value, visible, renameChildPath(taskPath, m.Name))
 				}
 			}
 		}
@@ -765,9 +780,9 @@ func collectLocalBindings(ctx context.Context, s source.Snapshot, version string
 							hookVisible[key] = value
 						}
 						hookVisible[renameKey{i, "step", workflowString(workflowMember(step, "name"))}] = true
-						b.scanValue(i, m.Value, hookVisible, false)
+						b.scanValue(i, m.Value, hookVisible, renameChildPath(stepPath, m.Name))
 					} else {
-						b.scanValue(i, m.Value, previous, false)
+						b.scanValue(i, m.Value, previous, renameChildPath(stepPath, m.Name))
 					}
 				}
 			}
@@ -786,17 +801,17 @@ func collectLocalBindings(ctx context.Context, s source.Snapshot, version string
 			if key == "outputs" {
 				visible = all
 			}
-			b.scanValue(i, m.Value, visible, false)
+			b.scanValue(i, m.Value, visible, renameChildPath(templatePath, m.Name))
 		}
 	}
 	for _, m := range spec.Members() {
 		if m.Name != "templates" {
-			b.scanValue(-1, m.Value, nil, false)
+			b.scanValue(-1, m.Value, nil, renameChildPath(specPath, m.Name))
 		}
 	}
 	for _, m := range effectiveRoot.Members() {
 		if m.Name != "spec" {
-			b.scanValue(-1, m.Value, nil, false)
+			b.scanValue(-1, m.Value, nil, []string{m.Name})
 		}
 	}
 	if readOnly {
@@ -963,9 +978,9 @@ func (b *localRenameBindings) hooksValue(n workflowValue, templates []workflowVa
 		b.callValue(hook.Value, "template", workflowMember(hook.Value, "arguments"), templates)
 	}
 }
-func (b *localRenameBindings) scanValue(owner int, n workflowValue, visible map[renameKey]bool, expression bool) {
+func (b *localRenameBindings) scanValue(owner int, n workflowValue, visible map[renameKey]bool, path []string) {
 	if !b.readOnly {
-		b.scan(owner, n.node, visible, expression)
+		b.scan(owner, n.node, visible, path)
 		return
 	}
 	b.resumeQuery()
@@ -973,9 +988,9 @@ func (b *localRenameBindings) scanValue(owner int, n workflowValue, visible map[
 		b.err = err
 		return
 	}
-	if n.Kind() == yamlview.Scalar {
+	if n.Kind() == yamlview.Scalar || renameFieldMode(path) == renameVariableField {
 		if node := queryNode(n); node.Kind() != yamlview.Empty {
-			b.scalar(owner, node, expression, visible)
+			b.scanScalar(owner, node, visible, path)
 		}
 		return
 	}
@@ -995,43 +1010,129 @@ func (b *localRenameBindings) scanValue(owner int, n workflowValue, visible map[
 		if key == "inline" {
 			continue
 		}
-		if (key == "from" || key == "parameter") && !strings.Contains(workflowString(child), "{{") {
-			node := queryNode(child)
-			text, base, ok := renameText(node)
-			if !ok {
-				continue
-			}
-			trimmed := strings.TrimLeft(text, " \t\r\n")
-			base += len(text) - len(trimmed)
-			text = trimmed
-			expr := strings.HasPrefix(text, "=")
-			if expr {
-				text = text[1:]
-				base++
-			}
-			var refs []memberReference
-			if expr {
-				var err error
-				refs, err = expressionReferences(b.ctx, text)
-				if err != nil {
-					continue
-				}
-			} else {
-				refs = memberReferences(text)
-			}
-			if !expr && (len(refs) != 1 || strings.Join(refs[0].parts, ".") != strings.TrimSpace(text)) {
-				continue
-			}
-			for _, ref := range refs {
-				b.chain(owner, ref, base, expr, visible)
-			}
-		} else {
-			b.scanValue(owner, child, visible, key == "expression" || key == "fromExpression")
-		}
+		b.scanValue(owner, child, visible, renameChildPath(path, key))
 	}
 	for _, value := range n.Elements() {
-		b.scanValue(owner, value, visible, false)
+		b.scanValue(owner, value, visible, renameChildPath(path, "*"))
 	}
+}
+
+type renameFieldKind uint8
+
+const (
+	renameTaggedField renameFieldKind = iota
+	renameExpressionField
+	renameVariableField
+)
+
+func renameChildPath(path []string, parts ...string) []string {
+	return append(append([]string(nil), path...), parts...)
+}
+
+// Untagged variables and Expr programs belong to specific Argo fields. The
+// same key inside metadata or another data mapping is still an ordinary string.
+// Both editable and projected read-only bindings use this classification.
+func renameFieldMode(path []string) renameFieldKind {
+	if len(path) == 0 || path[0] != "spec" {
+		return renameTaggedField
+	}
+	path = path[1:]
+	if len(path) > 0 && path[0] == "workflowSpec" {
+		path = path[1:]
+	}
+	if len(path) >= 2 && path[0] == "templates" && path[1] == "*" {
+		return renameTemplateField(path[2:])
+	}
+	if len(path) > 0 && path[0] == "templateDefaults" {
+		return renameTemplateField(path[1:])
+	}
+	if len(path) == 2 && path[0] == "retryStrategy" && path[1] == "expression" ||
+		len(path) == 4 && path[0] == "workflowMetadata" && path[1] == "labelsFrom" && path[3] == "expression" {
+		return renameExpressionField
+	}
+	return renameCallField(path)
+}
+
+func renameTemplateField(path []string) renameFieldKind {
+	if len(path) == 0 {
+		return renameTaggedField
+	}
+	switch path[0] {
+	case "inputs", "outputs":
+		return renameCollectionField(path[1:])
+	case "dag":
+		if len(path) >= 3 && path[1] == "tasks" && path[2] == "*" {
+			return renameCallField(path[3:])
+		}
+	case "steps":
+		if len(path) >= 3 && path[1] == "*" && path[2] == "*" {
+			return renameCallField(path[3:])
+		}
+	case "retryStrategy":
+		if len(path) == 2 && path[1] == "expression" {
+			return renameExpressionField
+		}
+	case "data":
+		if len(path) == 4 && path[1] == "transformation" && path[2] == "*" && path[3] == "expression" {
+			return renameExpressionField
+		}
+		if len(path) >= 3 && path[1] == "source" && path[2] == "artifactPaths" {
+			return renameArtifactField(path[3:])
+		}
+	case "resource":
+		if len(path) >= 3 && path[1] == "manifestFrom" && path[2] == "artifact" {
+			return renameArtifactField(path[3:])
+		}
+	case "hooks":
+		return renameCallField(path)
+	}
+	return renameTaggedField
+}
+
+func renameCallField(path []string) renameFieldKind {
+	if len(path) > 0 && path[0] == "hooks" {
+		if len(path) < 3 {
+			return renameTaggedField
+		}
+		path = path[2:]
+		if len(path) == 1 && path[0] == "expression" {
+			return renameExpressionField
+		}
+	}
+	if len(path) > 0 && path[0] == "arguments" {
+		return renameCollectionField(path[1:])
+	}
+	return renameTaggedField
+}
+
+func renameCollectionField(path []string) renameFieldKind {
+	if len(path) < 2 || path[1] != "*" {
+		return renameTaggedField
+	}
+	if path[0] == "artifacts" {
+		return renameArtifactField(path[2:])
+	}
+	if path[0] == "parameters" && len(path) == 4 && path[2] == "valueFrom" {
+		switch path[3] {
+		case "expression":
+			return renameExpressionField
+		case "parameter":
+			return renameVariableField
+		}
+	}
+	return renameTaggedField
+}
+
+func renameArtifactField(path []string) renameFieldKind {
+	if len(path) == 1 {
+		switch path[0] {
+		case "fromExpression":
+			return renameExpressionField
+		case "from":
+			return renameVariableField
+		}
+	}
+	return renameTaggedField
 }
 
 // Only Argo control fields can introduce external or exported identities.

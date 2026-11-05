@@ -32,7 +32,7 @@ jobs:
         run: |
           git archive --format=tar HEAD > build/source.tar
           python3 scripts/package-dev.py --binary build/argo-workflows-ls --sha256 "$(sha256sum build/argo-workflows-ls | cut -d' ' -f1)" --platform linux/amd64 --source-archive build/source.tar --source-sha256 "$(sha256sum build/source.tar | cut -d' ' -f1)" > artifacts/ci/package.json
-          sha256sum dist/*.zip > dist/SHA256SUMS
+          (cd dist && sha256sum ./*.zip > SHA256SUMS)
       - name: Verify actual development packaging
         run: python3 tests/e2e/dev-bundle.py build/argo-workflows-ls build/source.tar artifacts/ci/dev-bundle-e2e
       - name: Prepare the pinned Rust adapter toolchain

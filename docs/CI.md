@@ -24,6 +24,7 @@ smaller packaging convenience, not the complete acceptance check.
 | Resource adversarial | Linux amd64 | Actual cgroup memory limits, oversized aggregate input, expression depth/width, buffer/snapshot limits, alias/merge budgets, subprocess output floods, timeout/cancellation and descendant reclamation |
 | Resource load | Linux amd64 | Existing 10,000-file/50 MiB workload, cold and active diagnostics, query semantics/latency, 600 edits over 60 seconds, 10,000 open/edit/close operations, memory retention, explicit CLI cancellation |
 | Mutation core | Linux amd64 | Passing baseline plus detection of seven specific semantic mutations |
+| Mutation audit | Linux amd64 | Passing baseline plus ten targeted mutations for metadata Rename, missed-watcher recovery, configuration diagnostics, isolated-scope actions, completion acquisition and cache freshness |
 | Mutation resources | Linux amd64 | Passing baseline plus output-limit and descendant-reclamation mutations under a 512 MiB cgroup |
 
 The native matrix uses the same runner families and pinned toolchain/action
@@ -75,7 +76,7 @@ error codes. Changes in this PR remove several old weak checks:
   requests must still work. Shutdown must return null and exit cleanly.
 - Workspace removal must produce a new clearing publication after the removal;
   an earlier empty diagnostic cannot satisfy it.
-- Invalid configuration must visibly publish `WF_ANALYSIS_UNAVAILABLE`.
+- Invalid configuration must visibly publish `WF_ANALYSIS_UNAVAILABLE` on affected workflows and `WF_CONFIGURATION_ERROR` on the configuration buffer. Valid configuration and restored workflow diagnostic inventories must recover exactly.
 - Unknown target output is checked as a semantic mismatch, rather than crashing
   the Python test while indexing a nonexistent schema.
 - Historical exit expectations now match the current accepted-target policy:
@@ -89,9 +90,30 @@ The shared LSP client enforces absolute response deadlines even under unrelated
 message traffic and saves traffic/stderr on initialization or shutdown failure.
 CLI timeouts retain partial stdout/stderr and command receipts.
 
+The re-audit consumers also exercise metadata literals beside real tagged and
+raw references, applied Quick Fix bytes and version transitions for excluded or
+internal-directory buffers, and both creation and deletion of an external
+dependency without watcher notifications. The reconciliation consumer waits for
+the real 30-second timer, compares queried clients with no-query controls, and
+requires an unchanged idle Quick Fix to remain valid. Renaming a configured
+scope must retire its old publication dependencies instead of triggering work
+on every later maintenance tick. A missing publication is
+a semantic failure; a dead server or an incomplete run is an infrastructure
+failure. The Linux checksum consumer executes the production workflow command,
+then the README verification command against delivered and relocated ZIPs. It
+also requires tampering and the old path layout to fail verification.
+
+`wf-reaudit-query-io.py` runs in the Linux extended suite and counts actual file
+open events on its private fixtures with inotify. Local completion and isolated
+configuration validation must open zero resource files. Each external completion
+must acquire its selected dependency once and never read the unrelated scope.
+Every request must still return the correct nonempty candidates. Elapsed times
+are descriptive evidence, not the acceptance predicate; the existing constrained
+load and latency gates remain in place.
+
 ## Fault-injection gate
 
-`tests/e2e/ablate-ci.py` reuses selected existing ablation recipes through
+`tests/e2e/ablate-ci.py` runs selected historical and re-audit recipes through
 `mutation_support.py`. It builds its own baseline from the same isolated source
 snapshot as the mutants; it cannot silently test a stale prebuilt executable.
 
@@ -104,6 +126,16 @@ snapshot as the mutants; it cannot silently test a stale prebuilt executable.
 | Nested workspace ownership | Exactly one nested-root symbol |
 | Request cancellation | Explicit cancellation response |
 | YAML scalar edit encoding | Exact completion/edit bytes for five cases |
+| Metadata raw binding | Literal annotations remain untouched and plain prose cannot block Rename |
+| Foreground reconciliation baseline | New correct diagnostics after both creating and deleting a dependency, even after a foreground query |
+| Obsolete publication scope | Rebinding a configured scope does not cause periodic invalidation of unchanged input |
+| Editor-only scope acquisition | Exact immediate Quick Fix edits for excluded and internal-directory buffers |
+| Isolated action configuration identity | Policy and default-namespace changes invalidate a previously offered edit |
+| Configuration diagnostic path | A valid configuration buffer has an empty diagnostic inventory |
+| Local completion acquisition | Correct local candidates with no scope resource reads |
+| External completion acquisition | Correct selected-scope candidates with no unrelated scope reads |
+| Query cache input identity | A disk change without a watcher cannot reuse stale completion candidates |
+| Query cache effective configuration | Changing the default namespace changes isolated-document completion candidates |
 | Tool output budget | Bounded combined stdout/stderr |
 | Process tree cleanup | No surviving descendants after tool exit |
 
@@ -221,6 +253,7 @@ python tests/ci/run.py suite --suite extended --tools artifacts/ci/tools \
 python tests/ci/run.py schema \
   --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/schema
 python tests/ci/run.py mutations --group core --output artifacts/ci/mutations
+python tests/ci/run.py mutations --group audit --output artifacts/ci/audit-mutations
 ```
 
 On Windows use the `.exe` native filename. Extended integration/tool installation

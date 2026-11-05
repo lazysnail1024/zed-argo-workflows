@@ -36,6 +36,27 @@ type workerResult struct {
 // Publication is accepted per URI, so a later timeout cannot discard progress.
 func Serve(in io.Reader, out, log io.Writer) int {
 	s := session{out: out, log: log, buffers: map[string]buffer{}, actions: map[string]pendingAction{}, pending: map[string]bool{}}
+	publicationInputs := map[string]map[workspaceKey]string{}
+	refreshInputKeys := func() {
+		s.acquiredInputs = map[workspaceKey]string{}
+		for uri, identities := range publicationInputs {
+			root := s.root(uri)
+			if _, opened := s.buffers[uri]; !opened || root == "" {
+				delete(publicationInputs, uri)
+				continue
+			}
+			for key, value := range identities {
+				if key.root != root {
+					delete(identities, key)
+					continue
+				}
+				// Only the key set is used by the owner to schedule probes. The
+				// comparison below retains every URI's published identity, even
+				// when another URI has newer diagnostics for the same scope.
+				s.acquiredInputs[key] = value
+			}
+		}
+	}
 	type input struct {
 		message message
 		err     error
@@ -76,6 +97,7 @@ func Serve(in io.Reader, out, log io.Writer) int {
 		clone.factMixed = false
 
 		clone.acquiredInputs = map[workspaceKey]string{}
+		clone.usedInputs = nil
 		clone.queryKey = ""
 		clone.queryResults = map[string]json.RawMessage{}
 		for key, value := range s.queryResults {
@@ -157,12 +179,19 @@ func Serve(in io.Reader, out, log io.Writer) int {
 						break
 					}
 					output.Reset()
+					state.usedInputs = map[workspaceKey]bool{}
 					err = state.publish(uri)
 					if err != nil {
 						break
 					}
 					if ctx.Err() == nil {
-						if !send(workerResult{output: append([]byte(nil), output.Bytes()...), epoch: state.epoch, background: true, uri: uri}) {
+						identities := map[workspaceKey]string{}
+						for key := range state.usedInputs {
+							if value, ok := state.acquiredInputs[key]; ok {
+								identities[key] = value
+							}
+						}
+						if !send(workerResult{output: append([]byte(nil), output.Bytes()...), inputIdentities: identities, epoch: state.epoch, background: true, uri: uri}) {
 							return
 						}
 					}
@@ -264,6 +293,9 @@ func Serve(in io.Reader, out, log io.Writer) int {
 				abort(-32800, "server exiting")
 				return code
 			}
+			if m.Method == "textDocument/didClose" || m.Method == "workspace/didChangeWorkspaceFolders" {
+				refreshInputKeys()
+			}
 			if epoch != s.epoch {
 				abort(-32801, "input changed during request")
 				due = time.Now().Add(120 * time.Millisecond)
@@ -274,10 +306,11 @@ func Serve(in io.Reader, out, log io.Writer) int {
 				reconciliationCancel()
 				if !s.shutdown && result.epoch == s.epoch && !result.canceled {
 					changedRoots := map[string]bool{}
-					for key, current := range result.inputIdentities {
-						if s.acquiredInputs[key] != current {
-							changedRoots[key.root] = true
-							s.acquiredInputs[key] = current
+					for _, identities := range publicationInputs {
+						for key, published := range identities {
+							if current, ok := result.inputIdentities[key]; ok && current != published {
+								changedRoots[key.root] = true
+							}
 						}
 					}
 					if len(changedRoots) > 0 {
@@ -301,6 +334,12 @@ func Serve(in io.Reader, out, log io.Writer) int {
 					if _, err := out.Write(result.output); err != nil {
 						return 2
 					}
+					// The reconciliation baseline belongs to accepted diagnostics.
+					// A foreground query can observe newer disk input without having
+					// published those diagnostics. Advancing the baseline there would
+					// hide a missed watcher event from every subsequent probe.
+					publicationInputs[result.uri] = result.inputIdentities
+					refreshInputKeys()
 					delete(s.pending, result.uri)
 				}
 				continue
@@ -326,12 +365,6 @@ func Serve(in io.Reader, out, log io.Writer) int {
 					s.actionSequence = result.state.actionSequence
 					s.queryResults = result.state.queryResults
 					s.queryBytes = result.state.queryBytes
-				}
-				if s.acquiredInputs == nil {
-					s.acquiredInputs = map[workspaceKey]string{}
-				}
-				for key, value := range result.state.acquiredInputs {
-					s.acquiredInputs[key] = value
 				}
 				if result.state.externalFacts != nil {
 					s.externalFacts = result.state.externalFacts
