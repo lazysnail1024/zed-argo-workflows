@@ -291,5 +291,5 @@ Extension on a clean editor profile, no server override, verify pinned release d
 diagnostics, applied completion, definition/navigation, valid and refused rename,
 Quick Fix plus undo, settings forwarding, error visibility/recovery, cache repair,
 and coexistence with YAML/Helm servers. Record Zed version, OS/architecture,
-extension/native hashes, settings, logs and observed outcomes. Use the explicit per-platform checklist in [Distribution and store readiness](DISTRIBUTION.md). A previous local
+extension/native hashes, settings, logs and observed outcomes. Use the explicit per-platform checklist in [Distribution and store readiness](distribution.md). A previous local
 Zed result must not be attributed to a different CI artifact or another platform.

@@ -53,7 +53,7 @@ MUTATIONS = (
     Mutation(
         "unknown-target", "core", "ablate-wf2.py", "compat/catalog.go",
         ((
-            'return fmt.Errorf("unknown target version: %s; use accepted target 3.6.0 or an exact experimental version from compat/catalog.lock.json; remove an editor targetVersion override to restore the file pin", version)',
+            'return fmt.Errorf("unknown target version: %s; use auto or an exact supported version from compat/catalog.lock.json; remove an editor targetVersion override to restore the file pin", version)',
             "return nil",
         ),),
         "wf-delivery.py", (("unknown", "envelope"),), ("--cases", "unknown"),
