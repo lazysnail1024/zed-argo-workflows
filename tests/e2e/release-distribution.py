@@ -106,7 +106,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--platform", choices=sorted(PLATFORMS), required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--wasm", action="append", help="Existing compiled variant=path; required by CI candidate acceptance")
     args = parser.parse_args()
+    if args.wasm:
+        args.wasm = [name + "=" + str(Path(path).absolute()) for name, path in (item.split("=", 1) for item in args.wasm)]
     output = args.output.absolute()
     output.mkdir(parents=True, exist_ok=False)
     fixture = output / "synthetic-source-history"
@@ -255,6 +258,9 @@ def main():
             "everyDigestMatches": all(sha((combined / name).read_bytes()) == digest for name, digest in values.items()),
             "noSelfDigest": "SHA256SUMS" not in values})
         invoke("existing-collection-refused", tool + collect + ["--output", combined], "already exist")
+        if args.wasm:
+            from candidate_controls import exercise
+            exercise(invoke, record, fixture, inputs, output, common, args.wasm)
         chosen = inputs / "linux-amd64"
         held = output / "held-platform"
         chosen.rename(held)

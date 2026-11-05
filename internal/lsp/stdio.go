@@ -490,6 +490,30 @@ func (s *session) refuseBuffer(uri string, version int32, reason string) error {
 	return s.publishAffected(uri)
 }
 
+// appendWorkspaceSymbols reuses the CLI's bounded immutable CST preparse.
+// Domain evaluation, expansion admission and result ordering remain sequential
+// in this request's invocation; workers never share mutable analysis state.
+func appendWorkspaceSymbols(ctx context.Context, result []map[string]any, documents []workspace.Document, query string) []map[string]any {
+	for first := 0; first < len(documents); {
+		if ctx.Err() != nil {
+			return result
+		}
+		count := analysis.PreparseBatch(ctx, documents[first:])
+		for _, d := range documents[first : first+count] {
+			if ctx.Err() != nil {
+				return result
+			}
+			for _, symbol := range analysis.DomainSymbols(ctx, d.Snapshot, d.Target.Version) {
+				if strings.Contains(symbol.Name, query) {
+					result = append(result, map[string]any{"name": symbol.Name, "kind": symbol.Kind, "containerName": symbol.Container, "location": symbol.Location})
+				}
+			}
+		}
+		first += count
+	}
+	return result
+}
+
 func (s *session) handle(m message) (bool, int, error) {
 	if m.Method == "exit" {
 		if s.shutdown {
@@ -645,14 +669,10 @@ func (s *session) handle(m message) (bool, int, error) {
 			if err != nil {
 				return false, 0, s.failure(m.ID, -32803, err.Error())
 			}
-			for _, d := range w.Documents {
-				for _, symbol := range analysis.DomainSymbols(s.context(), d.Snapshot, d.Target.Version) {
-					if strings.Contains(symbol.Name, p.Query) {
-						result = append(result, map[string]any{"name": symbol.Name, "kind": symbol.Kind, "containerName": symbol.Container, "location": symbol.Location})
-					}
-				}
-			}
-
+			result = appendWorkspaceSymbols(s.context(), result, w.Documents, p.Query)
+		}
+		if s.context().Err() != nil {
+			return false, 0, s.failure(m.ID, -32800, "request timed out or cancelled")
 		}
 		if err := analysis.ExpansionError(s.context()); err != nil {
 			return false, 0, s.failure(m.ID, -32803, err.Error())

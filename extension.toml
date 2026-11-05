@@ -9,9 +9,10 @@ description = "Argo Workflows YAML diagnostics, navigation, and completion."
 
 [language_servers.argo-workflows-ls]
 name = "Argo Workflows Language Server"
-languages = ["YAML"]
+languages = ["YAML", "Helm"]
 [language_servers.argo-workflows-ls.language_ids]
 YAML = "yaml"
+Helm = "helm"
 
 [[capabilities]]
 kind = "process:exec"

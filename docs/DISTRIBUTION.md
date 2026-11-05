@@ -114,6 +114,64 @@ version with its corresponding cached release, or a compatible `serverPath` sele
 The installer never silently launches a different release. Cached execution still needs
 normal native execution permissions; offline support does not bypass OS restrictions.
 
+## CI distribution candidates without publication
+
+Pull requests, pushes to `main`, and manual runs of `native.yml` resolve the stable
+version from both `Cargo.toml` and `extension.toml` and require the exact clean
+`github.sha`. For a pull request this is GitHub's tested merge commit. The existing
+five native runners now build that version in release mode and execute the same
+required consumers. There is no second candidate native matrix. A reusable formal
+release caller can supply `release_version`; a mismatch is rejected.
+
+After each native host passes, the workflow reuses `scripts/release.py stage` to
+retain its raw executable, legal archive, and source/identity record. It also uses
+`scripts/candidate.py adapter` to retain the existing compiled `wasm32-wasip2`
+component outputs with an `adapter.json` manifest: extension/version, exact commit,
+build host, locked Rust toolchain, hashes of adapter sources and resource inputs,
+and each component's size/SHA-256. The Argo CD job retains its developer-package
+compile; the Workflows job retains both its ordinary-source and developer-package
+compiles. These WASM outputs are portable components; the recorded host identifies
+where the component was built, not a different WASM runtime target.
+
+The final candidate job runs only after all required native and acceptance gates
+succeed. It downloads assets from that same workflow run and calls the existing
+strict five-platform release collector. That collector rechecks native SHA-256,
+identity, provenance, legal archives and platform completeness. The candidate
+collector also requires adapter records from all five matching hosts, exact source
+and native-build identities, and a strict adapter-only file inventory. It verifies
+component headers/section boundaries, hashes and sizes and rejects embedded byte
+signatures of any of the five verified native executables. It does not introduce a
+second native or ZIP packager. Corruption, missing/duplicate hosts, mixed source,
+extra native files, and native bytes embedded in an otherwise correctly hashed
+adapter refuse the complete candidate output.
+
+The retained Actions artifact is named
+`workflows-distribution-candidate-<version>-<commit>`. It contains:
+
+- `native/`: five existing verified raw assets, their legal archives and platform
+  records, plus the native `SHA256SUMS` required by the managed downloader.
+- `adapters/<build-host>/`: compiled WASM evidence and its identity/hash manifest.
+- `candidate.json`: exact candidate identity, complete file hashes and explicit
+  `not-published`, `installationChannel: none`, and editor `not-executed` status.
+- Root `SHA256SUMS`: every delivered file, including both manifests and the native
+  checksum inventory, excluding only its own checksum.
+
+Artifacts expire after 30 days. This is a review/acceptance channel, not a formal
+precompiled extension installation channel or a public managed-server endpoint.
+The workflow has only `contents: read`, creates no tag or GitHub Release, and never
+calls the publishing job. Passing candidate checks does not make the pinned
+`releases/download/v<version>/...` URLs available. A maintainer must still publish
+the separately gated complete native Release, record real Zed acceptance on all
+five platforms, and obtain official registry review. The existing formal tag,
+version, clean-source and immutable-Release gates are unchanged.
+
+The existing release E2E now receives the actual compiled WASM from the native job
+and exercises candidate assembly and rejection using its existing native artifacts.
+Its foreign-platform fixtures remain explicitly synthetic controls. Only a fully
+successful remote five-host candidate job establishes an actual five-platform
+candidate set for that workflow's exact commit; neither local fixtures nor an
+older successful CI run establish that result.
+
 ## Building and publishing a native release
 
 `.github/workflows/release.yml` runs on a `v*` tag, or when manually dispatched on that
