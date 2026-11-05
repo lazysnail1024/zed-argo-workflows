@@ -8,9 +8,9 @@ import (
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/analysis"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/lsp"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
-	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -76,7 +76,10 @@ func runContext(parent context.Context, args []string) int {
 			if err != nil {
 				configurationErrors = append(configurationErrors, err.Error())
 			} else {
-				filter = (&url.URL{Scheme: "file", Path: filepath.ToSlash(absolute)}).String()
+				filter, err = fileuri.FromPath(absolute)
+				if err != nil {
+					configurationErrors = append(configurationErrors, err.Error())
+				}
 			}
 		}
 		signalContext, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)

@@ -18,6 +18,13 @@ for sample in range(samples):
  elapsed=time.monotonic()-start
  try:r=json.loads((out/('%d.stdout'%sample)).read_text())
  except ValueError:r={}
- checks={'allFiles':r.get('filesAnalyzed')==10000,'allResources':r.get('resourcesAnalyzed')==10000,'withinFiveSeconds':elapsed<=5,'acceptedExit':p.returncode==0,'noDeadline':not any('deadline' in str(x).lower() for x in r.get('notEvaluated',[]))}
+ # The generator deliberately mixes accepted 3.6 and experimental 3.5 scopes.
+ # All inputs must be analyzed, while the report honestly remains incomplete
+ # solely because 3.5 has not completed the accepted delivery contract.
+ expected_reason='target 3.5.0 is experimental; only 3.6.0 has completed local-contract acceptance'
+ expected_targets={('group-%03d'%i,'3.5.0' if i%2 else '3.6.0',not bool(i%2),bool(i%2)) for i in range(100)}
+ targets=r.get('targets',[])
+ actual_targets={(t.get('scope'),t.get('version'),t.get('analysisComplete'),t.get('experimental')) for t in targets}
+ checks={'allFiles':r.get('filesAnalyzed')==10000,'allResources':r.get('resourcesAnalyzed')==10000,'withinFiveSeconds':elapsed<=5,'mixedTargetExit':p.returncode==2,'honestCompleteness':r.get('analysisComplete') is False,'onlyExperimentalReason':r.get('notEvaluated')==[expected_reason]*50,'exactScopeTargets':len(targets)==100 and actual_targets==expected_targets,'noDiagnostics':r.get('diagnostics')==[],'noConfigurationError':r.get('configurationErrors')==[],'reportIdentity':r.get('product')=='argo-workflows' and r.get('reportSchemaVersion')==1 and r.get('validationScope')=='local-editing-contract'}
  rows.append({'command':cmd,'exitCode':p.returncode,'seconds':elapsed,'peakRSSKiB':peak,'assertions':checks,'pass':all(checks.values())});(out/'results.json').write_text(json.dumps(rows,indent=2)+'\n')
 sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest();(out/'manifest.json').write_text(json.dumps({'samples':samples,'constraints':constraints,'cgroup':relative,'binarySha256':sha(binary),'testSha256':sha(pathlib.Path(__file__)),'workloadManifestSha256':sha(work/'workload-manifest.json'),'python':sys.version},indent=2)+'\n');sys.exit(0 if all(r['pass'] for r in rows) else 1)

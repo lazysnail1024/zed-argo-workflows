@@ -1,0 +1,367 @@
+#!/usr/bin/env python3
+"""Compile existing fault injections and require their expected semantic failures.
+
+The selected mutations come from the repository's historical ablate-* scripts.
+Behavior belongs to the existing E2E consumers; this module only validates the
+baseline, compilation, complete evidence and the particular assertion each
+mutation is supposed to invalidate. A crash or an incomplete run is never a kill.
+"""
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass, field
+import difflib
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+
+ROOT = Path(__file__).resolve().parents[2]
+E2E = ROOT / "tests/e2e"
+
+
+@dataclass(frozen=True)
+class Mutation:
+    name: str
+    group: str
+    origin: str
+    file: str
+    replacements: tuple[tuple[str, str], ...]
+    suite: str
+    required: tuple[tuple[str, str], ...]
+    args: tuple[str, ...] = ()
+    env: dict[str, str] = field(default_factory=dict)
+    timeout: int = 240
+
+
+MUTATIONS = (
+    Mutation(
+        "unknown-target", "core", "ablate-wf2.py", "compat/catalog.go",
+        ((
+            'return fmt.Errorf("unknown target version: %s; use accepted target 3.6.0 or an exact experimental version from compat/catalog.lock.json; remove an editor targetVersion override to restore the file pin", version)',
+            "return nil",
+        ),),
+        "wf-delivery.py", (("unknown", "envelope"),), ("--cases", "unknown"),
+    ),
+    Mutation(
+        "document-version", "core", "ablate-lsp.py", "internal/lsp/stdio.go",
+        (("p.TextDocument.Version <= b.version", "false"),),
+        "wf3-lsp.py", (("stdio-buffer-lifecycle", "no_version_regression"),),
+    ),
+    Mutation(
+        "dag-cycle", "core", "ablate-local.py", "internal/analysis/local.go",
+        (("if !reported {", "if false && !reported {"),),
+        "wf4-local.py", (("dag", "domainCodes"),),
+    ),
+    Mutation(
+        "stale-action", "core", "ablate-edits.py", "internal/lsp/edits.go",
+        ((
+            "if err != nil || !opened || b.snapshot.Revision() != action.revision || fingerprint(w) != action.fingerprint {",
+            "if false && (err != nil || !opened || b.snapshot.Revision() != action.revision || fingerprint(w) != action.fingerprint) {",
+        ),),
+        "wf-delivery.py", (("edits", "staleAction"),), ("--cases", "edits"),
+    ),
+    Mutation(
+        "nested-root", "core", "ablate-lifecycle.py", "internal/workspace/disk.go",
+        (("if path == child && path != absolute {", "if false && path == child && path != absolute {"),),
+        "wf-lifecycle.py", (("nested-root-single-owner", "one_nested_symbol"),),
+    ),
+    Mutation(
+        "cancel-request", "core", "ablate-lifecycle.py", "internal/lsp/serve.go",
+        ((
+            'if m.Method == "$/cancelRequest" {',
+            'if m.Method == "$/cancelRequest" { continue }; if m.Method == "$/cancelRequest" {',
+        ),),
+        "wf-lifecycle.py", (("cancel-acknowledged", "request_cancelled"),),
+    ),
+    Mutation(
+        "yaml-string-edit", "core", "ablate-domain-repair.py", "internal/analysis/domain_queries.go",
+        (("return strconv.Quote(name)", "return name"), ('\n\t"strconv"', "")),
+        "wf-domain-repair.py",
+        tuple((name, "0-textDocument/completion-exactBytes") for name in (
+            "yaml-plain-template-true", "yaml-plain-template-null", "yaml-plain-template-123",
+            "yaml-plain-argument-true", "yaml-external-argument-plain",
+        )),
+        ("--cases=yaml-plain-template-true,yaml-plain-template-null,yaml-plain-template-123,yaml-plain-argument-true,yaml-external-argument-plain",),
+    ),
+    Mutation(
+        "process-output-budget", "resources", "ablate-bounded.py", "cmd/argo-workflows-ls/tools.go",
+        ((
+            """func (b *boundedOutput) Write(p []byte) (int, error) {
+\tb.budget.mu.Lock()
+\tdefer b.budget.mu.Unlock()
+\tremaining := 10*1024*1024 - b.budget.bytes
+\tn := len(p)
+\tif n > remaining {
+\t\tn = remaining
+\t}
+\twritten, err := b.buffer.Write(p[:n])
+\tb.budget.bytes += written
+\tif n < len(p) {
+\t\tb.budget.overflow = true
+\t\tb.budget.cancel()
+\t\treturn written, fmt.Errorf("combined command output exceeds 10 MiB")
+\t}
+\treturn written, err
+}""",
+            "func (b *boundedOutput) Write(p []byte) (int, error) { return b.buffer.Write(p) }",
+        ),),
+        "wf-bounded-process.py", (("helm-flood", "combinedOutputBound"), ("argo-flood", "combinedOutputBound")),
+        env={"WF_PROCESS_CASES": "helm-flood,argo-flood"},
+    ),
+    Mutation(
+        "process-tree-cleanup", "resources", "ablate-bounded.py", "cmd/argo-workflows-ls/process_unix.go",
+        (("return func() { _ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }, nil", "return func() {}, nil"),),
+        "wf-bounded-process.py", (("helm-inherited-pipe", "treeReclaimed"), ("argo-inherited-pipe", "treeReclaimed")),
+        env={"WF_PROCESS_CASES": "helm-inherited-pipe,argo-inherited-pipe"},
+    ),
+)
+
+
+class GateError(RuntimeError):
+    pass
+
+
+def save(path: Path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+
+
+def digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def execute(command: list[str], dest: Path, env: dict[str, str], cwd: Path, timeout: int):
+    """Record a bounded invocation without buffering potentially large logs in RAM."""
+    dest.mkdir(parents=True, exist_ok=True)
+    receipt = {"argv": command, "cwd": str(cwd), "timeoutSeconds": timeout, "timedOut": False}
+    started = time.monotonic()
+    with (dest / "stdout.log").open("wb") as stdout, (dest / "stderr.log").open("wb") as stderr:
+        try:
+            proc = subprocess.Popen(command, cwd=cwd, env=env, stdout=stdout, stderr=stderr,
+                                    start_new_session=os.name != "nt")
+        except OSError as error:
+            receipt.update(exitCode=None, seconds=time.monotonic() - started, spawnError=str(error))
+            save(dest / "command.json", receipt)
+            raise GateError(f"cannot start command: {command[0]}: {error}") from error
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            receipt["timedOut"] = True
+            if os.name == "nt":
+                proc.kill()
+            else:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            proc.wait(timeout=15)
+        receipt.update(exitCode=proc.returncode, seconds=time.monotonic() - started)
+    save(dest / "command.json", receipt)
+    return receipt
+
+
+def read_results(dest: Path) -> dict[str, dict]:
+    path = dest / "results.json"
+    if not path.is_file():
+        raise GateError(f"consumer produced no results: {path}")
+    rows = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(rows, list) or not rows:
+        raise GateError("consumer result must be a nonempty case list")
+    indexed = {}
+    for row in rows:
+        name = row.get("case", row.get("name"))
+        checks = row.get("assertions")
+        if not name or name in indexed or name == "runner-error":
+            raise GateError(f"missing/duplicate/error case: {name}")
+        if not isinstance(checks, dict) or not checks or any(type(v) is not bool for v in checks.values()):
+            raise GateError(f"{name}: assertions must be nonempty booleans; exceptions do not count")
+        if type(row.get("pass")) is not bool or row["pass"] != all(checks.values()):
+            raise GateError(f"{name}: inconsistent case status")
+        for key in ("completed", "naturalExit", "lspExit", "parse", "exception", "terminalExit", "terminalJSON"):
+            if checks.get(key) is False:
+                raise GateError(f"{name}: incomplete consumer or abnormal LSP exit ({key})")
+        if "shutdown" in checks and checks.get("exit") is False:
+            raise GateError(f"{name}: protocol consumer did not observe a clean native exit")
+        if row.get("harnessKilled") or row.get("timedOut"):
+            raise GateError(f"{name}: safety harness terminated the process")
+        code = row.get("exitCode")
+        if code is not None and (type(code) is not int or code not in (0, 1, 2, 3)):
+            raise GateError(f"{name}: abnormal native exit {code}")
+        indexed[name] = row
+    for log in dest.rglob("*.command.json"):
+        command = json.loads(log.read_text(encoding="utf-8"))
+        if command.get("timedOut"):
+            raise GateError(f"native process timed out: {log}")
+        code = command.get("exitCode")
+        if type(code) is not int or code not in (0, 1, 2, 3):
+            raise GateError(f"abnormal native exit {code}: {log}")
+        if log.name == "lsp.command.json" and code != 0:
+            raise GateError(f"LSP did not shut down normally: {log}")
+    if list(dest.rglob("*-fatal.json")) or list(dest.rglob("error.txt")):
+        raise GateError("consumer recorded an exception; it is not a semantic kill")
+    return indexed
+
+
+def run_consumer(mutation: Mutation, binary: Path, dest: Path, env: dict[str, str], prefix: list[str]):
+    run = dest / "run"
+    if run.exists():
+        raise GateError(f"refusing to reuse old consumer evidence: {run}")
+    # A sudo/systemd service scrubs the caller environment. Forward the exact
+    # case selection and only the Python runtime settings needed by setup-python
+    # on hosted Linux (its interpreter may need LD_LIBRARY_PATH to load libpython).
+    forwarded = {key: env[key] for key in ("LD_LIBRARY_PATH", "PYTHONUTF8", "PYTHONIOENCODING") if env.get(key)}
+    forwarded.update(mutation.env)
+    selected_env = (["env", *(key + "=" + value for key, value in forwarded.items())]
+                    if prefix and forwarded else [])
+    command = prefix + selected_env + [sys.executable, str(E2E / mutation.suite), str(binary), str(run), *mutation.args]
+    receipt = execute(command, dest, env | mutation.env, ROOT, mutation.timeout)
+    if receipt["timedOut"] or receipt["exitCode"] not in (0, 1):
+        raise GateError(f"consumer infrastructure failure: {receipt}")
+    return receipt, read_results(run)
+
+
+def classify(mutation: Mutation, baseline: dict[str, dict], actual: dict[str, dict], receipt: dict):
+    if not mutation.required or not baseline or not all(row["pass"] for row in baseline.values()):
+        raise GateError("a nonempty passing baseline and explicit semantic requirements are mandatory")
+    if set(actual) != set(baseline):
+        raise GateError("baseline/mutant case sets differ; incomplete runs cannot kill a mutant")
+    for name, row in baseline.items():
+        if set(row["assertions"]) != set(actual[name]["assertions"]):
+            raise GateError(f"{name}: baseline/mutant assertion sets differ")
+    expected = []
+    for case, assertion in mutation.required:
+        before = baseline.get(case, {}).get("assertions", {}).get(assertion)
+        after = actual.get(case, {}).get("assertions", {}).get(assertion)
+        if before is not True:
+            raise GateError(f"missing passing baseline assertion: {case}/{assertion}")
+        expected.append({"case": case, "assertion": assertion, "baseline": before, "mutant": after})
+    killed = receipt["exitCode"] == 1 and all(x["mutant"] is False for x in expected)
+    return {
+        "detected": killed,
+        "status": "killed" if killed else "survived",
+        "semanticEvidence": expected,
+        "failedAssertions": {name: [key for key, passed in row["assertions"].items() if not passed]
+                             for name, row in actual.items() if not row["pass"]},
+    }
+
+
+def build(go: str, source: Path, binary: Path, env: dict[str, str], timeout: int):
+    command = [go, "build", "-mod=vendor", "-trimpath", "-buildvcs=false", "-o", str(binary), "./cmd/argo-workflows-ls"]
+    receipt = execute(command, binary.parent / "build", env, source, timeout)
+    if receipt["timedOut"] or receipt["exitCode"] != 0:
+        raise GateError(f"compilation failed; this is not a semantic kill: {binary.parent / 'build'}")
+    return {"command": receipt, "sha256": digest(binary)}
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("group", choices=("core", "resources", "all"))
+    parser.add_argument("output", type=Path, help="new output directory (must not already exist)")
+    parser.add_argument("--variants", nargs="+", help="exact names from the selected group; unknown names fail")
+    parser.add_argument("--test-prefix-json", default="[]", help="JSON command prefix for consumers only; builds remain outside a memory cgroup")
+    parser.add_argument("--build-timeout", type=int, default=600)
+    args = parser.parse_args(argv)
+    candidates = [m for m in MUTATIONS if args.group == "all" or m.group == args.group]
+    if args.variants:
+        unknown = set(args.variants) - {m.name for m in candidates}
+        if unknown:
+            parser.error("unknown mutation(s): " + ", ".join(sorted(unknown)))
+        candidates = [m for m in candidates if m.name in args.variants]
+    if not candidates:
+        parser.error("at least one mutation is required")
+    prefix = json.loads(args.test_prefix_json)
+    if not isinstance(prefix, list) or any(not isinstance(x, str) for x in prefix):
+        parser.error("--test-prefix-json must be a JSON array of strings")
+    if args.build_timeout <= 0:
+        parser.error("--build-timeout must be positive")
+    out = args.output.resolve()
+    out.mkdir(parents=True, exist_ok=False)
+    env = os.environ | {"GOTOOLCHAIN": "local", "GOWORK": "off", "GOPROXY": "off", "CGO_ENABLED": "1"}
+    go = shutil.which("go")
+    if not go:
+        save(out / "results.json", {"pass": False, "error": "go is not on PATH"})
+        return 1
+    report = {"pass": False, "group": args.group, "variants": [], "baseline": {},
+              "consumerPrefix": prefix, "selected": [m.name for m in candidates],
+              "driverSha256": digest(Path(__file__)), "python": sys.version}
+    save(out / "results.json", report)
+    try:
+        with tempfile.TemporaryDirectory(prefix="wf-mutation-") as directory:
+            source = Path(directory)
+            for folder in ("cmd", "internal", "compat", "schemas", "vendor"):
+                shutil.copytree(ROOT / folder, source / folder)
+            for filename in ("go.mod", "go.sum"):
+                shutil.copy2(ROOT / filename, source / filename)
+            source_hashes = {str(p.relative_to(source)): digest(p) for p in source.rglob("*") if p.is_file()}
+            save(out / "source-manifest.json", source_hashes)
+            baseline_binary = out / "baseline" / ("server.exe" if os.name == "nt" else "server")
+            report["baselineBuild"] = build(go, source, baseline_binary, env, args.build_timeout)
+            baselines = {}
+            for mutation in candidates:
+                # Same suite + arguments + environment shares one passing baseline.
+                key = (mutation.suite, mutation.args, tuple(sorted(mutation.env.items())))
+                if key not in baselines:
+                    dest = out / "baseline" / mutation.name
+                    receipt, result = run_consumer(mutation, baseline_binary, dest, env, prefix)
+                    if receipt["exitCode"] != 0 or not all(row["pass"] for row in result.values()):
+                        raise GateError(f"baseline failed: {mutation.suite}; no mutation is accepted")
+                    baselines[key] = result
+                    report["baseline"][mutation.name] = {"consumer": mutation.suite, "args": mutation.args,
+                                                          "caseCount": len(result), "receipt": receipt}
+                    save(out / "results.json", report)
+                print("BASELINE PASS", mutation.name, flush=True)
+                dest = out / mutation.name
+                dest.mkdir()
+                row = {"variant": mutation.name, "origin": mutation.origin, "status": "error", "detected": False}
+                report["variants"].append(row)
+                path = source / mutation.file
+                original = path.read_text(encoding="utf-8")
+                mutated = original
+                try:
+                    for before, after in mutation.replacements:
+                        count = mutated.count(before)
+                        if count != 1:
+                            raise GateError(f"mutation selector must match once: {mutation.file}: found {count}: {before!r}")
+                        mutated = mutated.replace(before, after, 1)
+                    if mutated == original:
+                        raise GateError("mutation did not alter the source")
+                    (dest / "mutation.diff").write_text("".join(difflib.unified_diff(
+                        original.splitlines(keepends=True), mutated.splitlines(keepends=True),
+                        fromfile="a/" + mutation.file, tofile="b/" + mutation.file)), encoding="utf-8")
+                    save(dest / "mutation.json", {"file": mutation.file, "origin": mutation.origin,
+                         "beforeSha256": hashlib.sha256(original.encode()).hexdigest(),
+                         "afterSha256": hashlib.sha256(mutated.encode()).hexdigest(),
+                         "requiredAssertions": mutation.required})
+                    path.write_text(mutated, encoding="utf-8")
+                    binary = dest / ("server.exe" if os.name == "nt" else "server")
+                    row["build"] = build(go, source, binary, env, args.build_timeout)
+                    receipt, actual = run_consumer(mutation, binary, dest / "consumer", env, prefix)
+                    row["consumer"] = receipt
+                    row.update(classify(mutation, baselines[key], actual, receipt))
+                except Exception as error:
+                    row["error"] = str(error)
+                finally:
+                    path.write_text(original, encoding="utf-8")
+                    save(out / "results.json", report)
+                print(row["status"].upper(), mutation.name, row.get("error", ""), flush=True)
+            report["pass"] = len(report["variants"]) == len(candidates) and all(row["detected"] for row in report["variants"])
+    except Exception as error:
+        report["error"] = str(error)
+        print("GATE ERROR", error, file=sys.stderr, flush=True)
+    save(out / "results.json", report)
+    return 0 if report["pass"] else 1
+
+
+def legacy_main(variants: list[str], default_output: str):
+    """Keep selected historical entry points while using the same strict gate."""
+    output = sys.argv[1] if len(sys.argv) > 1 else str(ROOT / "artifacts" / default_output)
+    if len(sys.argv) > 2:
+        raise SystemExit("usage: " + Path(sys.argv[0]).name + " [NEW_OUTPUT_DIRECTORY]")
+    return main(["core", output, "--variants", *variants])

@@ -17,25 +17,25 @@ try:
  def streamed_send(*args,**kwargs):
   original_send(*args,**kwargs);sent_log.write(json.dumps(client.sent[-1])+'\n');client.sent.clear()
  client.send=streamed_send
- for path,text in zip(paths,texts):client.open(path,text)
- record('cold-two-version-publication',{'withinFiveSeconds':time.monotonic()-start<=5},seconds=time.monotonic()-start)
+ publications=[client.open(path,text) for path,text in zip(paths,texts)]
+ record('cold-two-version-publication',{'acceptedClean':publications[0]==[],'experimentalVisible':[d['code'] for d in publications[1]]==['WF_EXPERIMENTAL_TARGET'] and publications[1][0]['severity']==2,'withinFiveSeconds':time.monotonic()-start<=5},seconds=time.monotonic()-start)
  query=[];correct=True
  for i in range(1000):
   path=paths[i%2];text=texts[i%2];method='textDocument/definition' if i%4<2 else 'textDocument/completion';position=m.pos(text,'entrypoint: main',offset=13) if method.endswith('definition') else {'line':5,'character':2};start=time.monotonic();r=client.request(method,{'textDocument':{'uri':path.as_uri()},'position':position});query.append(time.monotonic()-start)
-  if method.endswith('definition'):correct &= bool(r.get('result')) and all(x['uri']==path.as_uri() for x in r['result'])
+  if method.endswith('definition'):correct &= r.get('result')==[{'uri':path.as_uri(),'range':{'start':{'line':6,'character':12},'end':{'line':6,'character':16}}}]
   else:correct &= 'activeDeadlineSeconds' in {x['label'] for x in r.get('result',[])}
  record('1000-existing-queries',{'correct':correct,'p95Within100ms':p95(query)<=.1},seconds=query)
  # Debounced edits arrive at 10 Hz for exactly 60 seconds; then verify the final revision.
  start=time.monotonic();sent={};uri=paths[0].as_uri();begin=len(client.received)
  for i in range(600):
   due=start+i*.1;time.sleep(max(0,due-time.monotonic()));version=i+2;sent[version]=time.monotonic();client.send('textDocument/didChange',{'textDocument':{'uri':uri,'version':version},'contentChanges':[{'text':texts[0]+('# edit %d\n'%i)}]})
- client.diagnostics(uri,601);time.sleep(max(0,start+60-time.monotonic()));frames=client.received[begin:];versions=[x['params'].get('version') for x in frames if x.get('method')=='textDocument/publishDiagnostics' and x['params']['uri']==uri]
- record('600-edits-60-seconds',{'latestDelivered':601 in versions,'monotonic':versions==sorted(versions),'serverAlive':client.p.poll() is None},publishedVersions=versions,seconds=time.monotonic()-start)
+ final_diagnostics=client.diagnostics(uri,601);time.sleep(max(0,start+60-time.monotonic()));frames=client.received[begin:];versions=[x['params'].get('version') for x in frames if x.get('method')=='textDocument/publishDiagnostics' and x['params']['uri']==uri]
+ record('600-edits-60-seconds',{'latestDelivered':601 in versions,'latestSemantics':final_diagnostics==[],'monotonic':versions==sorted(versions),'serverAlive':client.p.poll() is None},publishedVersions=versions,seconds=time.monotonic()-start)
  # A small number of spaced edits measures latency independently of coalesced burst delivery.
- lat=[]
+ lat=[];spaced_clean=True
  for version in range(602,622):
-  start=time.monotonic();client.change(paths[0],texts[0]+'# spaced %d\n'%version,version);lat.append(time.monotonic()-start)
- record('active-diagnostic-latency',{'p95Within500ms':p95(lat)<=.5},seconds=lat)
+  start=time.monotonic();spaced_clean &= client.change(paths[0],texts[0]+'# spaced %d\n'%version,version)==[];lat.append(time.monotonic()-start)
+ record('active-diagnostic-latency',{'currentSemantics':spaced_clean,'p95Within500ms':p95(lat)<=.5},seconds=lat)
  # Warm RSS and five equal lifecycle batches; unsaved URI must always clear on close.
  temp=work/'group-000/ephemeral.yaml';warm=[];after=[]
  for batch in range(6):

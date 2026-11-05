@@ -4,7 +4,7 @@ import hashlib,json,pathlib,subprocess,sys,platform
 root=pathlib.Path(__file__).resolve().parents[2]
 binary=pathlib.Path(sys.argv[1]).resolve(); out=pathlib.Path(sys.argv[2]).resolve(); out.mkdir(parents=True,exist_ok=True)
 expected=json.loads((root/'tests/e2e/wf1.expected.json').read_text())
-work=out/'input';work.mkdir(exist_ok=True);(work/'case.yaml').write_text('apiVersion: argoproj.io/v1alpha1\nkind: Workflow\nmetadata: {name: smoke}\nspec: {entrypoint: main, templates: [{name: main, container: {image: alpine}}]}\n')
+work=out/'input';work.mkdir(exist_ok=True);(work/'case.yaml').write_bytes('apiVersion: argoproj.io/v1alpha1\nkind: Workflow\nmetadata: {name: smoke}\nspec: {entrypoint: main, templates: [{name: main, container: {image: alpine}}]}\n'.encode('utf-8'))
 cases=[('version',['version','--json'],0),('help',['help'],0),('check',['check','--root',str(work),'--format','json'],0),('unknown',['bogus'],2),('extra',['version','--json','bogus'],2)]
 results=[]
 for name,args,code in cases:

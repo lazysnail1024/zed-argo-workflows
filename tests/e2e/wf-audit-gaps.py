@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Independent black-box CLI/LSP audit. No production imports or expected-value derivation."""
-import hashlib, json, pathlib, queue, subprocess, sys, threading, time, traceback
+import hashlib, json, os, pathlib, queue, subprocess, sys, threading, time, traceback
 
 HERE = pathlib.Path(__file__).resolve().parent
 BINARY = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else HERE / 'argo-workflows-ls').resolve()
 OUT = pathlib.Path(sys.argv[2] if len(sys.argv) > 2 else HERE.parent.parent / 'artifacts/wf-audit-gaps').resolve()
-ARGO = pathlib.Path('/tmp/zed-argo-official-3.6.0/argo')
+ARGO = pathlib.Path(os.environ.get('WF_TEST_ARGO_BINARY', '/tmp/zed-argo-official-3.6.0/argo')).resolve()
 OUT.mkdir(parents=True, exist_ok=True)
 RESULTS = []
 CONFIG = 'schemaVersion: 1\ntargetVersion: "3.6.0"\nreferencePolicy: closed\n'
@@ -16,17 +16,27 @@ def setup(name, files, config=CONFIG):
     dest = OUT / name
     work = dest / 'input'
     work.mkdir(parents=True, exist_ok=True)
-    (work / '.argo-workflows-ls.yaml').write_text(config)
+    # Preserve intentional LF/CRLF bytes on every host, including Windows.
+    (work / '.argo-workflows-ls.yaml').write_bytes(config.encode('utf-8'))
     for name, value in files.items():
         p = work / name
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(value)
+        p.write_bytes(value.encode('utf-8'))
     return dest, work
 def command(dest, label, argv, timeout=20, **kwargs):
-    r = subprocess.run([str(a) for a in argv], capture_output=True, timeout=timeout, **kwargs)
+    argv = [str(a) for a in argv]
+    try:
+        r = subprocess.run(argv, capture_output=True, timeout=timeout, **kwargs)
+    except subprocess.TimeoutExpired as error:
+        # Timeout is a failure, but its partial output is often the only evidence
+        # of the blocked protocol or subprocess operation.
+        (dest / (label + '.stdout')).write_bytes(error.stdout or b'')
+        (dest / (label + '.stderr')).write_bytes(error.stderr or b'')
+        save(dest / (label + '.command.json'), {'argv': argv, 'exitCode': None, 'timedOut': True, 'timeoutSeconds': timeout})
+        raise
     (dest / (label + '.stdout')).write_bytes(r.stdout)
     (dest / (label + '.stderr')).write_bytes(r.stderr)
-    save(dest / (label + '.command.json'), {'argv': [str(a) for a in argv], 'exitCode': r.returncode})
+    save(dest / (label + '.command.json'), {'argv': argv, 'exitCode': r.returncode, 'timedOut': False})
     return r
 def cli(dest, work, label='check', only=None):
     argv = [BINARY, 'check', '--root', work, '--format', 'json']
@@ -35,7 +45,7 @@ def cli(dest, work, label='check', only=None):
     return r.returncode, json.loads(r.stdout)
 def official(dest, path, label):
     config = dest / 'empty-kubeconfig'
-    config.write_text('apiVersion: v1\nkind: Config\nclusters: []\ncontexts: []\nusers: []\n')
+    config.write_bytes('apiVersion: v1\nkind: Config\nclusters: []\ncontexts: []\nusers: []\n'.encode('utf-8'))
     return command(dest, label, [ARGO, 'lint', '--offline', '--no-color', '--output', 'simple', '--kubeconfig', config, path], env={'PATH': '/usr/bin:/bin', 'KUBECONFIG': str(config)}).returncode
 def wf(ds): return [(d['code'], d['severity']) for d in ds if d['code'].startswith('WF_')]
 def pos(text, needle, occurrence=0, offset=0):
@@ -95,8 +105,14 @@ class LSP:
             except Exception as e: self.q.put(e)
         self.reader = threading.Thread(target=read, daemon=True)
         self.reader.start()
-        self.init = self.request('initialize', {'rootUri': work.as_uri(), 'capabilities': {'workspace': {'workspaceEdit': {'documentChanges': True}}}})
-        self.send('initialized', {})
+        try:
+            self.init = self.request('initialize', {'rootUri': work.as_uri(), 'capabilities': {'workspace': {'workspaceEdit': {'documentChanges': True}}}})
+            assert self.init.get('jsonrpc') == '2.0' and isinstance(self.init.get('result', {}).get('capabilities'), dict), self.init
+            self.send('initialized', {})
+        except BaseException:
+            if self.p.poll() is None: self.p.kill(); self.p.wait()
+            self.save_evidence()
+            raise
     def send(self, method, params=None, ident=None):
         m = {'jsonrpc': '2.0', 'method': method}
         if params is not None: m['params'] = params
@@ -108,7 +124,9 @@ class LSP:
     def wait(self, predicate):
         deadline = time.monotonic() + 20
         while True:
-            value = self.q.get(timeout=max(.01, deadline - time.monotonic()))
+            remaining = deadline - time.monotonic()
+            if remaining <= 0: raise TimeoutError('LSP response deadline exceeded')
+            value = self.q.get(timeout=remaining)
             if isinstance(value, Exception): raise value
             if predicate(value): return value
     def request(self, method, params=None):
@@ -126,17 +144,21 @@ class LSP:
     def close(self):
         try:
             if self.p.poll() is None:
-                self.request('shutdown')
+                response = self.request('shutdown')
+                assert 'result' in response and response['result'] is None and 'error' not in response, response
                 self.send('exit')
                 self.p.wait(timeout=5)
+            assert self.p.returncode == 0, 'LSP did not exit cleanly: %r' % self.p.returncode
         finally:
             if self.p.poll() is None: self.p.kill(); self.p.wait()
-            self.reader.join(timeout=1)
-            (self.dest / 'lsp.stdout.raw').write_bytes(self.raw)
-            self.stderr_reader.join(timeout=1)
-            (self.dest / 'lsp.stderr.raw').write_bytes(self.stderr_raw)
-            save(self.dest / 'traffic.json', {'sent': self.sent, 'received': self.received, 'receivedMonotonic': self.received_times})
-            save(self.dest / 'lsp.command.json', {'argv': [str(BINARY), 'serve', '--stdio'], 'exitCode': self.p.returncode})
+            self.save_evidence()
+    def save_evidence(self):
+        self.reader.join(timeout=1)
+        (self.dest / 'lsp.stdout.raw').write_bytes(self.raw)
+        self.stderr_reader.join(timeout=1)
+        (self.dest / 'lsp.stderr.raw').write_bytes(self.stderr_raw)
+        save(self.dest / 'traffic.json', {'sent': self.sent, 'received': self.received, 'receivedMonotonic': self.received_times})
+        save(self.dest / 'lsp.command.json', {'argv': [str(BINARY), 'serve', '--stdio'], 'exitCode': self.p.returncode})
 
 REN_DAG = '''apiVersion: argoproj.io/v1alpha1
 kind: Workflow
@@ -187,10 +209,10 @@ def run_rename(name, text):
         position = pos(text, 'name: cleanup', offset=7)
         response = lsp.request('textDocument/rename', {'textDocument': {'uri': uri}, 'position': position, 'newName': 'tidy'})
         if 'error' in response:
-            result(name, {'baseline_official_valid': before == 0, 'safe_refusal': True}, response)
+            result(name, {'baseline_official_valid': before == 0, 'safe_refusal': response['error'].get('code') == -32602 and bool(response['error'].get('message')) and 'result' not in response}, response)
         else:
             changed = apply(text, response['result'], uri, 1)
-            after_path = dest / 'after.yaml'; after_path.write_text(changed)
+            after_path = dest / 'after.yaml'; after_path.write_bytes(changed.encode('utf-8'))
             after = official(dest, after_path, 'official-after')
             after_ds = lsp.change(file, changed, 2)
             expected = text.replace('onExit: cleanup', 'onExit: tidy').replace('name: cleanup', 'name: tidy')
@@ -211,15 +233,15 @@ def run_fix(incomplete=False):
         response = lsp.request('textDocument/codeAction', {'textDocument': {'uri': uri}, 'range': {'start': p, 'end': p}, 'context': {'diagnostics': ds}})
         choices = [a for a in response.get('result', []) if 'clusterScope' in a['title']]
         if incomplete:
-            result(name, {'semantic_fix_withheld_while_scope_incomplete': not choices}, {'beforeDiagnostics': ds, 'actionResponse': response})
+            result(name, {'semantic_fix_withheld_while_scope_incomplete': isinstance(response.get('result'), list) and not choices and 'error' not in response}, {'beforeDiagnostics': ds, 'actionResponse': response})
         elif not choices:
-            result(name, {'unsafe_fix_withheld': True, 'baseline_has_no_external_error': not any(c == 'WF_TEMPLATE_REF_UNRESOLVED' and s == 'Error' for c, s in wf(before['diagnostics']))}, response)
+            result(name, {'unsafe_fix_withheld': isinstance(response.get('result'), list) and 'error' not in response, 'baseline_has_no_external_error': not any(c == 'WF_TEMPLATE_REF_UNRESOLVED' and s == 'Error' for c, s in wf(before['diagnostics']))}, response)
         else:
             resolved = lsp.request('codeAction/resolve', choices[0])
             changed = apply(text, resolved['result']['edit'], uri, 1)
-            (dest / 'after.yaml').write_text(changed)
+            (dest / 'after.yaml').write_bytes(changed.encode('utf-8'))
             ds_after = lsp.change(file, changed, 2)
-            result(name, {'baseline_has_no_external_error': not any(c == 'WF_TEMPLATE_REF_UNRESOLVED' and s == 'Error' for c, s in wf(before['diagnostics'])), 'fix_adds_no_error': not any(d['severity'] == 1 for d in ds_after)}, {'beforeDiagnostics': ds, 'afterDiagnostics': ds_after, 'resolved': resolved})
+            result(name, {'baseline_has_no_external_error': not any(c == 'WF_TEMPLATE_REF_UNRESOLVED' and s == 'Error' for c, s in wf(before['diagnostics'])), 'exact_fix_bytes': changed == text.replace('clusterScop:', 'clusterScope:'), 'fix_adds_no_error': not any(d['severity'] == 1 for d in ds_after)}, {'beforeDiagnostics': ds, 'afterDiagnostics': ds_after, 'resolved': resolved})
     finally: lsp.close()
 
 def run_scopes():
@@ -309,6 +331,6 @@ def main():
         result('runner-error', {'completed': False}, {'error': repr(e), 'traceback': traceback.format_exc()})
     finally:
         save(OUT / 'manifest.json', {'command': sys.argv, 'pythonVersion': sys.version, 'binary': str(BINARY), 'binarySha256': sha(BINARY), 'officialArgoBinary': str(ARGO), 'officialArgoSha256': sha(ARGO), 'testSha256': sha(pathlib.Path(__file__)), 'expectationsSha256': sha(HERE/'wf-audit-gaps.expected.json'), 'inputs': {str(p.relative_to(OUT)):sha(p) for p in OUT.rglob('*') if p.is_file() and ('/input/' in str(p) or p.name=='after.yaml')}, 'cases': len(RESULTS), 'passed': sum(r['pass'] for r in RESULTS), 'scope': 'CLI and standard LSP, no GUI or release acceptance'})
-    return 0 if RESULTS and all(r['pass'] for r in RESULTS) else 1
+    return 0 if len(RESULTS) == 11 and all(r['pass'] for r in RESULTS) else 1
 
 if __name__ == '__main__': sys.exit(main())

@@ -15,7 +15,6 @@
     "WF_DEPENDS_SYNTAX"
   ],
   "targetVersion": "3.6.0",
-  "exitCode": 2,
   "arguments": [
     "WF_ARGUMENT_MISSING"
   ],
@@ -39,5 +38,22 @@
     "WF_DYNAMIC_REFERENCE"
   ],
   "referencevalid": [],
-  "publicinputs": []
+  "publicinputs": [],
+  "exitCodes": {
+    "missing": 1,
+    "valid": 0,
+    "duplicate": 1,
+    "dag": 1,
+    "depends": 1,
+    "arguments": 1,
+    "defaults": 0,
+    "stepduplicate": 1,
+    "inputscope": 1,
+    "outputmissing": 1,
+    "dagscope": 1,
+    "stepscope": 1,
+    "dynamicindex": 0,
+    "referencevalid": 0,
+    "publicinputs": 0
+  }
 }

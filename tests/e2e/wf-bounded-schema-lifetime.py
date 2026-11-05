@@ -13,10 +13,10 @@ def both():
   return len(found)==2
  client.wait(collect);return [found[p.as_uri()] for p in paths]
 try:
- old=client.open(paths[0],text);new=client.open(paths[1],text);m.result('two-version-identity',{'olderRequiresSchedule':codes(old)=={'SCHEMA_UNKNOWN_FIELD','SCHEMA_VALIDATION'},'newerAcceptsSchedules':new==[]})
- swapped=config.replace('3.5.0','TEMP').replace('3.6.0','3.5.0').replace('TEMP','3.6.0');config_path=work/'.argo-workflows-ls.yaml';client.send('textDocument/didOpen',{'textDocument':{'uri':config_path.as_uri(),'version':1,'languageId':'yaml','text':swapped}});a,b=both();m.result('config-target-swap',{'newTargetAccepted':a==[],'oldTargetRequired':codes(b)=={'SCHEMA_UNKNOWN_FIELD','SCHEMA_VALIDATION'}})
- client.send('textDocument/didChange',{'textDocument':{'uri':config_path.as_uri(),'version':2},'contentChanges':[{'text':config.replace('3.5.0','99.0.0')}]});a,b=both();m.result('unknown-target-does-not-use-cache',{'bothCleared':a==[] and b==[]})
- client.send('textDocument/didChange',{'textDocument':{'uri':config_path.as_uri(),'version':3},'contentChanges':[{'text':config}]});a,b=both();m.result('target-recovery',{'oldStillRequired':codes(a)=={'SCHEMA_UNKNOWN_FIELD','SCHEMA_VALIDATION'},'newStillAccepted':b==[]})
+ old=client.open(paths[0],text);new=client.open(paths[1],text);m.result('two-version-identity',{'olderRequiresSchedule':codes(old)=={'SCHEMA_UNKNOWN_FIELD','SCHEMA_VALIDATION','WF_EXPERIMENTAL_TARGET'},'newerAcceptsSchedules':new==[]})
+ swapped=config.replace('3.5.0','TEMP').replace('3.6.0','3.5.0').replace('TEMP','3.6.0');config_path=work/'.argo-workflows-ls.yaml';client.send('textDocument/didOpen',{'textDocument':{'uri':config_path.as_uri(),'version':1,'languageId':'yaml','text':swapped}});a,b=both();m.result('config-target-swap',{'newTargetAccepted':a==[],'oldTargetRequired':codes(b)=={'SCHEMA_UNKNOWN_FIELD','SCHEMA_VALIDATION','WF_EXPERIMENTAL_TARGET'}})
+ client.send('textDocument/didChange',{'textDocument':{'uri':config_path.as_uri(),'version':2},'contentChanges':[{'text':config.replace('3.5.0','99.0.0')}]});a,b=both();m.result('unknown-target-does-not-use-cache',{'bothUnavailable':codes(a)=={'WF_ANALYSIS_UNAVAILABLE'} and codes(b)=={'WF_ANALYSIS_UNAVAILABLE'}})
+ client.send('textDocument/didChange',{'textDocument':{'uri':config_path.as_uri(),'version':3},'contentChanges':[{'text':config}]});a,b=both();m.result('target-recovery',{'oldStillRequired':codes(a)=={'SCHEMA_UNKNOWN_FIELD','SCHEMA_VALIDATION','WF_EXPERIMENTAL_TARGET'},'newStillAccepted':b==[]})
 finally:client.close()
 dest,work=m.setup('canceled-cold-analysis',{'case.yaml':text});client=m.LSP(dest,work)
 try:

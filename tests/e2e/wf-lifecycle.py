@@ -43,7 +43,7 @@ try:
   a.result('old-result-rejected',{'versions_never_regress':versions==sorted(versions),'stable_request_completed':'result' in stable},versions)
   # Configuration invalidation and repair must use the current unsaved config buffer.
   cfg=work/'.argo-workflows-ls.yaml';lsp.send('textDocument/didOpen',{'textDocument':{'uri':cfg.as_uri(),'languageId':'yaml','version':1,'text':'schemaVersion: 1\ntargetVersion: "99.0.0"\n'}})
-  ds=lsp.diagnostics(file.as_uri(),21);a.result('config-invalid-clears',{'cleared':ds==[]},ds)
+  ds=lsp.diagnostics(file.as_uri(),21);a.result('config-invalid-visible',{'unavailable':[d['code'] for d in ds]==['WF_ANALYSIS_UNAVAILABLE']},ds)
   notify_change(lsp,cfg,a.CONFIG,2);ds=lsp.diagnostics(file.as_uri(),21);a.result('config-buffer-repair',{'error_returns':any(x['code']=='SCHEMA_TYPE' for x in ds)},ds)
   # Request cancellation gets its own terminal response before shutdown starts.
   huge='apiVersion: argoproj.io/v1alpha1\nkind: WorkflowTemplate\nmetadata: {name: many}\nspec:\n  templates:\n'+''.join('  - name: t%d\n    container: {image: alpine}\n'%i for i in range(1200))
@@ -60,11 +60,11 @@ try:
   notify_change(lsp,file,base,25);ds=lsp.diagnostics(file.as_uri(),25)
   a.result('cancel-recovery',{'normal_diagnostic':any(x['code']=='SCHEMA_TYPE' for x in ds),'one_cancel_response':len([x for x in lsp.received if x.get('id')==500])==1},ds)
   start=time.monotonic();reply=lsp.request('shutdown');elapsed=time.monotonic()-start
-  a.result('shutdown-after-cancel',{'shutdown_response':'result' in reply,'bounded':elapsed<5},reply)
+  a.result('shutdown-after-cancel',{'shutdown_response':'result' in reply and reply['result'] is None and 'error' not in reply,'bounded':elapsed<5},reply)
   lsp.send('exit');lsp.p.wait(timeout=5)
  finally:lsp.close()
 except Exception as e:a.result('runner-error',{'completed':False},{'error':repr(e)})
 finally:
  sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
  a.save(a.OUT/'manifest.json',{'command':sys.argv,'pythonVersion':sys.version,'binarySha256':sha(a.BINARY),'testSha256':sha(pathlib.Path(__file__)),'clientSha256':sha(root/'tests/e2e/wf-audit-gaps.py'),'inputHashes':{str(p.relative_to(a.OUT)):sha(p) for p in a.OUT.rglob('*.yaml')},'expectation':'independent named assertions, standard version/request-id completion; cancellation response precedes shutdown'})
-sys.exit(0 if len(a.RESULTS)>=10 and all(x['pass'] for x in a.RESULTS) else 1)
+sys.exit(0 if len(a.RESULTS)==13 and all(x['pass'] for x in a.RESULTS) else 1)
