@@ -234,6 +234,234 @@ fn concurrent_installation_keeps_verified_winner_and_defers_unavailable_cleanup(
 }
 
 #[test]
+fn publication_after_final_lookup_preserves_both_installers_and_offline_reuse() {
+    for repair in [false, true] {
+        let cache = Cache::new();
+        let mut host = FakeHost::new(VERSION);
+        let corrupt = if repair {
+            let path = install(&cache.root(), "linux-amd64", VERSION, &mut host).unwrap();
+            fs::write(&path, b"corrupted published server").unwrap();
+            Some(path)
+        } else {
+            None
+        };
+        host.events.clear();
+        let mut winner = None;
+        let mut rename_calls = 0;
+        let selected = install_with_rename(
+            &cache.root(),
+            "linux-amd64",
+            VERSION,
+            &mut host,
+            &mut |stage, destination| {
+                rename_calls += 1;
+                assert_eq!(rename_calls, 1);
+                // A has finished its final cache lookup. Run B's complete
+                // installer before A's actual rename, then keep a live reference
+                // to B's published directory as a real Zed process would.
+                let path = install(
+                    &cache.root(),
+                    "linux-amd64",
+                    VERSION,
+                    &mut FakeHost::new(VERSION),
+                )
+                .unwrap();
+                fs::write(
+                    path.parent().unwrap().join("winner-sentinel"),
+                    b"still in use",
+                )
+                .unwrap();
+                winner = Some(path);
+                fs::rename(stage, destination)
+            },
+        )
+        .unwrap();
+        let winner = winner.unwrap();
+        assert_ne!(selected, winner);
+        for path in [&selected, &winner] {
+            assert_eq!(fs::read(path).unwrap(), host.bytes);
+        }
+        assert_eq!(
+            fs::read(winner.parent().unwrap().join("winner-sentinel")).unwrap(),
+            b"still in use"
+        );
+        if let Some(corrupt) = &corrupt {
+            assert_eq!(fs::read(corrupt).unwrap(), b"corrupted published server");
+        }
+        assert_eq!(cache.entries(), if repair { 3 } else { 2 });
+        assert!(fs::read_dir(cache.root()).unwrap().all(|entry| {
+            let name = entry.unwrap().file_name();
+            !name.to_string_lossy().starts_with('.')
+        }));
+
+        // A fresh adapter instance must find a verified generation without any
+        // download, even when a retained corrupt slot sorts before it.
+        let mut offline = FakeHost::new(VERSION);
+        offline.failure = Some("offline");
+        let reused = install(&cache.root(), "linux-amd64", VERSION, &mut offline).unwrap();
+        assert!(reused == selected || reused == winner);
+        assert_eq!(offline.network_calls(), 0);
+        assert_eq!(offline.probes(), 1);
+        assert_eq!(fs::read(&selected).unwrap(), host.bytes);
+        assert_eq!(fs::read(&winner).unwrap(), host.bytes);
+    }
+}
+
+#[test]
+fn publication_collision_reuses_verified_target_without_moving_it() {
+    let cache = Cache::new();
+    let mut host = FakeHost::new(VERSION);
+    let asset = asset_name(VERSION, "linux-amd64").unwrap();
+    let mut collided = None;
+    let selected = install_with_rename(
+        &cache.root(),
+        "linux-amd64",
+        VERSION,
+        &mut host,
+        &mut |stage, destination| {
+            // Simulate a coincident generation name across two processes. Both
+            // candidates are complete, and the real filesystem decides which
+            // rename wins; no platform-specific error kind is assumed.
+            fs::create_dir(destination).unwrap();
+            for name in ["SHA256SUMS", asset.as_str()] {
+                fs::copy(stage.join(name), destination.join(name)).unwrap();
+            }
+            fs::write(destination.join("winner-sentinel"), b"published first").unwrap();
+            collided = Some(destination.to_path_buf());
+            fs::rename(stage, destination)
+        },
+    )
+    .unwrap();
+    let collided = collided.unwrap();
+    assert_eq!(selected, collided.join(asset));
+    assert_eq!(fs::read(&selected).unwrap(), host.bytes);
+    assert_eq!(
+        fs::read(collided.join("winner-sentinel")).unwrap(),
+        b"published first"
+    );
+    assert_eq!(host.probes(), 2); // Staged candidate, then the actual winner.
+    assert_eq!(
+        host.events.last().unwrap(),
+        &format!("probe:{}", selected.display())
+    );
+    assert_eq!(cache.entries(), 1);
+}
+
+#[test]
+fn corrupt_publication_collision_uses_another_generation_without_removal() {
+    let cache = Cache::new();
+    let mut host = FakeHost::new(VERSION);
+    let mut collided = None;
+    let mut calls = 0;
+    let selected = install_with_rename(
+        &cache.root(),
+        "linux-amd64",
+        VERSION,
+        &mut host,
+        &mut |stage, destination| {
+            calls += 1;
+            if calls == 1 {
+                fs::create_dir(destination).unwrap();
+                fs::write(destination.join("SHA256SUMS"), b"corrupted manifest").unwrap();
+                fs::write(destination.join("keep-sentinel"), b"do not delete").unwrap();
+                collided = Some(destination.to_path_buf());
+            }
+            fs::rename(stage, destination)
+        },
+    )
+    .unwrap();
+    let collided = collided.unwrap();
+    assert_ne!(selected.parent().unwrap(), collided);
+    assert_eq!(calls, 2);
+    assert_eq!(fs::read(&selected).unwrap(), host.bytes);
+    assert_eq!(
+        fs::read(collided.join("keep-sentinel")).unwrap(),
+        b"do not delete"
+    );
+    assert_eq!(
+        fs::read(collided.join("SHA256SUMS")).unwrap(),
+        b"corrupted manifest"
+    );
+    assert_eq!(host.probes(), 1);
+    assert_eq!(cache.entries(), 2);
+    host.events.clear();
+    host.failure = Some("offline");
+    assert_eq!(
+        install(&cache.root(), "linux-amd64", VERSION, &mut host).unwrap(),
+        selected
+    );
+    assert_eq!(host.network_calls(), 0);
+}
+
+#[test]
+fn successful_publication_does_not_clean_reused_staging_pathname() {
+    let cache = Cache::new();
+    let mut host = FakeHost::new(VERSION);
+    let mut reused = None;
+    let selected = install_with_rename(
+        &cache.root(),
+        "linux-amd64",
+        VERSION,
+        &mut host,
+        &mut |stage, destination| {
+            fs::rename(stage, destination)?;
+            fs::create_dir(stage)?;
+            fs::write(stage.join("other-installer-sentinel"), b"new owner")?;
+            reused = Some(stage.to_path_buf());
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(fs::read(selected).unwrap(), host.bytes);
+    assert_eq!(
+        fs::read(reused.unwrap().join("other-installer-sentinel")).unwrap(),
+        b"new owner"
+    );
+    assert_eq!(cache.entries(), 2);
+}
+
+#[test]
+fn publication_failure_without_destination_is_visible_and_retryable() {
+    let cache = Cache::new();
+    let mut host = FakeHost::new(VERSION);
+    let error = install_with_rename(
+        &cache.root(),
+        "linux-amd64",
+        VERSION,
+        &mut host,
+        &mut |_, _| Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
+    )
+    .unwrap_err();
+    assert!(error.contains("Cannot activate verified server"));
+    assert_eq!(cache.entries(), 0);
+    assert!(install(&cache.root(), "linux-amd64", VERSION, &mut host)
+        .unwrap()
+        .is_file());
+}
+
+#[test]
+fn concurrent_root_creation_accepts_only_a_directory() {
+    for directory_wins in [true, false] {
+        let cache = Cache::new();
+        let result = directory_with_create(&cache.root(), |path| {
+            // The initial absence check has completed; another process creates
+            // the shared path before our actual create_dir syscall.
+            if directory_wins {
+                fs::create_dir(path).unwrap();
+            } else {
+                fs::write(path, b"unexpected file").unwrap();
+            }
+            fs::create_dir(path)
+        });
+        assert_eq!(result.is_ok(), directory_wins);
+        if !directory_wins {
+            assert!(result.unwrap_err().contains("regular directory"));
+            assert_eq!(fs::read(cache.root()).unwrap(), b"unexpected file");
+        }
+    }
+}
+
+#[test]
 fn corrupted_binary_or_manifest_is_repaired_before_execution() {
     for corrupt_manifest in [false, true] {
         let cache = Cache::new();
@@ -249,14 +477,21 @@ fn corrupted_binary_or_manifest_is_repaired_before_execution() {
         )
         .unwrap();
         host.events.clear();
-        assert_eq!(
-            install(&cache.root(), "linux-amd64", VERSION, &mut host).unwrap(),
-            path
-        );
+        let repaired = install(&cache.root(), "linux-amd64", VERSION, &mut host).unwrap();
+        assert_ne!(repaired, path);
         assert_eq!(host.network_calls(), 2);
         assert_eq!(host.probes(), 1);
-        assert_eq!(fs::read(path).unwrap(), host.bytes);
-        assert_eq!(cache.entries(), 1);
+        assert_eq!(fs::read(repaired).unwrap(), host.bytes);
+        assert_eq!(
+            fs::read(if corrupt_manifest {
+                path.parent().unwrap().join("SHA256SUMS")
+            } else {
+                path
+            })
+            .unwrap(),
+            b"broken"
+        );
+        assert_eq!(cache.entries(), 2);
     }
 }
 
@@ -274,10 +509,10 @@ fn corrupted_cache_offline_never_executes_and_retry_recovers() {
     assert_eq!(host.probes(), 0);
     assert_eq!(host.executable_calls(), 0);
     host.failure = None;
-    assert_eq!(
-        install(&cache.root(), "linux-amd64", VERSION, &mut host).unwrap(),
-        path
-    );
+    let repaired = install(&cache.root(), "linux-amd64", VERSION, &mut host).unwrap();
+    assert_ne!(repaired, path);
+    assert_eq!(fs::read(repaired).unwrap(), host.bytes);
+    assert_eq!(fs::read(path).unwrap(), b"damaged");
 }
 
 #[test]

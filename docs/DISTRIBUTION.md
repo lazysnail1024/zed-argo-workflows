@@ -54,40 +54,58 @@ trust boundary remains the extension source and its release repository.
    correct or remove it before managed installation can be used.
 3. Otherwise it selects the published platform asset for the pinned version.
 
-Managed files live under the extension work directory in `servers/v<version>-<platform>/`.
+New managed installations live under the extension work directory in unique
+`servers/v<version>-<platform>.gen-<attempt>/` directories. A valid legacy
+`servers/v<version>-<platform>/` directory is still preferred and retained in place.
 Before every execution, the cache must contain regular files with an acceptable
 checksum manifest, a matching binary SHA-256 and a matching release identity. Valid
-cache use performs no download. The identity probe and final server command use
+cache use performs no download. If the legacy slot is missing or byte-corrupt, the
+installer checks generation directories for that exact version and platform; incomplete
+or byte-corrupt generations are skipped. It never searches another release as a fallback.
+The identity probe and final server command use
 absolute native paths because Zed's host process does not inherit the WASI work directory.
 
 On a cache miss or byte corruption, the installer uses a unique `.download-*` directory.
 It downloads and validates the manifest, downloads and hashes the binary, asks Zed to
 set executable permissions, and probes `version --json`. Only then does it rename the
-complete directory into place. Hash failures never reach chmod or process execution.
+complete directory into a new generation. Hash failures never reach chmod or process execution.
 A failed attempt deletes its own staging files; a retry creates a fresh staging directory.
 A process killed between operations may leave an old staging directory, but it is never
 selected or executed and cannot block a new attempt.
 
 Before activation, the installer checks whether another Zed process completed the same
 version/platform installation during its downloads. It verifies that cache's checksum
-and release identity again and reuses a valid winner in place, without moving or deleting
-it. Its own staging directory is removed. If cleanup is blocked after a verified server
-has been selected, the leftover is reported and cleanup is deferred instead of preventing
-startup.
+and release identity again and reuses a valid winner in place. This last check is only
+an optimization: a second process can still publish after the check. Every published
+directory keeps its pathname and file bytes; the installer never moves or deletes it,
+even when a later checksum detects corruption. Executable permissions may still be
+repaired before a verified cache is used.
 
-Repair of an existing version first moves its previous directory aside; if activation
-fails, restoration is attempted. An obsolete directory that Windows holds open may
-remain after successful activation, without preventing use of the verified replacement.
+Concurrent processes can safely retain two verified generations for the same pin. If
+their generation names collide, the directory rename cannot overwrite a nonempty
+published destination on Unix or Windows. The installer revalidates and reuses a valid
+collision winner, or chooses a fresh generation when the occupied slot is incomplete or
+byte-corrupt. It never renames the winner aside. A corrupt-cache repair likewise installs
+into a new generation while preserving every previous path, including files held open
+by a Windows server. There is no lock directory that a crashed process can leave behind.
+
+An unused staging directory is removed only while the attempt still owns it. Successful
+publication relinquishes that pathname, so cleanup cannot remove a different process's
+later reuse of the old staging name. If cleanup is blocked after a verified server has
+been selected, the leftover is reported and cleanup is deferred instead of preventing
+startup. A failed rename with no destination remains a visible installation failure.
 Unexpected symlinks and nonregular cache entries fail safely. Checksum-correct binaries
 that cannot execute or report an incompatible identity fail visibly; no older version
 is selected to conceal the error.
 
 To recover from filesystem permissions, a locked executable or an unexpected cache
 entry, stop the language server, inspect the reported path and remove only that affected
-version directory. Retry with network access, or point `serverPath` to an independently
-verified local executable. After stopping the extension, obsolete `.download-*` and
-`.previous-*` directories may be removed to reclaim disk space. Do not delete another
-running installation's files. For offline deployment before any cache exists, use
+version or generation directory. Retry with network access, or point `serverPath` to an independently
+verified local executable. Published generations are not automatically pruned: another
+Zed process may still be using any one of them. After stopping all affected Zed/server
+processes, obsolete generations and abandoned `.download-*` directories may be removed
+to reclaim disk space, along with any `.previous-*` directories from older adapters.
+Do not delete another running installation's files. For offline deployment before any cache exists, use
 `serverPath` or PATH with a validated local server; do not fabricate a cache manifest.
 
 Upgrades install a new version/platform directory. Existing versions remain intact if
@@ -189,8 +207,10 @@ WASM build does not exercise Zed's actual host download permissions or process e
 process boundary and real temporary directories. It verifies manifest rejection, hash
 mismatch refusal, repair after corrupted binary/manifest, interrupted download recovery,
 chmod/probe failure recovery, warm offline reuse, independent version/platform caches,
-failed offline upgrade without fallback, reuse of a concurrent installation without
-replacing its files, deferred cleanup failures, symlink refusal, absolute Windows paths, and
+failed offline upgrade without fallback, an installer that publishes after another's
+final cache lookup, simultaneous corrupt-cache repairs, verified and corrupt destination
+collisions, offline generation reuse, staging ownership after rename, concurrent cache-root
+creation, deferred cleanup failures, symlink refusal, absolute Windows paths, and
 explicit override/PATH precedence. These are installer behaviors, not source-text checks.
 
 `tests/e2e/dev-bundle.py` keeps the existing process-level checks: deterministic ZIP bytes,
@@ -231,6 +251,10 @@ asset/manifest digests, relevant settings and redacted Zed logs with observed re
 - Truncate the cached binary or checksum file, then reconnect and prove repair before
   normal analysis. Interrupt a first download and retry. A failed check must never start
   an unverified executable. Exercise denied download and native execution permissions.
+- Open two Zed processes against an initially empty cache, then repeat after corrupting
+  a cached binary. Verify that both selected server paths remain usable and that a
+  subsequent offline restart finds a verified generation. On Windows, retain the first
+  server process during the second installation to exercise native file sharing behavior.
 - Upgrade to a new compatible release; fail its download and verify that the previous
   cache remains intact without silent fallback. Test an explicit rollback. On Windows,
   include restart/upgrade while the old native process may still hold its file open.

@@ -48,17 +48,43 @@ pub fn asset_name(version: &str, platform: &str) -> Result<String, String> {
     ))
 }
 
-fn directory(path: &Path) -> Result<(), String> {
+fn existing_directory(path: &Path) -> Result<bool, String> {
     match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_dir() => Ok(()),
+        Ok(metadata) if metadata.file_type().is_dir() => Ok(true),
         Ok(_) => Err(format!(
             "Server cache must be a regular directory: {}",
             path.display()
         )),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => fs::create_dir(path)
-            .map_err(|error| format!("Cannot create server cache {}: {error}", path.display())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(format!(
             "Cannot inspect server cache {}: {error}",
+            path.display()
+        )),
+    }
+}
+
+fn directory(path: &Path) -> Result<(), String> {
+    directory_with_create(path, |path| fs::create_dir(path))
+}
+
+fn directory_with_create(
+    path: &Path,
+    create: impl FnOnce(&Path) -> std::io::Result<()>,
+) -> Result<(), String> {
+    if existing_directory(path)? {
+        return Ok(());
+    }
+    match create(path) {
+        Ok(()) => Ok(()),
+        // Another process can create the shared root after our initial check.
+        // Recheck its type instead of treating that benign race as a failure.
+        Err(error)
+            if error.kind() == std::io::ErrorKind::AlreadyExists && existing_directory(path)? =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(format!(
+            "Cannot create server cache {}: {error}",
             path.display()
         )),
     }
@@ -156,15 +182,68 @@ fn verified<H: Host>(
     Ok(Some(binary))
 }
 
-fn unique(root: &Path, prefix: &str) -> Result<PathBuf, String> {
+fn nonce() -> Result<String, String> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|error| error.to_string())?
         .as_nanos();
-    Ok(root.join(format!(
-        ".{prefix}-{now}-{}",
-        ATTEMPT.fetch_add(1, Ordering::Relaxed)
-    )))
+    Ok(format!("{now}-{}", ATTEMPT.fetch_add(1, Ordering::Relaxed)))
+}
+
+fn unique(root: &Path, prefix: &str) -> Result<PathBuf, String> {
+    Ok(root.join(format!(".{prefix}-{}", nonce()?)))
+}
+
+fn staging(root: &Path) -> Result<PathBuf, String> {
+    for _ in 0..8 {
+        let path = unique(root, "download")?;
+        match fs::create_dir(&path) {
+            Ok(()) => return Ok(path),
+            // Clocks and per-process counters can coincide across hosts. Only
+            // exclusive creation establishes ownership of a staging directory.
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(format!("Cannot create download staging directory: {error}")),
+        }
+    }
+    Err("Cannot allocate a download staging directory after repeated collisions".into())
+}
+
+fn cached<H: Host>(
+    root: &Path,
+    slot: &str,
+    asset: &str,
+    version: &str,
+    host: &mut H,
+) -> Result<Option<PathBuf>, String> {
+    let legacy = root.join(slot);
+    if existing_directory(&legacy)? {
+        if let Some(binary) = verified(&legacy, asset, version, host)? {
+            return Ok(Some(binary));
+        }
+    }
+    let prefix = format!("{slot}.gen-");
+    let mut generations = Vec::new();
+    for entry in fs::read_dir(root).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        if entry
+            .file_name()
+            .to_str()
+            .is_some_and(|name| name.starts_with(&prefix) && name.len() > prefix.len())
+        {
+            generations.push(entry.path());
+        }
+    }
+    generations.sort();
+    for generation in generations {
+        if existing_directory(&generation)? {
+            // Incomplete or byte-corrupt slots are retained but not executed.
+            // A valid immutable repair generation can still work offline.
+            if let Some(binary) = verified(&generation, asset, version, host)? {
+                return Ok(Some(binary));
+            }
+        }
+    }
+    Ok(None)
 }
 
 fn remove_directory(path: &Path) -> Result<(), String> {
@@ -183,33 +262,39 @@ fn remove_directory(path: &Path) -> Result<(), String> {
         .map_err(|error| format!("Cannot clean temporary cache {}: {error}", path.display()))
 }
 
-fn activate(stage: &Path, destination: &Path, root: &Path) -> Result<(), String> {
-    let previous = if destination
-        .try_exists()
-        .map_err(|error| error.to_string())?
-    {
-        let backup = unique(root, "previous")?;
-        fs::rename(destination, &backup).map_err(|error| {
-            format!("Cannot replace cached server: {error}. Stop the language server and retry.")
-        })?;
-        Some(backup)
-    } else {
-        None
-    };
-    if let Err(error) = fs::rename(stage, destination) {
-        if let Some(backup) = &previous {
-            fs::rename(backup, destination).map_err(|restore| format!("Cannot activate server ({error}) or restore previous cache ({restore}); retry installation"))?;
+fn activate<H: Host>(
+    stage: &Path,
+    root: &Path,
+    slot: &str,
+    asset: &str,
+    version: &str,
+    host: &mut H,
+    rename: &mut impl FnMut(&Path, &Path) -> std::io::Result<()>,
+) -> Result<(PathBuf, bool), String> {
+    let mut destination = root.join(format!("{slot}.gen-{}", nonce()?));
+    for _ in 0..8 {
+        // Published slots always contain the manifest and executable. Directory
+        // rename cannot replace a nonempty destination on Unix or Windows. We
+        // never move or remove a published slot, even when it is byte-corrupt.
+        match rename(stage, &destination) {
+            Ok(()) => return Ok((destination.join(asset), true)),
+            Err(error) => {
+                if !existing_directory(&destination)? {
+                    return Err(format!("Cannot activate verified server: {error}"));
+                }
+                if let Some(winner) = verified(&destination, asset, version, host)? {
+                    return Ok((winner, false));
+                }
+                // A repair may also have completed in another immutable slot
+                // after our final cache lookup. Prefer it before allocating one.
+                if let Some(winner) = cached(root, slot, asset, version, host)? {
+                    return Ok((winner, false));
+                }
+                destination = root.join(format!("{slot}.gen-{}", nonce()?));
+            }
         }
-        return Err(format!("Cannot activate verified server: {error}"));
     }
-    if let Some(backup) = previous {
-        // A Windows process can hold the obsolete executable open. The verified
-        // replacement is usable now; leave the backup for explicit later cleanup.
-        if let Err(error) = remove_directory(&backup) {
-            eprintln!("{error}; old cache retained");
-        }
-    }
-    Ok(())
+    Err("Cannot activate verified server after repeated cache directory collisions".into())
 }
 
 pub fn install<H: Host>(
@@ -218,21 +303,26 @@ pub fn install<H: Host>(
     version: &str,
     host: &mut H,
 ) -> Result<PathBuf, String> {
+    install_with_rename(root, platform, version, host, &mut |from, to| {
+        fs::rename(from, to)
+    })
+}
+
+fn install_with_rename<H: Host>(
+    root: &Path,
+    platform: &str,
+    version: &str,
+    host: &mut H,
+    rename: &mut impl FnMut(&Path, &Path) -> std::io::Result<()>,
+) -> Result<PathBuf, String> {
     let asset = asset_name(version, platform)?;
     directory(root)?;
-    let destination = root.join(format!("v{version}-{platform}"));
-    if destination
-        .try_exists()
-        .map_err(|error| error.to_string())?
-    {
-        directory(&destination)?;
-        if let Some(binary) = verified(&destination, &asset, version, host)? {
-            return Ok(binary);
-        }
+    let slot = format!("v{version}-{platform}");
+    if let Some(binary) = cached(root, &slot, &asset, version, host)? {
+        return Ok(binary);
     }
-    let stage = unique(root, "download")?;
-    fs::create_dir(&stage)
-        .map_err(|error| format!("Cannot create download staging directory: {error}"))?;
+    let stage = staging(root)?;
+    let mut stage_owned = true;
     let result = (|| {
         let url = format!("{REPOSITORY}/releases/download/v{version}");
         let sums = stage.join("SHA256SUMS");
@@ -250,31 +340,29 @@ pub fn install<H: Host>(
         }
         host.make_executable(&binary)?;
         crate::identity::validate(&host.identity(&binary)?, Some(version))?;
-        // A different Zed process may have completed this same installation
-        // while we downloaded. Revalidate and keep its working directory in
-        // place; replacing a valid winner can disrupt a running Windows server.
-        if destination
-            .try_exists()
-            .map_err(|error| error.to_string())?
-        {
-            directory(&destination)?;
-            if let Some(winner) = verified(&destination, &asset, version, host)? {
-                return Ok(winner);
-            }
+        if let Some(winner) = cached(root, &slot, &asset, version, host)? {
+            return Ok(winner);
         }
-        activate(&stage, &destination, root)?;
-        Ok(destination.join(&asset))
+        let (binary, moved) = activate(&stage, root, &slot, &asset, version, host, rename)?;
+        stage_owned = !moved;
+        Ok(binary)
     })();
-    let cleanup = stage
-        .try_exists()
-        .map_err(|error| error.to_string())
-        .and_then(|exists| {
-            if exists {
-                remove_directory(&stage)
-            } else {
-                Ok(())
-            }
-        });
+    // After publication the old staging pathname is no longer ours. Another
+    // process may reuse it; successful rename must not trigger any cleanup there.
+    let cleanup = if stage_owned {
+        stage
+            .try_exists()
+            .map_err(|error| error.to_string())
+            .and_then(|exists| {
+                if exists {
+                    remove_directory(&stage)
+                } else {
+                    Ok(())
+                }
+            })
+    } else {
+        Ok(())
+    };
     if let Err(cleanup) = cleanup {
         match &result {
             // The selected server has already passed validation. A leftover
