@@ -18,7 +18,7 @@ smaller packaging convenience, not the complete acceptance check.
 
 | Job | Hosts | Evidence and acceptance |
 | --- | --- | --- |
-| Native | Linux amd64/arm64, macOS amd64/arm64, Windows amd64 | Build the real CGO executable from vendor; `go vet`; CLI and stdio LSP consumers; compile ordinary and bundled Rust adapters to `wasm32-wasip2`; generate and verify each native development ZIP |
+| Native | Linux amd64/arm64, macOS amd64/arm64, Windows amd64 | Build the real CGO executable from vendor; `go vet`; CLI and stdio LSP consumers; test installer lifecycle; compile source and developer-package Rust adapters to `wasm32-wasip2`; generate and verify each native development ZIP |
 | Extended semantic | Linux amd64, three independent shards | Existing workflow/reference/inheritance/DAG/query/edit/lifecycle consumers, source asset integrity, snippets, pinned offline Argo and Helm integration |
 | Schema contracts | Linux amd64, semantic shard 0 | Actual CRD boundaries and separately built synthetic schema query/branch/projection fixtures |
 | Resource adversarial | Linux amd64 | Actual cgroup memory limits, oversized aggregate input, expression depth/width, buffer/snapshot limits, alias/merge budgets, subprocess output floods, timeout/cancellation and descendant reclamation |
@@ -221,8 +221,8 @@ satisfy identity checks.
 
 The final delivered ZIP must have the same actual SHA-256 as the already
 integrity-tested deterministic ZIP. The workflow also compiles the actual
-bundled Cargo manifest and retains that WASM output separately. Development ZIPs
-contain adapter source plus embedded native inputs for **Install Dev Extension**;
+standalone Cargo manifest from the package and retains that WASM output separately. Development ZIPs
+contain an `extension/` directory for **Install Dev Extension** and a separate `server/` executable selected with `serverPath`;
 they are not preinstalled editor sessions or marketplace releases.
 
 ## Evidence and reruns
@@ -245,7 +245,7 @@ python tests/ci/run.py suite --suite native \
 python tests/ci/run.py wasm --output artifacts/ci/wasm-source
 python tests/ci/run.py package \
   --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/package
-python tests/ci/run.py wasm --bundled artifacts/ci/package/package.json \
+python tests/ci/run.py wasm --package artifacts/ci/package/package.json \
   --output artifacts/ci/wasm-bundle
 python tests/ci/install-tools.py --output artifacts/ci/tools
 python tests/ci/run.py suite --suite extended --tools artifacts/ci/tools \
@@ -275,9 +275,9 @@ commit, platform and toolchain. It does **not** launch a real Zed editor. The
 workflow summary states `editorAcceptance: not-executed`.
 
 Real editor acceptance remains a separate recorded procedure: Install Dev
-Extension on a clean editor profile, no server override, verify bundled startup,
+Extension on a clean editor profile, no server override, verify pinned release download and warm-cache offline startup,
 diagnostics, applied completion, definition/navigation, valid and refused rename,
 Quick Fix plus undo, settings forwarding, error visibility/recovery, cache repair,
 and coexistence with YAML/Helm servers. Record Zed version, OS/architecture,
-extension/native hashes, settings, logs and observed outcomes. A previous local
+extension/native hashes, settings, logs and observed outcomes. Use the explicit per-platform checklist in [Distribution and store readiness](DISTRIBUTION.md). A previous local
 Zed result must not be attributed to a different CI artifact or another platform.

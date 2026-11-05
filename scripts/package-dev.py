@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package a verified, locally runnable prebuilt server as a Zed dev extension."""
+"""Package a verified server beside an independent, binary-free Zed dev extension."""
 import argparse
 import hashlib
 import io
@@ -46,9 +46,9 @@ def source_files(payload):
             path = pathlib.PurePosixPath(name)
             destination = None
             if name in ADAPTER_FILES or path.parts[0] in ('src', 'snippets', 'examples', 'docs'):
-                destination = name
+                destination = 'extension/' + name
             elif name in PROVENANCE_FILES:
-                destination = name if name == 'contracts/expr-patch.json' else 'provenance/' + name
+                destination = 'provenance/' + name
             elif path.parts[0] in ('vendor', 'schemas') and any(
                     token in path.name.upper() for token in ('LICENSE', 'NOTICE', 'COPYING', 'COPYRIGHT', 'PATENTS')):
                 destination = 'licenses/' + name
@@ -57,7 +57,7 @@ def source_files(payload):
         commit = archive.pax_headers.get('comment')
     if commit is not None and not re.fullmatch(r'(?:[0-9a-f]{40}|[0-9a-f]{64})', commit):
         raise ValueError('source archive has an invalid Git commit comment')
-    for name in ('src/lib.rs', 'snippets/yaml.json', 'examples/zed-tasks.json', 'licenses/schemas/LICENSE'):
+    for name in ('extension/src/lib.rs', 'extension/snippets/yaml.json', 'extension/examples/zed-tasks.json', 'licenses/schemas/LICENSE'):
         if name not in files:
             raise ValueError('source archive is missing required file: ' + name)
     if not any(name.startswith('licenses/vendor/') for name in files):
@@ -131,17 +131,22 @@ def main():
     provenance = source_identity(settings, archive_commit)
     if identity.get('catalogHash') != digest(files['provenance/compat/catalog.lock.json']):
         raise ValueError('native catalog hash does not match the source archive')
-    cargo = files['Cargo.toml'].decode()
-    if 'default = []' not in cargo: raise ValueError('source Cargo features must default to empty')
-    files['Cargo.toml'] = cargo.replace('default = []','default = ["bundled-server"]').encode()
     go_root = pathlib.Path(subprocess.check_output(['go','env','GOROOT'],text=True,timeout=30).strip())
     for name in ('LICENSE', 'PATENTS'):
         files['licenses/go/'+name] = (go_root/name).read_bytes()
     files['provenance/native-build.txt'] = ('native: '+ '\n'.join(build.splitlines()[0].split(': ')[1:])+'\n'+'\n'.join(build.splitlines()[1:])+'\n').encode()
     files['provenance/native-version.stdout'] = identity_process.stdout
     files['provenance/native-version.stderr'] = identity_process.stderr
-    files['native/server.bin'] = payload
-    manifest = {'schemaVersion':1,'product':'argo-workflows','platform':args.platform,'binarySha256':args.sha256,'binarySize':len(payload),'identity':identity,'sourceArchiveSha256':args.source_sha256,'sourceIdentity':provenance,'toolchain':{'goVersion':go_version,'rustToolchain':files['rust-toolchain.toml'].decode()},'filesSha256':{name:digest(data) for name,data in sorted(files.items())}}
+    native_name = 'server/argo-workflows-ls' + ('.exe' if os_name == 'windows' else '')
+    files[native_name] = payload
+    sample_path = ('C:/absolute/path/to/package/' if os_name == 'windows' else '/absolute/path/to/package/') + native_name
+    files['settings.example.json'] = (json.dumps({'lsp': {'argo-workflows-ls': {'settings': {'serverPath': sample_path}}}}, indent=2) + '\n').encode()
+    files['INSTALL.md'] = ("# Developer installation\n\nSelect the `extension/` folder in Zed's Install Dev Extension action. "
+        "The native server is separate in `" + native_name + "`. Set the absolute path in `settings.example.json` in Zed settings. "
+        "On POSIX hosts, restore executable permissions with `chmod +x " + native_name + "` if needed. "
+        "The extension contains no embedded server. Removing serverPath enables PATH discovery or a verified release download. "
+        "The first managed installation needs a matching published release and network access.\n").encode()
+    manifest = {'schemaVersion':1,'product':'argo-workflows','platform':args.platform,'binarySha256':args.sha256,'binarySize':len(payload),'identity':identity,'sourceArchiveSha256':args.source_sha256,'sourceIdentity':provenance,'toolchain':{'goVersion':go_version,'rustToolchain':files['extension/rust-toolchain.toml'].decode()},'filesSha256':{name:digest(data) for name,data in sorted(files.items())}}
     files['native/manifest.json'] = (json.dumps(manifest,indent=2,sort_keys=True)+'\n').encode()
     output=pathlib.Path(args.output).resolve()
     name='zed-argo-workflows-dev-'+args.platform.replace('/','-')
@@ -153,15 +158,15 @@ def main():
         stage=pathlib.Path(temp)/name; stage.mkdir()
         for relative,data in sorted(files.items()):
             path=stage/relative; path.parent.mkdir(parents=True,exist_ok=True); path.write_bytes(data)
-            path.chmod(0o755 if relative=='native/server.bin' else 0o644)
+            path.chmod(0o755 if relative==native_name else 0o644)
         staged_zip=pathlib.Path(temp)/(name+'.zip')
         with zipfile.ZipFile(staged_zip,'w',compression=zipfile.ZIP_STORED) as archive:
             for relative,data in sorted(files.items()):
                 info=zipfile.ZipInfo(name+'/'+relative,(1980,1,1,0,0,0)); info.create_system=3
-                info.external_attr=(0o100755 if relative=='native/server.bin' else 0o100644)<<16
+                info.external_attr=(0o100755 if relative==native_name else 0o100644)<<16
                 archive.writestr(info,data)
         shutil.move(stage,folder); shutil.move(staged_zip,zip_path)
-    print(json.dumps({'folder':str(folder),'zip':str(zip_path),'zipSha256':digest(zip_path.read_bytes()),'binarySha256':args.sha256},sort_keys=True))
+    print(json.dumps({'folder':str(folder),'extension':str(folder/'extension'),'binary':str(folder/native_name),'zip':str(zip_path),'zipSha256':digest(zip_path.read_bytes()),'binarySha256':args.sha256},sort_keys=True))
 
 if __name__ == '__main__':
     try: main()

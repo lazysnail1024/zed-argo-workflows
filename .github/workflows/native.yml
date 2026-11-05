@@ -5,6 +5,13 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      release_version:
+        description: Stable version for an exact clean native release build
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -73,7 +80,7 @@ jobs:
           python-version: '3.14.0'
       - name: Build actual native server and record source/toolchain identity
         id: build
-        run: python tests/ci/run.py build --platform "${{ matrix.platform }}" --output artifacts/ci/build
+        run: python tests/ci/run.py build --platform "${{ matrix.platform }}" --release-version "${{ inputs.release_version }}" --output artifacts/ci/build
       - name: Execute CLI and stdio LSP semantic consumers
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: python tests/ci/run.py suite --suite native --binary artifacts/ci/build/${{ matrix.binary }} --output artifacts/ci/native
@@ -81,6 +88,9 @@ jobs:
         id: rust
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: rustup toolchain install 1.99.1 --profile minimal --target wasm32-wasip2
+      - name: Test installer lifecycle and override precedence
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: cargo test --locked
       - name: Compile ordinary source extension to WASM
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
         run: python tests/ci/run.py wasm --output artifacts/ci/wasm-source
@@ -88,9 +98,23 @@ jobs:
         id: package
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: python tests/ci/run.py package --binary artifacts/ci/build/${{ matrix.binary }} --output artifacts/ci/package
-      - name: Compile the actual bundled extension to WASM
+      - name: Compile the standalone extension from the developer package
         if: ${{ !cancelled() && steps.rust.outcome == 'success' && steps.package.outcome == 'success' }}
-        run: python tests/ci/run.py wasm --bundled artifacts/ci/package/package.json --output artifacts/ci/wasm-bundle
+        run: python tests/ci/run.py wasm --package artifacts/ci/package/package.json --output artifacts/ci/wasm-package
+      - name: Verify native release staging and aggregate refusal controls
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: python tests/e2e/release-distribution.py --platform "${{ matrix.platform }}" --output artifacts/ci/release-e2e
+      - name: Stage exact native release assets
+        if: ${{ inputs.release_version != '' }}
+        run: python scripts/release.py stage --build artifacts/ci/build/build.json --version "${{ inputs.release_version }}" --source-commit "${{ github.sha }}" --output artifacts/ci/release-assets
+      - name: Retain per-platform release assets
+        if: ${{ inputs.release_version != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: workflows-release-${{ matrix.artifact }}
+          path: artifacts/ci/release-assets/
+          if-no-files-found: error
+          retention-days: 30
       - name: Retain native logs, failed fixtures, packages and both WASM outputs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -124,7 +148,7 @@ jobs:
           python-version: '3.14.0'
       - name: Build actual native server
         id: build
-        run: python tests/ci/run.py build --platform linux/amd64 --output artifacts/ci/build
+        run: python tests/ci/run.py build --platform linux/amd64 --release-version "${{ inputs.release_version }}" --output artifacts/ci/build
       - name: Install checksum-pinned offline oracle tools
         run: python tests/ci/install-tools.py --output artifacts/ci/tools
       - name: Execute extended existing consumers
@@ -164,7 +188,7 @@ jobs:
         with:
           python-version: '3.14.0'
       - name: Build outside measured cgroups
-        run: python tests/ci/run.py build --platform linux/amd64 --output artifacts/ci/build
+        run: python tests/ci/run.py build --platform linux/amd64 --release-version "${{ inputs.release_version }}" --output artifacts/ci/build
       - name: Execute existing consumers with enforced CPU, memory and swap limits
         run: python tests/ci/resources.py --suite ${{ matrix.suite }} --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/resources
       - name: Retain resource measurements, limits, raw traffic and failed inputs

@@ -15,5 +15,5 @@ Thumbs.db
 __pycache__/
 *.pyc
 
-# Generated precompiled development bundle payload.
+# Legacy generated native payloads (never shipped in the extension).
 /native/

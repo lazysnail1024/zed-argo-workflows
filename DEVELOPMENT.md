@@ -21,13 +21,13 @@ The toolkit dependency is pinned to the published Go pseudo-version `v0.0.0-2026
 
 ## Source checkout installation
 
-A plain source checkout has `bundled-server` disabled. Build the native server above, then set an absolute executable path in Zed:
+Source and store adapters use the same installer and contain no native binary. While the matching Release is unavailable, build the native server above and set an absolute executable path in Zed:
 
 ```json
 {"lsp":{"argo-workflows-ls":{"settings":{"serverPath":"/absolute/path/to/zed-argo-workflows/build/argo-workflows-ls"}}}}
 ```
 
-On Windows use an absolute path such as `C:/src/zed-argo-workflows/build/argo-workflows-ls.exe`. Choose this checkout in **Install Dev Extension**. Zed builds the adapter. `settings.serverPath` retains the identity/readiness handshake; generic `binary.path` bypasses it. Invalid explicit overrides never fall back to a bundle. Rebuild the native executable and restart the language server after native changes; reinstall after adapter changes.
+On Windows use an absolute path such as `C:/src/zed-argo-workflows/build/argo-workflows-ls.exe`. Choose this checkout in **Install Dev Extension**. Zed builds the adapter. `settings.serverPath` retains the identity/readiness handshake; generic `binary.path` bypasses it. Invalid explicit overrides fail before PATH lookup or download. The environment PATH is consulted only when no override exists. Rebuild the native executable and restart the language server after native changes; reinstall after adapter changes.
 
 ## Precompiled development bundles
 
@@ -41,15 +41,20 @@ python3 scripts/package-dev.py --binary /path/to/prebuilt-server \
 
 `--output` defaults to `dist`; existing package paths are refused. Supported platform identifiers are `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, and `windows/amd64`. Packaging requires a successful native-host `version --json` handshake, the Workflows product, readiness, and exactly the accepted/default 3.6.0 target. It does not establish editor acceptance on that platform.
 
-The output contains a platform-specific development folder and deterministic ZIP. Its copied Cargo manifest enables `bundled-server`; `native/server.bin` and `native/manifest.json` become embedded adapter inputs. The manifest records platform, native size/hash/identity, exact native source archive hash, toolchain provenance, and hashes of packaged files. Notices are copied from the native source archive and matching Go toolchain. The folder contains only adapter sources, snippets, documentation, locks, native payload and provenance/notices; it excludes development history and evidence. Generated native files and `dist` are ignored. This is a local development delivery, not a registry or hosted release.
+The output contains a platform-specific folder and deterministic ZIP. The original adapter sources, Cargo manifest and license live in `extension/`; the native executable lives separately in `server/argo-workflows-ls` (or `.exe`). `settings.example.json` shows the required absolute `serverPath`; `INSTALL.md` identifies the directory to select in Zed. The package tool never rewrites Cargo features or embeds the binary into WASM.
+
+`native/manifest.json` records platform, binary size/hash/identity, exact source archive hash, toolchain provenance and every packaged file hash. Dependency notices are copied from the native source archive and matching Go toolchain. The output omits development history and verification evidence. Generated files and `dist` are ignored. This remains a developer delivery, separate from registry review or public Release publication.
 
 ```sh
 python3 tests/e2e/dev-bundle.py /path/to/prebuilt-server /path/to/native-source.tar.gz artifacts/dev-bundle
+cargo test --locked
 cargo build --locked --offline --release --target wasm32-wasip2 \
-  --manifest-path dist/zed-argo-workflows-dev-linux-amd64/Cargo.toml
+  --manifest-path dist/zed-argo-workflows-dev-linux-amd64/extension/Cargo.toml
 ```
 
-The process consumer preserves commands, raw output/exit codes, input and package hashes, and assertions for deterministic archives, usable assets/notices, real native identity, and invalid input refusal. Real Zed installation separately verifies no override, fresh-cache startup, diagnostics, cache repair, and coexistence. For explicit-path launch failure, set `lsp.argo-workflows-ls.settings.serverPath` to a nonexistent absolute path and restart the language server: the visible failure must identify the configuration key, exact path, underlying operating-system cause, and advice to correct or remove the override. No bundled server may start while that invalid override remains. Remove the override and restart; the bundled server must recover with a real schema diagnostic and correct hover. Retain the settings input, extension/native hashes, Zed log, and failure/recovery observations. A bundled-path execution failure must instead identify the bundled path and advise checking executable permissions or reinstalling the development bundle. Bundle cache content must match embedded bytes before the existing identity handshake. Unexpected cache file types fail safely. A failed repair (for example an in-use Windows executable or an interrupted temporary write) requires stopping the server and removing the affected cache entry before retrying.
+The package consumer preserves commands, raw output/exit codes, input/package hashes and assertions for deterministic archives, source identity, notices, runnable native bytes and invalid-input refusal. Rust installer tests run the production resolver against an injected transport/process boundary and real temporary files. They cover fresh/warm/offline caches, checksum corruption, interrupted downloads, execution/permission failures, upgrades, unsupported platforms and override precedence. WASI compilation is a separate check because native tests do not establish real Zed host behavior.
+
+The managed installer and release asset contract, integrity limitations and manual platform checklist are documented in [Distribution and store readiness](docs/DISTRIBUTION.md). For a source checkout, all default installer behavior is identical to the store adapter. A successful developer `serverPath` test does not test first-time release download or prove store readiness.
 
 ## Behavioral verification
 
@@ -123,7 +128,7 @@ python3 tests/e2e/wf-remediation-render.py build/argo-workflows-ls /absolute/pat
 
 Use fresh artifact directories. Load measurements require an otherwise idle machine; repeat with five independent processes, recording the actual binary SHA-256, hardware, cold/warm state, input dimensions and protocol traffic. The scripts retain real stdout/stderr, expectations, input hashes and results. This supplements the existing multi-scope and dense-reference suites.
 
-The manual development-bundle workflow only builds the Linux amd64 development installation. The automatic acceptance workflow additionally builds and executes native consumers on five host platforms, compiles both ordinary and bundled WASM adapters, and runs separate Linux semantic, resource and mutation gates. Neither workflow publishes a release, registers an extension, or establishes real Zed acceptance. Editor installation/upgrade requires its own recorded execution before support claims expand. A formal publishing workflow remains gated on platform artifacts, locked provenance, independent edit-safety acceptance and explicit publication authorization.
+The manual development-bundle workflow only builds the Linux amd64 development installation. The automatic acceptance workflow additionally builds and executes native consumers on five host platforms, tests the installer and compiles source and separately packaged WASM adapters, and runs separate Linux semantic, resource and mutation gates. Neither workflow publishes a release, registers an extension, or establishes real Zed acceptance. Editor installation/upgrade requires its own recorded execution before support claims expand. Release publication must be gated on all existing acceptance jobs, exact platform artifacts and source provenance. The separate manual editor and registry review requirements remain outstanding; see docs/DISTRIBUTION.md.
 
 
 Runtime retention is separate from semantic admission limits. Parse/projection facts retain at most 8 MiB of source/projected text and 512,000 measured nodes; the 100,000 logical alias/merge expansion limit remains unchanged. Completed external-reference checks retain at most 20,000 per-resource entries and 4 MiB of accounted diagnostic data, keyed by exact caller input, scope/target/configuration, complete candidate sets, namespace, policy and completeness. A changed resource invalidates its callers through those dependency keys. Read-only scope query results retain at most 16 entries and 4 MiB, and require fresh, complete scope acquisition with the same input fingerprint. Field and local-name completion use the current document without acquiring unrelated files; external-name completion acquires its selected scope once before considering cached results. Edits still recheck full input and semantic safety. Temporary edit simulations are not captured into external-check retention.

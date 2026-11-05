@@ -2,20 +2,28 @@
 
 Offline YAML support for Argo Workflows `Workflow`, `CronWorkflow`, `WorkflowTemplate`, and `ClusterWorkflowTemplate`: diagnostics, completion, hover, navigation, references, and restricted safe edits. It does not connect to a cluster or execute workflows.
 
-**Install a precompiled development bundle for your platform.** There is no registry installation or hosted executable download yet. The source checkout includes a manual development-bundle workflow that prepares a Linux amd64 ZIP and SHA256SUMS as an Actions artifact when a maintainer runs it; no successful hosted run is claimed here. The default and accepted local-editing target is **3.6.0**. Other known versions are explicitly experimental; their checks remain incomplete and semantic edits are disabled.
+**Store publication is pending.** The adapter now supports verified downloads of a native server pinned to extension version `0.1.0`, but no matching public Release or Zed registry entry has been published as part of this change. Until that release exists, use a native build or a verified developer package with `settings.serverPath`. The default and accepted local-editing target is **3.6.0**. Other known versions remain experimental; their checks are incomplete and semantic edits are disabled.
 
 ## Install
 
-You need Zed with YAML support enabled and Rust through **rustup**. The bundle pins Rust **1.99.1** and `wasm32-wasip2`; Zed builds the Rust adapter when installing it. Initial Rust toolchain and dependency downloads require network access. The native server is already included: no Go or C compiler, manual Cargo build, or `settings.serverPath` is needed.
+The adapter resolves its server in this order:
 
-1. Obtain the ZIP and `SHA256SUMS` from the same identified build or maintainer delivery. On Linux, run `sha256sum -c SHA256SUMS` in their directory before extraction. Unzip the provided platform-specific `zed-argo-workflows-dev-<os>-<arch>.zip` and keep its extracted folder in place.
-2. In Zed's Extensions page choose **Install Dev Extension**, or run `zed: install dev extension`.
-3. Select the extracted folder containing `extension.toml` (not the ZIP or its parent).
-4. Open a project folder and a Workflows YAML file, such as the example below.
+1. An absolute `lsp.argo-workflows-ls.settings.serverPath` override.
+2. An `argo-workflows-ls` executable found in the project environment's PATH.
+3. The matching native asset from the pinned GitHub Release `v0.1.0`.
 
-To upgrade, extract a verified newer bundle into a new directory, then install that directory as the dev extension and restart the language server. Keep the previous bundle until the new one starts successfully; reinstall its directory to roll back.
+An explicit or discovered executable must pass the Workflows identity/readiness handshake. Invalid selections fail visibly; remove or correct them to use managed installation. Managed downloads use Zed's Rust Extension API. The adapter downloads `SHA256SUMS` and the platform executable, verifies SHA-256 **before executing it**, then validates its release identity and activates it in a version/platform cache. A valid cached server starts without network access and is rehashed on each startup. The first managed installation and the first startup after an upgrade require network access and the matching published release. See [Distribution and store readiness](docs/DISTRIBUTION.md) for asset names, recovery and the manual editor checklist.
 
-Use the bundle matching your host OS and architecture; a mismatched bundle refuses startup. Only the locally verified Linux amd64 bundle is currently delivered; other platform packages require their own native-host and editor verification. The adapter materializes the embedded server into its extension work directory and verifies its identity before starting it. No executable is downloaded during installation or startup. Remove any old `lsp.argo-workflows-ls.settings.serverPath` override to use the bundled server; an explicit override takes priority and an invalid override fails without fallback.
+### Developer installation before the first release
+
+You need Zed with YAML support enabled and Rust through **rustup**. The adapter pins Rust **1.99.1** and `wasm32-wasip2`; initial Rust toolchain and dependency downloads require network access. A verified developer package includes a separate native server, so it needs no Go or C compiler on the user's machine.
+
+1. Obtain the platform-specific `zed-argo-workflows-dev-<os>-<arch>.zip` and its checksum from the same identified Actions run or maintainer delivery; verify the checksum before extraction.
+2. Extract it into a permanent directory. Use its `settings.example.json` as a template and set `lsp.argo-workflows-ls.settings.serverPath` to the absolute path of `server/argo-workflows-ls` (`.exe` on Windows).
+3. In Zed choose **Install Dev Extension** and select the extracted **`extension/`** directory, which contains `extension.toml` and `LICENSE`.
+4. Open a project folder and a Workflows YAML file. On POSIX hosts, run `chmod +x server/argo-workflows-ls` if the unzip tool did not preserve execute permissions.
+
+The server stays outside the extension source and WASM. To upgrade a developer package, verify and extract the new ZIP into a new directory, update `serverPath`, install its `extension/` directory and restart the server. Keep the previous directory for an explicit rollback. Linux amd64, Linux arm64, macOS amd64, macOS arm64 and Windows amd64 have native CI jobs; no platform's new installer has yet been accepted in a real Zed session.
 
 For Rename in a Workflow project, optionally add this to the project's `.zed/settings.json` so Zed routes the operation to Workflows while retaining other YAML servers:
 
@@ -69,12 +77,12 @@ An explicit `lsp.argo-workflows-ls.settings.targetVersion` overrides file pins; 
 
 ## CLI
 
-From the extracted bundle folder (on POSIX systems, run `chmod +x native/server.bin` if your unzip tool did not preserve executable permissions):
+From the extracted bundle folder (on POSIX systems, run `chmod +x server/argo-workflows-ls` if your unzip tool did not preserve executable permissions):
 
 ```sh
-./native/server.bin explain-config --root /path/to/project
-./native/server.bin check --root /path/to/project --format json
-./native/server.bin check --root /path/to/project --warnings-as-errors
+./server/argo-workflows-ls explain-config --root /path/to/project
+./server/argo-workflows-ls check --root /path/to/project --format json
+./server/argo-workflows-ls check --root /path/to/project --warnings-as-errors
 ```
 
 Exit codes are **0** for complete analysis without errors, **1** for errors (or warnings with `--warnings-as-errors`), **2** for configuration/input/analysis incompleteness, and **3** for cancellation or deadline. The warnings flag changes the exit decision, not diagnostic severity. `--scope` selects an analysis scope; `--file` only filters diagnostic output and retains scope dependencies. `--target-version` overrides the target explicitly.
