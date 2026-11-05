@@ -7,11 +7,15 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
+import runpy
 import signal
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
+import tomllib
 import traceback
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -191,6 +195,18 @@ def build(args):
     expected = args.platform or host_platform()
     if expected != host_platform():
         raise ValueError(f"native execution required: requested {expected}, actual {host_platform()}")
+    windows = expected == "windows/amd64"
+    if windows:
+        # Match the proven Argo CD native builder: inherited compiler/search
+        # flags must not substitute an unreviewed static runtime or DLL import.
+        allowed = {"PATH", "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "TMPDIR", "TMP", "TEMP",
+                   "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "PATHEXT", "LOCALAPPDATA", "APPDATA",
+                   "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMW6432", "GOROOT", "GOCACHE", "GOMODCACHE",
+                   "GOTMPDIR", "CC"}
+        env = {key: value for key, value in os.environ.items() if key.upper() in allowed}
+        env.update(GOENV="off", GOWORK="off", GOTOOLCHAIN="local", CGO_ENABLED="1", GOFLAGS="",
+                   GOPROXY="off", GOSUMDB="off", CGO_CFLAGS="-O2 -g", CGO_CPPFLAGS="",
+                   CGO_CXXFLAGS="-O2 -g", CGO_FFLAGS="-O2 -g", CGO_LDFLAGS="-O2 -g", LC_ALL="C")
     binary = output / ("argo-workflows-ls.exe" if os.name == "nt" else "argo-workflows-ls")
     metadata = {"platform": expected, "python": sys.version, "machine": platform.platform(),
                 "sourceCommit": checked(["git", "rev-parse", "HEAD"], output / "source").strip(),
@@ -198,16 +214,71 @@ def build(args):
                 "go": checked(["go", "version"], output / "go-version", env=env),
                 "goEnvironment": checked(["go", "env", "-json"], output / "go-env", env=env),
                 "compiler": checked([os.environ.get("CC", "cc"), "--version"], output / "compiler")}
+    if windows:
+        windows_spec = json.loads((ROOT / "scripts/windows-runtime.json").read_bytes())
+        verify_windows_runtime = runpy.run_path(str(ROOT / "scripts/package-dev.py"))["windows_runtime"]
+        windows_legal = verify_windows_runtime(windows_spec, env=env)
+        metadata["windowsRuntime"] = windows_spec
     save(output / "environment.json", metadata)
-    checked(["go", "build", "-mod=vendor", "-buildvcs=true", "-trimpath", "-o", binary,
-             "./cmd/argo-workflows-ls"], output / "compile", timeout=600, env=env)
-    checked(["go", "vet", "-mod=vendor", "./..."], output / "vet", timeout=300, env=env)
+    release_version = args.release_version
+    linker_flags = ""
+    if release_version:
+        if not re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", release_version):
+            raise ValueError("release version must be a stable semantic version")
+        cargo = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))
+        extension = tomllib.loads((ROOT / "extension.toml").read_text(encoding="utf-8"))
+        if cargo["package"]["version"] != release_version or extension["version"] != release_version:
+            raise ValueError("release version must match Cargo.toml and extension.toml")
+        if metadata["sourceStatus"]:
+            raise ValueError("release build requires an exact clean committed source")
+        expected_go = "go" + next(line.split()[1] for line in (ROOT / "go.mod").read_text().splitlines() if line.startswith("go "))
+        if json.loads(metadata["goEnvironment"])["GOVERSION"] != expected_go:
+            raise ValueError("release build requires the pinned Go toolchain")
+        module = "github.com/lazysnail1024/zed-argo-workflows/internal/buildinfo"
+        linker_flags = f"-X {module}.ServerVersion={release_version} -X {module}.SourceCommit={metadata['sourceCommit']} -X {module}.Dirty=false -X {module}.BuildMode=release"
+    if windows:
+        linker_flags += ' -linkmode=external -extldflags "-static -Wl,-Map,workflows-native-link.map"'
+    flags = ["-ldflags", linker_flags.strip()] if linker_flags else []
+    compile_command = ["go", "build", "-mod=vendor", "-buildvcs=true", "-trimpath", *flags, "-o", binary, "./cmd/argo-workflows-ls"]
+
+    def retain_windows_runtime(cwd):
+        if not windows:
+            return
+        if verify_windows_runtime(windows_spec, env=env) != windows_legal:
+            raise ValueError("Windows runtime inputs changed during native build")
+        link_map = cwd / "workflows-native-link.map"
+        if link_map.is_symlink() or not link_map.is_file() or link_map.stat().st_size > 128 * 1024 * 1024:
+            raise ValueError("Missing or invalid Windows static linker map")
+        retained = output / "native-link.map"
+        shutil.move(link_map, retained)
+        metadata["linkMap"] = {"file": retained.name, "sha256": sha(retained), "buildDirectory": str(cwd)}
+
+    if release_version:
+        # A disposable exact-commit worktree excludes ignored local Go/C/embed
+        # files while retaining genuine Go VCS metadata for package verification.
+        with tempfile.TemporaryDirectory(prefix="workflows-release-") as temporary:
+            snapshot = Path(temporary) / "source"
+            checked(["git", "worktree", "add", "--detach", snapshot, metadata["sourceCommit"]], output / "source-worktree")
+            try:
+                checked(compile_command, output / "compile", timeout=600, env=env, cwd=snapshot)
+                retain_windows_runtime(snapshot)
+                checked(["go", "vet", "-mod=vendor", "./..."], output / "vet", timeout=300, env=env, cwd=snapshot)
+            finally:
+                checked(["git", "worktree", "remove", "--force", snapshot], output / "source-worktree-cleanup")
+    else:
+        checked(compile_command, output / "compile", timeout=600, env=env)
+        retain_windows_runtime(ROOT)
+        checked(["go", "vet", "-mod=vendor", "./..."], output / "vet", timeout=300, env=env)
     checked(["go", "version", "-m", binary], output / "native-build", env=env)
     identity = json.loads(checked([binary, "version", "--json"], output / "identity"))
     if identity.get("product") != "argo-workflows" or identity.get("analysisReady") is not True:
         raise ValueError(f"wrong native identity: {identity}")
     if identity.get("defaultTargetVersion") != "3.6.0" or identity.get("acceptedTargetVersions") != ["3.6.0"]:
         raise ValueError(f"unexpected delivery targets: {identity}")
+    if release_version and any(identity.get(key) != value for key, value in {
+            "serverVersion": release_version, "sourceCommit": metadata["sourceCommit"],
+            "dirty": False, "buildMode": "release"}.items()):
+        raise ValueError("release identity differs from the requested source/version")
     save(output / "build.json", metadata | {"binary": str(binary), "binarySha256": sha(binary), "identity": identity})
     return True
 
@@ -277,9 +348,9 @@ def package(args):
 
 def wasm(args):
     manifest = ROOT / "Cargo.toml"
-    if args.bundled:
-        produced = json.loads(args.bundled.read_text(encoding="utf-8"))
-        manifest = Path(produced["folder"]) / "Cargo.toml"
+    if args.package:
+        produced = json.loads(args.package.read_text(encoding="utf-8"))
+        manifest = Path(produced["extension"]) / "Cargo.toml"
     target = ROOT / "build/ci-wasm" / args.output.name
     env = os.environ | {"CARGO_TARGET_DIR": str(target)}
     checked(["cargo", "build", "--locked", "--release", "--target", "wasm32-wasip2", "--manifest-path", manifest],
@@ -290,7 +361,7 @@ def wasm(args):
     retained = args.output / "zed_argo_workflows.wasm"
     shutil.copyfile(artifact, retained)
     save(args.output / "wasm.json", {"manifest": str(manifest), "wasm": str(retained), "sha256": sha(retained),
-                                    "bytes": artifact.stat().st_size, "bundled": bool(args.bundled),
+                                    "bytes": artifact.stat().st_size, "separateNativePackage": bool(args.package),
                                     "editorAcceptance": "not-executed"})
     return True
 
@@ -349,6 +420,7 @@ def main():
     sub = parser.add_subparsers(dest="action", required=True)
     p = sub.add_parser("build")
     p.add_argument("--platform")
+    p.add_argument("--release-version", default="", help="Build the pinned clean stable release from its exact source commit")
     p = sub.add_parser("suite")
     p.add_argument("--suite", choices=("native", "extended"), required=True)
     p.add_argument("--binary", type=Path, required=True)
@@ -357,7 +429,7 @@ def main():
     p = sub.add_parser("package")
     p.add_argument("--binary", type=Path, required=True)
     p = sub.add_parser("wasm")
-    p.add_argument("--bundled", type=Path)
+    p.add_argument("--package", type=Path)
     p = sub.add_parser("mutations")
     p.add_argument("--group", choices=("core", "audit", "resources"), required=True)
     p = sub.add_parser("schema")
@@ -368,8 +440,8 @@ def main():
     args.output = args.output.resolve()
     if hasattr(args, "binary"):
         args.binary = args.binary.resolve()
-    if getattr(args, "bundled", None):
-        args.bundled = args.bundled.resolve()
+    if getattr(args, "package", None):
+        args.package = args.package.resolve()
     if getattr(args, "tools", None):
         args.tools = args.tools.resolve()
     args.output.mkdir(parents=True, exist_ok=True)

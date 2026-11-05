@@ -10,7 +10,4 @@ crate-type = ["cdylib"]
 [dependencies]
 zed_extension_api = "=0.7.0"
 serde_json = "=1.0.145"
-
-[features]
-default = []
-bundled-server = []
+sha2 = "=0.10.9"

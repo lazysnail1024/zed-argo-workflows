@@ -8,6 +8,7 @@ import (
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/analysis"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/buildinfo"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/lsp"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
@@ -46,7 +47,7 @@ func runContext(parent context.Context, args []string) int {
 			fmt.Fprintln(os.Stderr, "usage: version --json")
 			return 2
 		}
-		emit(map[string]any{"product": "argo-workflows", "serverVersion": "0.1.0-dev", "adapterContractVersion": 1, "analysisReady": true, "defaultTargetVersion": compat.DefaultVersion, "acceptedTargetVersions": []string{compat.DefaultVersion}, "configSchemaVersions": []int{1}, "reportSchemaVersions": []int{1}, "toolkitVersion": "v0.0.0-20261103033718-ae52b82ec6c9", "catalogHash": compat.Hash(), "sourceCommit": nil, "dirty": true, "buildMode": "development"})
+		emit(map[string]any{"product": "argo-workflows", "serverVersion": buildinfo.ServerVersion, "adapterContractVersion": 1, "analysisReady": true, "defaultTargetVersion": compat.DefaultVersion, "acceptedTargetVersions": []string{compat.DefaultVersion}, "configSchemaVersions": []int{1}, "reportSchemaVersions": []int{1}, "toolkitVersion": "v0.0.0-20261103033718-ae52b82ec6c9", "catalogHash": compat.Hash(), "sourceCommit": buildinfo.Commit(), "dirty": buildinfo.IsDirty(), "buildMode": buildinfo.BuildMode})
 		return 0
 	case "check":
 		flags := flag.NewFlagSet("check", flag.ContinueOnError)
@@ -179,7 +180,7 @@ func runContext(parent context.Context, args []string) int {
 		}
 		complete := len(configurationErrors) == 0 && len(notEvaluated) == 0 && ctx.Err() == nil
 		if *format == "json" {
-			emit(map[string]any{"reportSchemaVersion": 1, "product": "argo-workflows", "toolVersion": "0.1.0-dev", "catalogHash": compat.Hash(), "inputSource": "disk", "validationScope": "local-editing-contract", "analysisComplete": complete, "notEvaluated": notEvaluated, "filesAnalyzed": filesAnalyzed, "resourcesAnalyzed": resourcesAnalyzed, "targets": targets, "diagnostics": diagnostics, "configurationErrors": configurationErrors, "elapsedMilliseconds": time.Since(started).Milliseconds()})
+			emit(map[string]any{"reportSchemaVersion": 1, "product": "argo-workflows", "toolVersion": buildinfo.ServerVersion, "catalogHash": compat.Hash(), "inputSource": "disk", "validationScope": "local-editing-contract", "analysisComplete": complete, "notEvaluated": notEvaluated, "filesAnalyzed": filesAnalyzed, "resourcesAnalyzed": resourcesAnalyzed, "targets": targets, "diagnostics": diagnostics, "configurationErrors": configurationErrors, "elapsedMilliseconds": time.Since(started).Milliseconds()})
 		} else {
 			for _, d := range diagnostics {
 				fmt.Printf("%s:%d:%d: %s %s\n", d.URI, d.Range.Start.Line+1, d.Range.Start.Character+1, d.Code, d.Message)

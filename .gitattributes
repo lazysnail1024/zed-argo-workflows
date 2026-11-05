@@ -1,3 +1,5 @@
 # Embedded catalog/source hashes and deterministic bundles require exact LF bytes
 # on Windows as well as Unix. Python consumers create CRLF fixtures explicitly.
 * text=auto eol=lf
+# Preserve original distribution notice bytes and formatting for pinned SHA-256.
+licenses/windows-runtime/** -text -whitespace

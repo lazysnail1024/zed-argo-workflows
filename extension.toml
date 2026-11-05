@@ -1,11 +1,11 @@
 id = "argo-workflows-lsp"
-name = "Argo Workflows (local development)"
+name = "Argo Workflows"
 version = "0.1.0"
 schema_version = 1
 snippets = ["snippets/yaml.json"]
 authors = ["snail (lazysnail1024)"]
 repository = "https://github.com/lazysnail1024/zed-argo-workflows"
-description = "Offline Argo Workflows 3.6.0 YAML support; other targets are experimental."
+description = "Argo Workflows YAML diagnostics, navigation, and completion."
 
 [language_servers.argo-workflows-ls]
 name = "Argo Workflows Language Server"
@@ -17,3 +17,8 @@ YAML = "yaml"
 kind = "process:exec"
 command = "*"
 args = ["version", "--json"]
+
+[[capabilities]]
+kind = "download_file"
+host = "github.com"
+path = ["lazysnail1024", "zed-argo-workflows", "releases", "download", "**"]

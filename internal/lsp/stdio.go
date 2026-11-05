@@ -11,6 +11,7 @@ import (
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/analysis"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/buildinfo"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
 	protocol "github.com/tliron/glsp/protocol_3_16"
@@ -549,7 +550,7 @@ func (s *session) handle(m message) (bool, int, error) {
 			capabilities["codeActionProvider"] = map[string]any{"resolveProvider": true, "codeActionKinds": []string{"quickfix"}}
 			capabilities["renameProvider"] = map[string]any{"prepareProvider": true}
 		}
-		return false, 0, s.reply(m.ID, map[string]any{"capabilities": capabilities, "serverInfo": map[string]any{"name": "argo-workflows-ls", "version": "0.1.0-dev"}})
+		return false, 0, s.reply(m.ID, map[string]any{"capabilities": capabilities, "serverInfo": map[string]any{"name": "argo-workflows-ls", "version": buildinfo.ServerVersion}})
 	}
 	if !s.initialized {
 		return false, 0, s.failure(m.ID, -32002, "server not initialized")

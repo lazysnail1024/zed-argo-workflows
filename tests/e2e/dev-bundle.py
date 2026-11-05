@@ -3,8 +3,10 @@
 import hashlib
 import io
 import json
+import os
 import pathlib
 import platform
+import runpy
 import shutil
 import subprocess
 import sys
@@ -69,6 +71,8 @@ def package(name, args, expected_error=None):
     folder = target / ('zed-argo-workflows-dev-' + platform_id.replace('/', '-'))
     archive = folder.with_suffix('.zip')
     require(name + '-output', {'folder': metadata.get('folder') == str(folder) and folder.is_dir(),
+                              'extension': metadata.get('extension') == str(folder / 'extension'),
+                              'binary': metadata.get('binary') == str(folder / ('server/argo-workflows-ls.exe' if platform.system() == 'Windows' else 'server/argo-workflows-ls')),
                               'zip': metadata.get('zip') == str(archive) and archive.is_file(),
                               'zipSha256': metadata.get('zipSha256') == sha(archive),
                               'binarySha256': metadata.get('binarySha256') == sha(binary)})
@@ -132,15 +136,50 @@ func main() {
         package(name, changed('--sha256', sha(fake), changed('--binary', fake)), expected)
 
 
+def runtime_pin_controls(spec, notice_bytes):
+    """Synthetic input-integrity controls; no Windows compiler is executed."""
+    helper = runpy.run_path(str(root / 'scripts/package-dev.py'))['windows_runtime']
+    fixture = out / 'synthetic-runtime-inputs'
+    fixture_spec = json.loads(json.dumps(spec))
+    for name in fixture_spec['runtimeFiles']:
+        target = fixture / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b'Synthetic input-integrity fixture: ' + name.encode())
+        target.chmod(0o755)
+        fixture_spec['runtimeFiles'][name] = sha(target)
+    for name in fixture_spec['legalFiles']:
+        target = fixture / 'licenses' / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(notice_bytes['licenses/windows-runtime/' + name])
+    environment = os.environ | {'CC': str(fixture / 'bin/gcc.exe')}
+    require('synthetic-runtime-input-control', {
+        'exactOriginalNotices': helper(fixture_spec, environment) == notice_bytes})
+    for name, relative in (('static-runtime', 'x86_64-w64-mingw32/lib/libwinpthread.a'),
+                           ('runtime-notice', 'licenses/winpthreads/COPYING')):
+        path = fixture / relative
+        original = path.read_bytes()
+        path.write_bytes(original + b'changed')
+        refused = False
+        try:
+            helper(fixture_spec, environment)
+        except ValueError as error:
+            refused = 'differs from the pinned distribution' in str(error)
+        finally:
+            path.write_bytes(original)
+        require('changed-' + name + '-refused', {'specificIntegrityRefusal': refused})
+
+
 try:
     first, first_zip = package('first', base)
     second, second_zip = package('second', base)
     require('deterministic-archive', {'byteIdentical': first_zip.read_bytes() == second_zip.read_bytes()}, zipSha256=sha(first_zip))
     manifest = json.loads((first / 'native/manifest.json').read_text(encoding='utf-8'))
     hashes = manifest.get('filesSha256', {})
-    required = ['examples/zed-tasks.json', 'extension.toml', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml',
-                'src/lib.rs', 'snippets/yaml.json', 'LICENSE', 'native/server.bin', 'native/manifest.json',
+    native_name = 'server/argo-workflows-ls' + ('.exe' if platform.system() == 'Windows' else '')
+    required = ['extension/examples/zed-tasks.json', 'extension/extension.toml', 'extension/Cargo.toml', 'extension/Cargo.lock', 'extension/rust-toolchain.toml',
+                'extension/src/lib.rs', 'extension/snippets/yaml.json', 'extension/LICENSE', native_name, 'native/manifest.json', 'settings.example.json', 'INSTALL.md',
                 'licenses/go/LICENSE', 'licenses/go/PATENTS', 'licenses/schemas/LICENSE',
+                'provenance/scripts/windows-runtime.json',
                 'licenses/vendor/github.com/tree-sitter/go-tree-sitter/src/unicode/LICENSE',
                 'licenses/vendor/go.yaml.in/yaml/v2/NOTICE']
     folder_paths = {path.relative_to(first).as_posix() for path in first.rglob('*') if path.is_file()}
@@ -150,7 +189,7 @@ try:
                                   'allFileHashes': all(sha(first / path) == expected for path, expected in hashes.items()),
                                   'product': manifest.get('schemaVersion') == 1 and manifest.get('product') == 'argo-workflows',
                                   'platform': manifest.get('platform') == platform_id,
-                                  'native': manifest.get('binarySha256') == sha(binary) == sha(first / 'native/server.bin'),
+                                  'native': manifest.get('binarySha256') == sha(binary) == sha(first / native_name),
                                   'nativeSize': manifest.get('binarySize') == binary.stat().st_size,
                                   'sourceHash': manifest.get('sourceArchiveSha256') == sha(source)})
     with zipfile.ZipFile(first_zip) as archive:
@@ -162,12 +201,12 @@ try:
                                  'noDevelopmentEvidence': not any('/AGENTS.md' in name or '/DESIGN.md' in name or '/artifacts/' in name for name in names),
                                  'allBytesMatchFolder': all(archive.read(prefix + path) == (first / path).read_bytes() for path in folder_paths),
                                  'allHashesMatch': all(hashlib.sha256(archive.read(prefix + path)).hexdigest() == expected for path, expected in hashes.items()),
-                                 'nativeExecutableMode': (archive.getinfo(prefix + 'native/server.bin').external_attr >> 16) & 0o777 == 0o755,
+                                 'nativeExecutableMode': (archive.getinfo(prefix + native_name).external_attr >> 16) & 0o777 == 0o755,
                                  'noCorruptMember': archive.testzip() is None})
-        # Model the adapter's materialized executable name. Python's ZIP extraction
+        # Execute the separately supplied native server. Python's ZIP extraction
         # does not restore Unix execute bits, so apply the verified archive mode.
         extracted = out / ('extracted-server.exe' if platform.system() == 'Windows' else 'extracted-server')
-        extracted.write_bytes(archive.read(prefix + 'native/server.bin'))
+        extracted.write_bytes(archive.read(prefix + native_name))
         extracted.chmod(0o755)
     executed = command('extracted-native', [str(extracted), 'version', '--json'])
     identity = json.loads(executed.stdout)
@@ -183,8 +222,9 @@ try:
     source_checks = {}
     expected_source_paths = set()
     direct_files = {'Cargo.toml', 'Cargo.lock', 'extension.toml', 'rust-toolchain.toml',
-                    'LICENSE', 'README.md', 'DEVELOPMENT.md', 'contracts/expr-patch.json'}
-    provenance_files = {'go.mod', 'go.sum', 'contracts/toolkit.lock.json', 'compat/catalog.lock.json'}
+                    'LICENSE', 'README.md', 'DEVELOPMENT.md'}
+    provenance_files = {'go.mod', 'go.sum', 'contracts/toolkit.lock.json', 'contracts/expr-patch.json',
+                        'compat/catalog.lock.json', 'scripts/windows-runtime.json'}
     with tarfile.open(source, 'r:*') as archive:
         source_commit = archive.pax_headers.get('comment')
         for member in archive.getmembers():
@@ -194,9 +234,11 @@ try:
             parts = pathlib.PurePosixPath(name).parts
             destination = None
             if name in direct_files or parts[0] in ('src', 'snippets', 'examples', 'docs'):
-                destination = name
+                destination = 'extension/' + name
             elif name in provenance_files:
                 destination = 'provenance/' + name
+            elif parts[:2] == ('licenses', 'windows-runtime'):
+                destination = name
             elif parts[0] in ('vendor', 'schemas') and any(
                     token in parts[-1].upper() for token in ('LICENSE', 'NOTICE', 'COPYING', 'COPYRIGHT', 'PATENTS')):
                 destination = 'licenses/' + name
@@ -205,10 +247,20 @@ try:
             original = archive.extractfile(member).read()
             compact[name] = original
             expected_source_paths.add(destination)
-            wanted = original.replace(b'default = []', b'default = ["bundled-server"]') if name == 'Cargo.toml' else original
+            wanted = original
             source_checks[name] = (first / destination).is_file() and (first / destination).read_bytes() == wanted
     require('source-assets-and-notices', source_checks)
-    generated = {'native/server.bin', 'native/manifest.json', 'licenses/go/LICENSE', 'licenses/go/PATENTS',
+    windows_spec = json.loads(compact['scripts/windows-runtime.json'])
+    windows_notices = {'licenses/windows-runtime/' + name: expected
+                       for name, expected in windows_spec['legalFiles'].items()}
+    require('pinned-windows-runtime-notices', {
+        'originalNoticeHashes': all(sha(first / name) == expected for name, expected in windows_notices.items()),
+        'exactNoticeInventory': {name for name in folder_paths if name.startswith('licenses/windows-runtime/')} == set(windows_notices),
+        'platformBuildProvenance': (manifest.get('windowsRuntime') == windows_spec if platform.system() == 'Windows'
+                                    else 'windowsRuntime' not in manifest)},
+        distribution=windows_spec['distribution'], noticeCount=len(windows_notices))
+    runtime_pin_controls(windows_spec, {name: compact[name] for name in windows_notices})
+    generated = {native_name, 'settings.example.json', 'INSTALL.md', 'native/manifest.json', 'licenses/go/LICENSE', 'licenses/go/PATENTS',
                  'provenance/native-build.txt', 'provenance/native-version.stdout', 'provenance/native-version.stderr'}
     toolchain = command('go-root', ['go', 'env', 'GOROOT'])
     go_root = pathlib.Path(toolchain.stdout.decode().strip())
@@ -216,9 +268,10 @@ try:
                                          'goToolchainRead': toolchain.returncode == 0,
                                          'goLicenses': all((first / 'licenses/go' / name).read_bytes() == (go_root / name).read_bytes()
                                                            for name in ('LICENSE', 'PATENTS'))})
-    task = json.loads((first / 'examples/zed-tasks.json').read_text(encoding='utf-8'))[0]
-    require('installable-assets', {'bundledFeature': b'default = ["bundled-server"]' in (first / 'Cargo.toml').read_bytes(),
-                                  'documentedTask': 'examples/zed-tasks.json' in (first / 'README.md').read_text(encoding='utf-8'),
+    task = json.loads((first / 'extension/examples/zed-tasks.json').read_text(encoding='utf-8'))[0]
+    require('installable-assets', {'separateServer': not any(path.startswith('extension/server/') or path.startswith('extension/native/') for path in folder_paths),
+                                  'serverPathSample': json.loads((first / 'settings.example.json').read_text())['lsp']['argo-workflows-ls']['settings']['serverPath'].endswith(native_name),
+                                  'documentedTask': 'examples/zed-tasks.json' in (first / 'extension/README.md').read_text(encoding='utf-8'),
                                   'renderTask': all(value in task['command'] for value in ['render-check', '--helm-binary', '--values']),
                                   'catalogIdentity': identity.get('catalogHash') == sha(first / 'provenance/compat/catalog.lock.json')})
     metadata = command('native-build', ['go', 'version', '-m', str(binary)])
@@ -247,6 +300,19 @@ try:
     del missing['Cargo.lock']
     package('incomplete-source', archive_args(write_archive('incomplete', missing, source_commit)),
             'source archive is missing required file: Cargo.lock')
+    missing_pin = dict(compact)
+    del missing_pin['scripts/windows-runtime.json']
+    package('missing-windows-runtime-pin', archive_args(write_archive('missing-runtime-pin', missing_pin, source_commit)),
+            'source archive is missing required file: scripts/windows-runtime.json')
+    runtime_notice = 'licenses/windows-runtime/winpthreads/COPYING'
+    missing_notice = dict(compact)
+    del missing_notice[runtime_notice]
+    package('missing-windows-runtime-notice', archive_args(write_archive('missing-runtime-notice', missing_notice, source_commit)),
+            'Windows runtime notices differ from the pinned distribution')
+    altered_notice = dict(compact)
+    altered_notice[runtime_notice] += b'Changed despite a rehashed source archive.\n'
+    package('altered-windows-runtime-notice', archive_args(write_archive('altered-runtime-notice', altered_notice, source_commit)),
+            'Windows runtime notices differ from the pinned distribution')
     altered = dict(compact)
     altered['compat/catalog.lock.json'] += b' '
     package('catalog-mismatch', archive_args(write_archive('bad-catalog', altered, source_commit)),
