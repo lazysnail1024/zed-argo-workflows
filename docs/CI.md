@@ -80,6 +80,10 @@ error codes. Changes in this PR remove several old weak checks:
   the Python test while indexing a nonexistent schema.
 - Historical exit expectations now match the current accepted-target policy:
   complete valid/error analyses exit 0/1; experimental/incomplete analyses exit 2.
+- The valid expression-boundary fixtures supply their required parameter.
+  Their success requires complete analysis with no diagnostics; refusal cases
+  require the expression-specific incomplete diagnostic and exit 2. A deadline
+  or an unrelated missing-argument error cannot satisfy either case.
 
 The shared LSP client enforces absolute response deadlines even under unrelated
 message traffic and saves traffic/stderr on initialization or shutdown failure.
@@ -142,6 +146,25 @@ they are not multiplied concurrently inside the same runner.
 These are explicit workload/consumer bounds, not universal process-memory or
 controller performance guarantees. An isolated Runner failure is evidence to
 investigate; the workflow does not weaken a threshold to make it pass.
+
+Identical document bytes may share one immutable YAML view within the current
+analysis. URI, revision, target, projection and logical expansion admission keep
+their own identities; the existing 50 MiB view-cache budget is unchanged. This
+removes repeated parsing in the legitimate 128 MiB snapshot case without
+increasing its deadline or input/memory limits.
+
+The CLI also preparses small files in ordered batches of at most four, respecting
+`GOMAXPROCS`, with at most 64 KiB of new text per batch. Workers only produce
+immutable syntax views. The caller admits successful views in input order under
+the same cache budget, then performs schema checks, diagnostics and global
+alias/merge admission sequentially. Large files use the ordinary path. Errors
+are not cached, and cancellation joins the current parser workers before the CLI
+returns. The complete CLI still runs inside its original five-second deadline.
+
+A small, documented [vendored JSON Schema queue patch](VENDORED_PATCHES.md)
+removes repeated linear lookup during cold CRD compilation while preserving
+schema identity and compilation order. The dependency remains pinned at v6.0.3;
+the local patch and its vendor-regeneration requirements are explicit.
 
 ## Development package integrity
 

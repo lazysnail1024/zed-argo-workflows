@@ -104,6 +104,7 @@ def main():
                 row["caseCount"] = result_count(destination, evidence, single, key)
             except (OSError, ValueError, TypeError) as error:
                 row.update({"pass": False, "evidenceError": str(error)})
+                print(f"FAIL semantic evidence {name}: {error}"[:2000], flush=True)
             rows.append(row)
             summary(output, rows, "Linux adversarial cgroup E2E")
     else:
@@ -130,6 +131,7 @@ def main():
                 row["caseCount"] = result_count(destination, evidence, single, key)
             except (OSError, ValueError, TypeError) as error:
                 row.update({"pass": False, "evidenceError": str(error)})
+                print(f"FAIL semantic evidence {script}: {error}"[:2000], flush=True)
             rows.append(row)
             summary(output, rows, "Linux constrained load E2E")
     return summary(output, rows, "Linux " + args.suite + " cgroup E2E")

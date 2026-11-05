@@ -117,23 +117,30 @@ func runContext(parent context.Context, args []string) int {
 			localResults := map[source.URI]analysis.Result{}
 			incompleteTargets := map[string]bool{}
 			matched := filter == ""
-			for _, document := range input.Documents {
+			for first := 0; first < len(input.Documents); {
 				if ctx.Err() != nil {
 					break
 				}
-				result := analysis.AnalyzeSchema(ctx, document.Snapshot, document.Target.Version)
-				localResults[document.Snapshot.URI()] = result
-				if !result.Completed {
-					incompleteTargets[document.Target.ID] = true
-				}
-				notEvaluated = append(notEvaluated, result.NotEvaluated...)
-				if filter == "" || filter == string(document.Snapshot.URI()) {
-					for i := range result.Diagnostics {
-						result.Diagnostics[i].TargetID = document.Target.ID
+				count := analysis.PreparseBatch(ctx, input.Documents[first:])
+				for _, document := range input.Documents[first : first+count] {
+					if ctx.Err() != nil {
+						break
 					}
-					diagnostics = append(diagnostics, result.Diagnostics...)
-					matched = true
+					result := analysis.AnalyzeSchema(ctx, document.Snapshot, document.Target.Version)
+					localResults[document.Snapshot.URI()] = result
+					if !result.Completed {
+						incompleteTargets[document.Target.ID] = true
+					}
+					notEvaluated = append(notEvaluated, result.NotEvaluated...)
+					if filter == "" || filter == string(document.Snapshot.URI()) {
+						for i := range result.Diagnostics {
+							result.Diagnostics[i].TargetID = document.Target.ID
+						}
+						diagnostics = append(diagnostics, result.Diagnostics...)
+						matched = true
+					}
 				}
+				first += count
 			}
 			externalDiagnostics, completion := analysis.ExternalDiagnostics(ctx, input)
 			for _, document := range input.Documents {
