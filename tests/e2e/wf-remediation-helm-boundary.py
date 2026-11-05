@@ -3,30 +3,19 @@
 import importlib.util
 import pathlib
 import sys
-import tomllib
 import traceback
 
 p = pathlib.Path(__file__).with_name('wf-audit-gaps.py')
 spec = importlib.util.spec_from_file_location('wire', p)
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
-manifest_path = pathlib.Path(__file__).resolve().parents[2] / 'extension.toml'
 inputs = {}
 
 
 def manifest_languages():
-    manifest = tomllib.loads(manifest_path.read_text(encoding='utf-8'))
-    server = manifest['language_servers']['argo-workflows-ls']
-    expected = {'YAML': 'yaml', 'Helm': 'helm'}
-    checks = {
-        'languages_declared': all(name in server['languages'] for name in expected),
-        'protocol_ids_match': all(server.get('language_ids', {}).get(name) == ident
-                                  for name, ident in expected.items()),
-    }
-    m.result('helm-language-registration', checks, {'server': server})
-    if not all(checks.values()):
-        return []
-    return [server['language_ids'][name] for name in expected]
+    # Editor registration is checked by the standalone adapter package suite.
+    # This consumer exercises the server's editor-independent protocol IDs.
+    return ['yaml', 'helm']
 
 
 def hover(client, path, text):
@@ -117,7 +106,6 @@ finally:
         'binarySha256': m.sha(m.BINARY),
         'testSha256': m.sha(pathlib.Path(__file__)),
         'clientSha256': m.sha(p),
-        'extensionSha256': m.sha(manifest_path),
         'inputs': inputs,
     })
-sys.exit(0 if len(m.RESULTS) == 27 and all(row['pass'] for row in m.RESULTS) else 1)
+sys.exit(0 if len(m.RESULTS) == 26 and all(row['pass'] for row in m.RESULTS) else 1)

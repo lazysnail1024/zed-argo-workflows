@@ -1,26 +1,32 @@
 package analysis
 
 import (
+	"github.com/lazysnail1024/zed-argo-workflows/compat"
 	"strconv"
 	"strings"
 )
 
-// The locked workflow catalog contains exact 3.x versions.
+// Feature introduction gates are relative to the 3.x baseline. Automatic
+// editing permits features from any supported release; exact pins stay strict.
 func workflowVersionAtLeast(version string, minor, patch int) bool {
+	if version == compat.DefaultVersion {
+		return true
+	}
 	parts := strings.Split(version, ".")
-	if len(parts) != 3 || parts[0] != "3" {
+	if len(parts) != 3 {
 		return false
 	}
+	major, e0 := strconv.Atoi(parts[0])
 	m, e1 := strconv.Atoi(parts[1])
 	p, e2 := strconv.Atoi(parts[2])
-	return e1 == nil && e2 == nil && (m > minor || m == minor && p >= patch)
+	return e0 == nil && e1 == nil && e2 == nil && (major > 3 || major == 3 && (m > minor || m == minor && p >= patch))
 }
 
 // Argument validity is independent of whether any callee declares this name.
 func argumentValueError(argument any, version string, templateValidation bool) (string, bool) {
 	name, _ := queryMember(argument, "name").(string)
 	from := queryMember(argument, "valueFrom")
-	if from != nil && (workflowVersionAtLeast(version, 5, 5) || strings.HasPrefix(version, "3.4.") && workflowVersionAtLeast(version, 4, 17)) {
+	if version != compat.DefaultVersion && from != nil && (workflowVersionAtLeast(version, 5, 5) || strings.HasPrefix(version, "3.4.") && workflowVersionAtLeast(version, 4, 17)) {
 		allowed := argumentValue(from, "configMapKeyRef", "supplied")
 		event, _ := queryMember(from, "event").(string)
 		allowed = allowed || event != ""
@@ -76,12 +82,12 @@ func missingArguments(version string, callee any, arguments ...any) []string {
 				optional = argumentValue(input, "default", "value", "valueFrom")
 				value := queryMember(arg, "value")
 				literal, _ := value.(string)
-				if workflowVersionAtLeast(version, 7, 16) && literal == "__argo-internal.absent-optional-output__" {
+				if version != compat.DefaultVersion && workflowVersionAtLeast(version, 7, 16) && literal == "__argo-internal.absent-optional-output__" {
 					// An exact absent-output marker leaves the input fallback intact.
 				} else if value != nil {
 					optional = true
 				} else if supplied {
-					if workflowVersionAtLeast(version, 4, 10) {
+					if version != compat.DefaultVersion && workflowVersionAtLeast(version, 4, 10) {
 						optional = false
 					}
 					if workflowVersionAtLeast(version, 2, 5) && queryMember(queryMember(arg, "valueFrom"), "configMapKeyRef") != nil {

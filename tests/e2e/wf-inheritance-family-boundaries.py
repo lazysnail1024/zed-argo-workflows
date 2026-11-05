@@ -66,7 +66,7 @@ def worker(name):
  try:work,path,text,states,envelope=prepared(case,dest)
  except Exception:
   error=traceback.format_exc();(dest/'error.txt').write_text(error);m.save(dest/'result.json',{'pass':False,'fatal':error,'nativeStarted':False});return 3
- def published(diags,version):return ([] if version=='3.6.0' else [{'range':{'start':{'line':0,'character':0},'end':{'line':0,'character':0}},'code':'WF_EXPERIMENTAL_TARGET','source':'argo-workflows','severity':2,'message':'target '+version+' is experimental; only 3.6.0 has completed local-contract acceptance'}])+[{k:d[k] for k in ['range','code','message','source']}|{'severity':{'Error':1,'Warning':2,'Information':3}[d['severity']]} for d in diags]
+ def published(diags,version):return [{k:d[k] for k in ['range','code','message','source']}|{'severity':{'Error':1,'Warning':2,'Information':3}[d['severity']]} for d in diags]
  def queries(version,prefix):
   state=states[version]
   for tag,wants in state['queries'].items():

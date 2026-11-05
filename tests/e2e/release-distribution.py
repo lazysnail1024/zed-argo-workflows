@@ -10,7 +10,6 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import tomllib
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -33,13 +32,13 @@ def synthetic_platform(folder, platform, template, template_files, *, omit=None,
     folder.mkdir(parents=True)
     suffix = platform.replace("/", "-")
     version = template["version"]
-    root = "zed-argo-workflows-dev-" + suffix
+    root = f"argo-workflows-ls-{version}-{suffix}"
     binary_asset = f"argo-workflows-ls-{version}-{suffix}" + (".exe" if platform.startswith("windows/") else "")
     archive_name = f"argo-workflows-ls-{version}-{suffix}.zip"
-    executable = "server/argo-workflows-ls" + (".exe" if platform.startswith("windows/") else "")
+    executable = "argo-workflows-ls" + (".exe" if platform.startswith("windows/") else "")
     binary = b"Synthetic aggregate fixture, not a native executable: " + platform.encode()
     files = {name: value for name, value in template_files.items()
-             if name not in ("native/manifest.json", "server/argo-workflows-ls", "server/argo-workflows-ls.exe")}
+             if name not in ("native/manifest.json", "argo-workflows-ls", "argo-workflows-ls.exe")}
     files[executable] = b"different archive bytes" if different_binary else binary
     package = json.loads(encoded(template["package"]))
     package.update(platform=platform, binarySha256=sha(binary), binarySize=len(binary))
@@ -106,10 +105,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--platform", choices=sorted(PLATFORMS), required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--wasm", action="append", help="Existing compiled variant=path; required by CI candidate acceptance")
     args = parser.parse_args()
-    if args.wasm:
-        args.wasm = [name + "=" + str(Path(path).absolute()) for name, path in (item.split("=", 1) for item in args.wasm)]
     output = args.output.absolute()
     output.mkdir(parents=True, exist_ok=False)
     fixture = output / "synthetic-source-history"
@@ -155,7 +151,7 @@ def main():
                         ["git", "-c", "commit.gpgsign=false", "commit", "-m", "Synthetic release E2E history only"]):
             subprocess.run(command, cwd=fixture, env=env, capture_output=True, check=True)
         commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=fixture, text=True).strip()
-        version = tomllib.loads((fixture / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"]
+        version = (fixture / "VERSION").read_text().strip()
         tool = [sys.executable, fixture / "scripts/release.py"]
         common = ["--version", version, "--source-commit", commit]
         invoke("stable-tag", tool + ["version", "--tag", "v" + version, "--source-commit", commit])
@@ -216,8 +212,8 @@ def main():
             prefix = stage_record["archiveRoot"] + "/"
             template_files = {name[len(prefix):]: archive.read(name) for name in archive.namelist()}
         record("separate-native-archive", {
-            "nativeOutsideExtension": ("server/argo-workflows-ls" + (".exe" if args.platform.startswith("windows/") else "")) in template_files,
-            "noBundledPayload": not any(name.startswith("extension/native/") for name in template_files),
+            "nativeOutsideExtension": ("argo-workflows-ls" + (".exe" if args.platform.startswith("windows/") else "")) in template_files,
+            "noBundledPayload": not any(name.startswith("extension/") for name in template_files),
             "allSourceProvenance": stage_record["package"]["sourceIdentity"] == {
                 "status": "verified-vcs", "archiveCommit": commit, "nativeCommit": commit, "nativeDirty": False}})
         invoke("existing-output-refused", tool + stage_args + ["--output", stage], "already exist")
@@ -258,9 +254,6 @@ def main():
             "everyDigestMatches": all(sha((combined / name).read_bytes()) == digest for name, digest in values.items()),
             "noSelfDigest": "SHA256SUMS" not in values})
         invoke("existing-collection-refused", tool + collect + ["--output", combined], "already exist")
-        if args.wasm:
-            from candidate_controls import exercise
-            exercise(invoke, record, fixture, inputs, output, common, args.wasm)
         chosen = inputs / "linux-amd64"
         held = output / "held-platform"
         chosen.rename(held)

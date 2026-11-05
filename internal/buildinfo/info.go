@@ -3,7 +3,7 @@
 package buildinfo
 
 var (
-	ServerVersion = "0.1.0-dev"
+	ServerVersion = "0.0.1-alpha.1+dev"
 	SourceCommit  = ""
 	Dirty         = "true"
 	BuildMode     = "development"

@@ -189,10 +189,11 @@ def scalar_case(name, text, needle, expected, files=None, config=CONFIG, stale=F
         result(name,assertions,{'diagnostics':ds,'response':response,'after':got,'expected':expected})
     finally:client.close()
 
-def pin_case(name,config,needle,expected,override='',change=False,closed=False):
+def pin_case(name,config,needle,expected,override='',change=False,closed=False,expected_version='3.6.0'):
     global OVERRIDE
     OVERRIDE=override
     dest,work=setup(name,{'dev/case.yaml':BASE.replace('missing','first')},config)
+    disk_before={p.relative_to(work):p.read_bytes() for p in work.rglob('*') if p.is_file()}
     client=LSP(dest,work)
     try:
         resource=work/'dev/case.yaml'; client.open(resource,resource.read_text())
@@ -201,7 +202,8 @@ def pin_case(name,config,needle,expected,override='',change=False,closed=False):
             client.send('textDocument/didOpen',{'textDocument':{'uri':path.as_uri(),'version':7,'languageId':'yaml','text':config}})
         response=actions(client,path,config,needle)
         got=edits(client,response,config,path,7) if not closed else []
-        assertions={'request_succeeded':closed or isinstance(response.get('result'),list),'exact_pin_bytes':got==expected,'disk_unchanged':path.read_bytes().decode()==config}
+        assertions={'request_succeeded':closed or isinstance(response.get('result'),list),'exact_pin_bytes':got==expected,'disk_unchanged':{p.relative_to(work):p.read_bytes() for p in work.rglob('*') if p.is_file()}==disk_before}
+        if not expected and not closed:assertions['no_pin_action']=response.get('result')==[]
         if closed:assertions['closed_refused']='error' in response or response.get('result')==[]
         if got:
             persisted=dest/'persisted-input'
@@ -209,12 +211,12 @@ def pin_case(name,config,needle,expected,override='',change=False,closed=False):
             shutil.copytree(work,persisted)
             (persisted/'.argo-workflows-ls.yaml').write_bytes(got[0].encode())
             code,report=cli(dest,persisted,'pin-without-override')
-            assertions['persisted_without_override']=code==0 and report['configurationErrors']==[] and report['resourcesAnalyzed']==1 and any(t['version']=='3.6.0' for t in report['targets'])
+            assertions['persisted_without_override']=code==0 and report['configurationErrors']==[] and report['resourcesAnalyzed']==1 and any(t['version']==expected_version for t in report['targets'])
             client.send('textDocument/didChange',{'textDocument':{'uri':path.as_uri(),'version':8},'contentChanges':[{'text':config+'# changed\n' if change else got[0]}]})
             old=client.request('codeAction/resolve',response['result'][0])
             assertions['stale_rejected']=old.get('error',{}).get('code')==-32801
             current=client.request('textDocument/hover',{'textDocument':{'uri':resource.as_uri()},'position':{'line':4,'character':4}})
-            assertions['target_preserved']='3.6.0' in json.dumps(current)
+            assertions['target_preserved']=expected_version in json.dumps(current)
         result(name,assertions,{'response':response,'after':got,'expected':expected})
     finally:client.close(); OVERRIDE=''
 
@@ -255,11 +257,17 @@ spec:
     alias=ENUM.replace('  artifactGC: {strategy: Bogus}', '  artifactGC: {strategy: *bad}').replace('spec:', 'x: &bad Bogus\nspec:')
     scalar_case('enum-alias-refused',alias,'strategy',[])
     scalar_case('reference-scope-isolation',external,'absent',[],{'other/library.yaml':library},'schemaVersion: 1\ntargetVersion: "3.6.0"\nscopes:\n  - name: caller\n    include: ["case.yaml"]\n  - name: other\n    include: ["other/**"]\n')
-    pin_case('pin-known-default' ,'schemaVersion: 1\n','schemaVersion',['schemaVersion: 1\ntargetVersion: "3.6.0"\n'])
+    pin_case('pin-known-default','schemaVersion: 1\n','schemaVersion',[])
+    pin_case('pin-explicit-auto','schemaVersion: 1\ntargetVersion: "auto"\n','targetVersion',[])
+    pin_case('pin-auto-override',CONFIG,'targetVersion',[],override='auto')
+    pin_case('pin-auto-inherited-scope',scope.replace('3.6.0','auto'),'name: dev',[])
+    pin_case('pin-explicit-auto-scope',scope+'    targetVersion: "auto"\n','name: dev',[])
+    pin_case('pin-root-older-exact','schemaVersion: 1\n','schemaVersion',['schemaVersion: 1\ntargetVersion: "3.5.0"\n'],override='3.5.0',expected_version='3.5.0')
+    pin_case('pin-root-latest-exact','schemaVersion: 1\n','schemaVersion',['schemaVersion: 1\ntargetVersion: "4.1.6"\n'],override='4.1.6',expected_version='4.1.6')
 except Exception:
     result('runner-error',{'exception':False},{'traceback':traceback.format_exc()})
 finally:
     files={str(p.relative_to(OUT)):sha(p) for p in OUT.rglob('*') if p.is_file() and p.name not in ('manifest.json','results.json')}
     save(OUT/'manifest.json',{'command':[sys.executable,str(pathlib.Path(__file__).resolve()),str(BINARY),str(OUT)],'pythonVersion':sys.version,'binarySha256':sha(BINARY),'testSha256':sha(pathlib.Path(__file__)),'expectedSha256':sha(HERE/'wf-quickfixes.expected.json'),'files':files})
     (OUT/'rerun.txt').write_text(f'python3 {pathlib.Path(__file__).resolve()} {BINARY} {OUT}\n')
-    sys.exit(0 if len(RESULTS)==25 and all(r['pass'] for r in RESULTS) else 1)
+    sys.exit(0 if len(RESULTS)==31 and all(r['pass'] for r in RESULTS) else 1)

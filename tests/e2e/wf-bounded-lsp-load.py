@@ -18,7 +18,7 @@ try:
   original_send(*args,**kwargs);sent_log.write(json.dumps(client.sent[-1])+'\n');client.sent.clear()
  client.send=streamed_send
  publications=[client.open(path,text) for path,text in zip(paths,texts)]
- record('cold-two-version-publication',{'acceptedClean':publications[0]==[],'experimentalVisible':[d['code'] for d in publications[1]]==['WF_EXPERIMENTAL_TARGET'] and publications[1][0]['severity']==2,'withinFiveSeconds':time.monotonic()-start<=5},seconds=time.monotonic()-start)
+ record('cold-two-version-publication',{'acceptedClean':publications[0]==[],'olderSupported':publications[1]==[],'withinFiveSeconds':time.monotonic()-start<=5},seconds=time.monotonic()-start)
  query=[];correct=True
  for i in range(1000):
   path=paths[i%2];text=texts[i%2];method='textDocument/definition' if i%4<2 else 'textDocument/completion';position=m.pos(text,'entrypoint: main',offset=13) if method.endswith('definition') else {'line':5,'character':2};start=time.monotonic();r=client.request(method,{'textDocument':{'uri':path.as_uri()},'position':position});query.append(time.monotonic()-start)

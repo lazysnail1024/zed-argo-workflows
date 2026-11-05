@@ -67,7 +67,8 @@ func (b externalBinding) selected(uri string, pos source.Position) bool {
 	return containsPosition(b.from, uri, pos) || containsPosition(b.selection, uri, pos)
 }
 
-// ExternalCompletion counts only resources whose external-reference walk finished.
+// ExternalCompletion counts resources whose external-reference walk finished,
+// including schema-only kinds that have no workflow template references.
 type ExternalCompletion struct {
 	Resources map[source.Span]bool
 	Completed bool
@@ -109,6 +110,16 @@ func externalResources(ctx context.Context, w workspace.Workspace, readOnly bool
 			if !owned(api, kind) {
 				continue
 			}
+			if schemaOnlyKind(kind) {
+				uri := d.Snapshot.URI()
+				done := progress[uri]
+				if done.Resources == nil {
+					done.Resources = map[source.Span]bool{}
+				}
+				done.Resources[root.Span()] = true
+				progress[uri] = done
+				continue
+			}
 			meta := queryMember(projected, "metadata")
 			name, _ := queryMember(meta, "name").(string)
 			namespace, _ := queryMember(meta, "namespace").(string)
@@ -140,7 +151,10 @@ func externalResources(ctx context.Context, w workspace.Workspace, readOnly bool
 		}
 	}
 	for _, d := range w.Documents {
-		progress[d.Snapshot.URI()] = ExternalCompletion{Completed: remaining[d.Snapshot.URI()] == 0}
+		uri := d.Snapshot.URI()
+		done := progress[uri]
+		done.Completed = remaining[uri] == 0
+		progress[uri] = done
 	}
 	return resources, complete, progress, remaining
 }

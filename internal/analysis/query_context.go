@@ -2,11 +2,13 @@ package analysis
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/k8s-crd-toolkit/yamlview"
+	"github.com/lazysnail1024/zed-argo-workflows/compat"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/assets"
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -115,8 +117,18 @@ func queryField(ctx context.Context, snapshot source.Snapshot, version string, p
 				continue
 			}
 			schema, err := assets.Compile(ctx, version, api, kind)
+			if errors.Is(err, compat.ErrSchemaUnavailable) {
+				return fieldContext{}, nil
+			}
 			if err != nil {
 				return fieldContext{}, err
+			}
+			if version == compat.DefaultVersion {
+				activePath := path
+				if key {
+					activePath = append(append([]string{}, path...), marker)
+				}
+				schema = queryAutomatic(ctx, schema, value, activePath)
 			}
 			field := fieldContext{shared: shared, schema: schema, path: path, value: value, span: span, key: key, name: name, prefix: prefix, before: before, after: after, api: api, kind: kind, existing: map[string]bool{}}
 			parentValue := value

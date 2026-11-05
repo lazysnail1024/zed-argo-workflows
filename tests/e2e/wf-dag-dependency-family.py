@@ -19,7 +19,11 @@ def strip(marked):
  text='';tags={};cursor=0
  for match in re.finditer(r'\[\[([A-Za-z0-9_-]+)\|(.*?)\]\](?!\])',marked,re.S):
   text+=marked[cursor:match.start()];a=len(text);text+=match[2];tags[match[1]]=(a,len(text));cursor=match.end()
- return text+marked[cursor:],tags
+ text+=marked[cursor:]
+ # The task itself is the CEL diagnostic range, independent of a field's marker.
+ start=text.index('{name: B,');end=text.index('\n',start)
+ tags['task_b']=(start,end)
+ return text,tags
 def document(name,tasks):
  return 'apiVersion: argoproj.io/v1alpha1\nkind: Workflow\nmetadata: {name: '+name.lower()+'}\nspec:\n  entrypoint: main\n  templates:\n    - name: main\n      dag:\n        tasks:\n'+''.join('          - '+t+'\n' for t in tasks)+'    - name: worker\n      container: {image: alpine}\n'
 def task(name,fields=''):return '{name: '+name+', template: worker'+(', '+fields if fields else '')+'}'
@@ -45,6 +49,10 @@ def cases(version):
  for suffix in ['AnySucceeded','AllFailed']:
   for name,field,required in [('absent','',True),('items-empty','withItems: []',True),('param-empty','withParam: ""',True),('items-one','withItems: [{item: one}]',False),('param-json-empty','withParam: "[]"',False),('sequence-empty','withSequence: {}',False),('sequence-count','withSequence: {count: "1"}',False)]:
    add(suffix+'-'+name,a=field,b='depends: [[bad|A.'+suffix+']]',errors=[('bad',LOOP,LOOP_MESSAGE,'exact')] if required else [])
+ if tuple(map(int,version.split('.'))) >= (4,0,0):
+  for name,marked,errors in rows:
+   if name in ['same-list','same-continue','same-empty-list','empty-depends-list-continue','all-empty']:
+    errors.append(('task_b','SCHEMA_VALIDATION',"at '/spec/templates/0/dag/tasks/1': 'not' failed",'exact'))
  return rows
 def selected_cases(version):
  rows=cases(version)
@@ -58,12 +66,12 @@ def prepare(version,rows,dest):
   diagnostics=[{'uri':path.as_uri(),'range':span(text,tags[tag]),'code':code,'message':message,'severity':'Error','source':'argo-workflows','positionKind':origin,'targetId':str(work)+'#root'} for tag,code,message,origin in errors]
   expected+=diagnostics;records.append({'case':name,'range':span(text,(start,len(text))),'tags':tags,'diagnostics':diagnostics})
  path.write_bytes(text.encode());(work/'.argo-workflows-ls.yaml').write_text('schemaVersion: 1\ntargetVersion: "'+version+'"\nreferencePolicy: closed\n')
- envelope={'configurationErrors':[],'filesAnalyzed':1,'resourcesAnalyzed':len(records),'analysisComplete':version=='3.6.0','notEvaluated':[] if version=='3.6.0' else ['target '+version+' is experimental; only 3.6.0 has completed local-contract acceptance']}
- m.save(dest/'expected.json',{'version':version,'cases':records,'diagnostics':expected,'envelope':envelope,'exitCode':int(any(d['severity']=='Error' for d in expected)) if version=='3.6.0' else 2});return work,path,text,records,expected,envelope
+ envelope={'configurationErrors':[],'filesAnalyzed':1,'resourcesAnalyzed':len(records),'analysisComplete':True,'notEvaluated':[]}
+ m.save(dest/'expected.json',{'version':version,'cases':records,'diagnostics':expected,'envelope':envelope,'exitCode':int(any(d['severity']=='Error' for d in expected))});return work,path,text,records,expected,envelope
 def report_checks(code,report,expected,envelope,work,version):
  keys=['uri','range','code','message','severity','source','positionKind','targetId'];catalog=HERE.parents[1]/'compat/catalog.lock.json';entry=next(x for x in json.loads(catalog.read_text())['versions'] if x['version']==version)
- target={'id':str(work)+'#root','root':str(work),'scope':'root','version':version,'source':'root','schemaHash':entry['schemaSha256'],'rulesetId':None,'analysisComplete':version=='3.6.0'};targets=report.get('targets',[]);config_hash=targets[0].get('configHash','') if targets else ''
- return {'completeDiagnostics':norm([{k:d[k] for k in keys} for d in report['diagnostics']])==norm(expected),'envelope':code==(int(any(d['severity']=='Error' for d in expected)) if version=='3.6.0' else 2) and {k:report.get(k) for k in envelope}==envelope,'target':len(targets)==1 and {k:targets[0].get(k) for k in target}==target,'catalog':report['catalogHash']==m.sha(catalog),'configHashShape':len(config_hash)==64 and all(c in '0123456789abcdef' for c in config_hash),'reportIdentity':report['product']=='argo-workflows' and report['inputSource']=='disk' and report['reportSchemaVersion']==1 and report['validationScope']=='local-editing-contract'}
+ target={'id':str(work)+'#root','root':str(work),'scope':'root','version':version,'source':'root','schemaHash':entry['schemaSha256'],'rulesetId':None,'analysisComplete':True};targets=report.get('targets',[]);config_hash=targets[0].get('configHash','') if targets else ''
+ return {'completeDiagnostics':norm([{k:d[k] for k in keys} for d in report['diagnostics']])==norm(expected),'envelope':code==int(any(d['severity']=='Error' for d in expected)) and {k:report.get(k) for k in envelope}==envelope,'target':len(targets)==1 and {k:targets[0].get(k) for k in target}==target,'catalog':report['catalogHash']==m.sha(catalog),'configHashShape':len(config_hash)==64 and all(c in '0123456789abcdef' for c in config_hash),'reportIdentity':report['product']=='argo-workflows' and report['inputSource']=='disk' and report['reportSchemaVersion']==1 and report['validationScope']=='local-editing-contract'}
 def worker(version):
  dest=m.OUT;rows=selected_cases(version)
  if not rows:

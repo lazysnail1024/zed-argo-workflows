@@ -113,11 +113,11 @@ def lifecycle(name, relative):
             return checks, responses
         client.send('workspace/didChangeConfiguration', {'settings': {'targetVersion': '3.5.0'}})
         experimental = client.diagnostics(path.as_uri(), 5)
-        checks['experimentalTargetVisible'] = any(d['code'] == 'WF_EXPERIMENTAL_TARGET' for d in experimental)
+        checks['supportedTargetClean'] = all(d['code'] != 'WF_EXPERIMENTAL_TARGET' for d in experimental)
         responses['changedTarget'] = client.request('codeAction/resolve', current)
         checks['changedTargetRefused'] = refused(responses['changedTarget'])
         responses['experimentalOffer'], _ = offer(client, path, BROKEN, experimental)
-        checks['experimentalEditsDisabled'] = responses['experimentalOffer'].get('result') == []
+        checks['olderTargetEditsEnabled'] = bool(responses['experimentalOffer'].get('result'))
 
         client.send('workspace/didChangeConfiguration', {'settings': {'targetVersion': ''}})
         diagnostics = client.diagnostics(path.as_uri(), 5)

@@ -280,6 +280,10 @@ func queryTypes(ctx context.Context, s *jsonschema.Schema, path []string, value 
 		}
 	} else if child := queryChild(s, path[0], value); child != nil {
 		intersect(queryTypes(ctx, child, path[1:], queryMember(value, path[0]), depth+1))
+	} else if s.AdditionalProperties == false {
+		// A closed release branch that has no such field contributes no types.
+		// Treating it as unconstrained would erase types from other releases.
+		return map[string]bool{}
 	}
 	if s.Ref != nil {
 		intersect(queryTypes(ctx, s.Ref, path, value, depth+1))
@@ -302,4 +306,80 @@ func queryTypes(ctx context.Context, s *jsonschema.Schema, path []string, value 
 		intersect(union)
 	}
 	return result
+}
+
+// Select whole release alternatives using already present field structure. The
+// field being edited is excluded, and missing required fields or ordinary value
+// mistakes do not remove useful suggestions from an incomplete document.
+func queryAutomatic(ctx context.Context, schema *jsonschema.Schema, value any, active []string) *jsonschema.Schema {
+	possible := []*jsonschema.Schema{}
+	for _, branch := range schema.AnyOf {
+		if queryShape(ctx, branch, value, active, 0) {
+			possible = append(possible, branch)
+		}
+	}
+	if len(possible) == 0 || len(possible) == len(schema.AnyOf) {
+		return schema
+	}
+	selected := *schema
+	selected.AnyOf = possible
+	return &selected
+}
+
+func queryShape(ctx context.Context, s *jsonschema.Schema, value any, active []string, depth int) bool {
+	if s == nil || depth > 256 || ctx.Err() != nil {
+		return false
+	}
+	visit := func(name string, childValue any) bool {
+		childActive := []string(nil)
+		if len(active) > 0 && name == active[0] {
+			if len(active) == 1 {
+				return true
+			}
+			childActive = active[1:]
+		}
+		if child := queryChild(s, name, value); child != nil {
+			return queryShape(ctx, child, childValue, childActive, depth+1)
+		}
+		allowed, closed := s.AdditionalProperties.(bool)
+		return !closed || allowed
+	}
+	switch v := value.(type) {
+	case map[string]any:
+		for name, child := range v {
+			if !visit(name, child) {
+				return false
+			}
+		}
+	case []any:
+		for index, child := range v {
+			if !visit(strconv.Itoa(index), child) {
+				return false
+			}
+		}
+	}
+	if s.Ref != nil && !queryShape(ctx, s.Ref, value, active, depth+1) {
+		return false
+	}
+	for _, child := range s.AllOf {
+		if !queryShape(ctx, child, value, active, depth+1) {
+			return false
+		}
+	}
+	for _, alternatives := range [][]*jsonschema.Schema{s.AnyOf, s.OneOf} {
+		if len(alternatives) == 0 {
+			continue
+		}
+		possible := false
+		for _, child := range alternatives {
+			if queryShape(ctx, child, value, active, depth+1) {
+				possible = true
+				break
+			}
+		}
+		if !possible {
+			return false
+		}
+	}
+	return true
 }

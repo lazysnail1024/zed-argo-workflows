@@ -5,8 +5,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/k8s-crd-toolkit/yamlview"
+	"github.com/lazysnail1024/zed-argo-workflows/compat"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/assets"
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/santhosh-tekuri/jsonschema/v6/kind"
@@ -98,6 +100,17 @@ func owned(api, kind string) bool {
 	case "Workflow", "WorkflowTemplate", "ClusterWorkflowTemplate", "CronWorkflow":
 		return true
 	}
+	return schemaOnlyKind(kind)
+}
+
+// These CRDs share schema editing support but do not contain workflow template
+// scopes. Executor task payloads and event expressions must not enter local or
+// cross-file workflow symbol analysis.
+func schemaOnlyKind(kind string) bool {
+	switch kind {
+	case "WorkflowEventBinding", "WorkflowArtifactGCTask", "WorkflowTaskResult", "WorkflowTaskSet":
+		return true
+	}
 	return false
 }
 func at(root yamlview.Node, path []string) yamlview.Node {
@@ -150,17 +163,29 @@ func AnalyzeSchema(ctx context.Context, snapshot source.Snapshot, version string
 		if !owned(api, resourceKind) {
 			continue
 		}
-		document, err := assets.Document(ctx, version, api, resourceKind)
-		if err != nil {
-			result.NotEvaluated = append(result.NotEvaluated, err.Error())
-			continue
-		}
 		schema, err := assets.Compile(ctx, version, api, resourceKind)
+		if errors.Is(err, compat.ErrSchemaUnavailable) {
+			node, positionKind := location(root, []string{"kind"})
+			if sharedOrigin(sharedOrigins(ctx, snapshot, doc, version), node.Span()) {
+				positionKind = "derived"
+			}
+			loc := nodeLocation(snapshot, node)
+			result.Diagnostics = append(result.Diagnostics, Diagnostic{URI: loc.URI, Range: loc.Range, Code: "SCHEMA_UNAVAILABLE", Source: "argo-workflows", Severity: "Error", Message: err.Error(), TargetID: version, PositionKind: positionKind})
+			result.Resources = append(result.Resources, root.Span())
+			continue
+		}
 		if err != nil {
 			result.NotEvaluated = append(result.NotEvaluated, err.Error())
 			continue
 		}
-		result.Diagnostics = append(result.Diagnostics, unknownFields(snapshot, root, value, document, version, sharedOrigins(ctx, snapshot, doc, version))...)
+		if version != compat.DefaultVersion {
+			document, err := assets.Document(ctx, version, api, resourceKind)
+			if err != nil {
+				result.NotEvaluated = append(result.NotEvaluated, err.Error())
+				continue
+			}
+			result.Diagnostics = append(result.Diagnostics, unknownFields(snapshot, root, value, document, version, sharedOrigins(ctx, snapshot, doc, version))...)
+		}
 		result.Diagnostics = append(result.Diagnostics, localDiagnostics(ctx, snapshot, root, value, sharedOrigins(ctx, snapshot, doc, version), resourceKind, version)...)
 		references, referenceErr := referenceDiagnostics(ctx, snapshot, root, value, sharedOrigins(ctx, snapshot, doc, version), resourceKind, version)
 		result.Diagnostics = append(result.Diagnostics, references...)
@@ -173,19 +198,26 @@ func AnalyzeSchema(ctx context.Context, snapshot source.Snapshot, version string
 				result.NotEvaluated = append(result.NotEvaluated, err.Error())
 				continue
 			}
-			var report func(*jsonschema.ValidationError)
-			report = func(v *jsonschema.ValidationError) {
-				if len(v.Causes) > 0 {
-					for _, cause := range v.Causes {
-						report(cause)
-					}
-					return
-				}
+			seen := map[string]bool{}
+			for _, v := range schemaErrors(validation, version == compat.DefaultVersion) {
 				code := "SCHEMA_VALIDATION"
 				if _, ok := v.ErrorKind.(*kind.Type); ok {
 					code = "SCHEMA_TYPE"
 				}
-				node, positionKind := location(root, v.InstanceLocation)
+				path := v.InstanceLocation
+				if additional, ok := v.ErrorKind.(*kind.AdditionalProperties); ok && version == compat.DefaultVersion {
+					code = "SCHEMA_UNKNOWN_FIELD"
+					if len(additional.Properties) == 1 {
+						path = append(append([]string{}, path...), additional.Properties[0])
+					}
+				}
+				message := v.Error()
+				key := code + ":" + strings.Join(path, "/") + ":" + message
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				node, positionKind := location(root, path)
 				if sharedOrigin(sharedOrigins(ctx, snapshot, doc, version), node.Span()) {
 					positionKind = "derived"
 				}
@@ -193,11 +225,13 @@ func AnalyzeSchema(ctx context.Context, snapshot source.Snapshot, version string
 				end, e2 := snapshot.Position(node.Span().End)
 				if e1 != nil || e2 != nil {
 					result.NotEvaluated = append(result.NotEvaluated, "unmappable schema location")
-					return
+					continue
 				}
-				result.Diagnostics = append(result.Diagnostics, Diagnostic{URI: string(snapshot.URI()), Range: Range{Position{start.Line, start.UTF16Column}, Position{end.Line, end.UTF16Column}}, Code: code, Source: "argo-workflows", Severity: "Error", Message: v.Error(), TargetID: version, PositionKind: positionKind})
+				if version == compat.DefaultVersion {
+					message = "No single supported release accepts this resource: " + message
+				}
+				result.Diagnostics = append(result.Diagnostics, Diagnostic{URI: string(snapshot.URI()), Range: Range{Position{start.Line, start.UTF16Column}, Position{end.Line, end.UTF16Column}}, Code: code, Source: "argo-workflows", Severity: "Error", Message: message, TargetID: version, PositionKind: positionKind})
 			}
-			report(validation)
 		}
 		if ctx.Err() != nil {
 			result.NotEvaluated = append(result.NotEvaluated, ctx.Err().Error())
@@ -222,5 +256,28 @@ func AnalyzeSchema(ctx context.Context, snapshot source.Snapshot, version string
 		return a.Message < b.Message
 	})
 
+	return result
+}
+
+// Automatic compatibility reports the closest whole release branch. Reporting
+// every failed release would duplicate diagnostics and suggest contradictory fixes.
+func schemaErrors(v *jsonschema.ValidationError, automatic bool) []*jsonschema.ValidationError {
+	if len(v.Causes) == 0 {
+		return []*jsonschema.ValidationError{v}
+	}
+	if _, ok := v.ErrorKind.(*kind.AnyOf); ok && automatic && len(v.InstanceLocation) == 0 {
+		var best []*jsonschema.ValidationError
+		for _, child := range v.Causes {
+			errors := schemaErrors(child, false)
+			if best == nil || len(errors) < len(best) {
+				best = errors
+			}
+		}
+		return best
+	}
+	result := []*jsonschema.ValidationError{}
+	for _, child := range v.Causes {
+		result = append(result, schemaErrors(child, automatic)...)
+	}
 	return result
 }

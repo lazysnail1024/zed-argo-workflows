@@ -48,7 +48,7 @@ def prepared(case,dest):
  if case['alias']:
   # The alias is not a task-name token. Its declaration remains exact but has no exact use.
   queries['alias']={'definition':[],'referencesFalse':[],'referencesTrue':[]}
- envelope={'configurationErrors':[],'filesAnalyzed':1,'resourcesAnalyzed':1,'analysisComplete':case['version']=='3.6.0','notEvaluated':[] if case['version']=='3.6.0' else ['target '+case['version']+' is experimental; only 3.6.0 has completed local-contract acceptance']}
+ envelope={'configurationErrors':[],'filesAnalyzed':1,'resourcesAnalyzed':1,'analysisComplete':True,'notEvaluated':[]}
  changed=text
  if case['rename']:
   for a,z in sorted([tags['decl'],tags['use1']],reverse=True):changed=changed[:a]+'renamed'+changed[z:]
@@ -56,7 +56,7 @@ def prepared(case,dest):
 
 def worker(name):
  case=next(c for c in scenarios() if c['name']==name);dest=m.OUT;work,path,text,tags,expected,envelope,queries,changed=prepared(case,dest);checks={};client=None;timer=None;fatal=None;responses={}
- def published(rows,version):return ([] if version=='3.6.0' else [{'range':{'start':{'line':0,'character':0},'end':{'line':0,'character':0}},'code':'WF_EXPERIMENTAL_TARGET','source':'argo-workflows','severity':2,'message':'target '+version+' is experimental; only 3.6.0 has completed local-contract acceptance'}])+[{k:d[k] for k in ['range','code','message','source']}|{'severity':1} for d in rows]
+ def published(rows,version):return [{k:d[k] for k in ['range','code','message','source']}|{'severity':1} for d in rows]
  def query_sets(prefix):
   for tag,wants in queries.items():
    for method,want in wants.items():
