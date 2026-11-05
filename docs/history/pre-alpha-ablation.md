@@ -1,3 +1,5 @@
+> Historical pre-alpha evidence. Current architecture experiments are in [the alpha ablation report](../ablation.md).
+
 # Design ablation and Actions repair — 2026-11-05
 
 Baseline: `742cdf409f48af9b32af2ba80d39ba20375b7208` (`main`).

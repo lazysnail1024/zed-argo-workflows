@@ -3,7 +3,7 @@
 
 Checks schema editing contracts, not controller execution or admission on a cluster.
 """
-import concurrent.futures, copy, importlib.util, json, pathlib, re, sys, time
+import copy, importlib.util, json, pathlib, re, sys, time
 HERE = pathlib.Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('wire', HERE / 'wf-audit-gaps.py')
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
@@ -78,7 +78,9 @@ def release(version):
     dest,work=m.setup('release-'+version, {'case.yaml':'\n---\n'.join(json.dumps(v) for v in values)+'\n'}, 'schemaVersion: 1\ntargetVersion: "'+version+'"\n')
     code,report = m.cli(dest,work)
     return {'version':version, 'kinds':available, 'pass':code == 0 and report['analysisComplete'] is True and report['notEvaluated'] == [] and report['configurationErrors'] == [] and report['diagnostics'] == [] and report['resourcesAnalyzed'] == len(available) and report['targets'][0]['experimental'] is False}
-with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool: release_rows = list(pool.map(release, VERSIONS))
+# Keep this correctness matrix within each server's unchanged analysis budget.
+# Concurrency and load are covered by the dedicated resource consumers.
+release_rows = [release(version) for version in VERSIONS]
 m.save(m.OUT/'releases.json', release_rows)
 m.result('every-release-consumer', {'all146':len(release_rows)==146 and '3.0.5' in VERSIONS and '3.2.10' in VERSIONS, 'everyReleaseAccepted':all(x['pass'] for x in release_rows)}, {'failures':[x for x in release_rows if not x['pass']]})
 
