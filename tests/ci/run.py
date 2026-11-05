@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import platform
 import re
+import runpy
 import signal
 import shutil
 import subprocess
@@ -194,6 +195,18 @@ def build(args):
     expected = args.platform or host_platform()
     if expected != host_platform():
         raise ValueError(f"native execution required: requested {expected}, actual {host_platform()}")
+    windows = expected == "windows/amd64"
+    if windows:
+        # Match the proven Argo CD native builder: inherited compiler/search
+        # flags must not substitute an unreviewed static runtime or DLL import.
+        allowed = {"PATH", "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "TMPDIR", "TMP", "TEMP",
+                   "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "PATHEXT", "LOCALAPPDATA", "APPDATA",
+                   "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMW6432", "GOROOT", "GOCACHE", "GOMODCACHE",
+                   "GOTMPDIR", "CC"}
+        env = {key: value for key, value in os.environ.items() if key.upper() in allowed}
+        env.update(GOENV="off", GOWORK="off", GOTOOLCHAIN="local", CGO_ENABLED="1", GOFLAGS="",
+                   GOPROXY="off", GOSUMDB="off", CGO_CFLAGS="-O2 -g", CGO_CPPFLAGS="",
+                   CGO_CXXFLAGS="-O2 -g", CGO_FFLAGS="-O2 -g", CGO_LDFLAGS="-O2 -g", LC_ALL="C")
     binary = output / ("argo-workflows-ls.exe" if os.name == "nt" else "argo-workflows-ls")
     metadata = {"platform": expected, "python": sys.version, "machine": platform.platform(),
                 "sourceCommit": checked(["git", "rev-parse", "HEAD"], output / "source").strip(),
@@ -201,9 +214,14 @@ def build(args):
                 "go": checked(["go", "version"], output / "go-version", env=env),
                 "goEnvironment": checked(["go", "env", "-json"], output / "go-env", env=env),
                 "compiler": checked([os.environ.get("CC", "cc"), "--version"], output / "compiler")}
+    if windows:
+        windows_spec = json.loads((ROOT / "scripts/windows-runtime.json").read_bytes())
+        verify_windows_runtime = runpy.run_path(str(ROOT / "scripts/package-dev.py"))["windows_runtime"]
+        windows_legal = verify_windows_runtime(windows_spec, env=env)
+        metadata["windowsRuntime"] = windows_spec
     save(output / "environment.json", metadata)
     release_version = args.release_version
-    flags = []
+    linker_flags = ""
     if release_version:
         if not re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", release_version):
             raise ValueError("release version must be a stable semantic version")
@@ -217,8 +235,24 @@ def build(args):
         if json.loads(metadata["goEnvironment"])["GOVERSION"] != expected_go:
             raise ValueError("release build requires the pinned Go toolchain")
         module = "github.com/lazysnail1024/zed-argo-workflows/internal/buildinfo"
-        flags = ["-ldflags", f"-X {module}.ServerVersion={release_version} -X {module}.SourceCommit={metadata['sourceCommit']} -X {module}.Dirty=false -X {module}.BuildMode=release"]
+        linker_flags = f"-X {module}.ServerVersion={release_version} -X {module}.SourceCommit={metadata['sourceCommit']} -X {module}.Dirty=false -X {module}.BuildMode=release"
+    if windows:
+        linker_flags += ' -linkmode=external -extldflags "-static -Wl,-Map,workflows-native-link.map"'
+    flags = ["-ldflags", linker_flags.strip()] if linker_flags else []
     compile_command = ["go", "build", "-mod=vendor", "-buildvcs=true", "-trimpath", *flags, "-o", binary, "./cmd/argo-workflows-ls"]
+
+    def retain_windows_runtime(cwd):
+        if not windows:
+            return
+        if verify_windows_runtime(windows_spec, env=env) != windows_legal:
+            raise ValueError("Windows runtime inputs changed during native build")
+        link_map = cwd / "workflows-native-link.map"
+        if link_map.is_symlink() or not link_map.is_file() or link_map.stat().st_size > 128 * 1024 * 1024:
+            raise ValueError("Missing or invalid Windows static linker map")
+        retained = output / "native-link.map"
+        shutil.move(link_map, retained)
+        metadata["linkMap"] = {"file": retained.name, "sha256": sha(retained), "buildDirectory": str(cwd)}
+
     if release_version:
         # A disposable exact-commit worktree excludes ignored local Go/C/embed
         # files while retaining genuine Go VCS metadata for package verification.
@@ -227,11 +261,13 @@ def build(args):
             checked(["git", "worktree", "add", "--detach", snapshot, metadata["sourceCommit"]], output / "source-worktree")
             try:
                 checked(compile_command, output / "compile", timeout=600, env=env, cwd=snapshot)
+                retain_windows_runtime(snapshot)
                 checked(["go", "vet", "-mod=vendor", "./..."], output / "vet", timeout=300, env=env, cwd=snapshot)
             finally:
                 checked(["git", "worktree", "remove", "--force", snapshot], output / "source-worktree-cleanup")
     else:
         checked(compile_command, output / "compile", timeout=600, env=env)
+        retain_windows_runtime(ROOT)
         checked(["go", "vet", "-mod=vendor", "./..."], output / "vet", timeout=300, env=env)
     checked(["go", "version", "-m", binary], output / "native-build", env=env)
     identity = json.loads(checked([binary, "version", "--json"], output / "identity"))

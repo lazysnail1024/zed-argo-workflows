@@ -216,6 +216,14 @@ def validate_record(record, files, version, commit, source_hash, expected_source
     # someone also rewrote the package's own checksum inventory.
     if any(members.get(name) != value for name, value in expected_source.items()):
         raise ValueError("Release archive source/license inventory differs from exact source")
+    if platform.startswith("windows/"):
+        pinned_runtime = json.loads(expected_source["provenance/scripts/windows-runtime.json"])
+        if package.get("windowsRuntime") != pinned_runtime:
+            raise ValueError("Windows runtime provenance differs from the exact source pin")
+        packager = runpy.run_path(str(ROOT / "scripts/package-dev.py"))
+        packager["verify_windows_notices"](pinned_runtime, members)
+    elif "windowsRuntime" in package:
+        raise ValueError("Non-Windows package must not claim a Windows runtime build")
     if any(name.startswith("extension/native/") for name in members):
         raise ValueError("Native server must not be bundled inside the Zed extension")
     executable = "server/argo-workflows-ls" + (".exe" if platform.startswith("windows/") else "")
@@ -267,6 +275,10 @@ def stage_assets(build_path, output, version, commit):
         folder = Path(temporary)
         source = folder / "source.tar"
         source_hash, expected_source = source_inventory(commit, source)
+        if platform.startswith("windows/"):
+            pinned_runtime = json.loads(expected_source["provenance/scripts/windows-runtime.json"])
+            if build.get("windowsRuntime") != pinned_runtime:
+                raise ValueError("Native build report lacks the exact pinned Windows runtime inputs")
         # The existing packager checks the actual native product, Go platform,
         # clean VCS revision, catalog provenance and all included notices.
         process = subprocess.run(

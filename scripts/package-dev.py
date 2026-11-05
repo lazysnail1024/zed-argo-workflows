@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import io
 import json
+import os
 import pathlib
 import platform
 import re
@@ -18,11 +19,68 @@ MAIN_PACKAGE = 'github.com/lazysnail1024/zed-argo-workflows/cmd/argo-workflows-l
 ADAPTER_FILES = ('Cargo.toml', 'Cargo.lock', 'extension.toml', 'rust-toolchain.toml',
                  'LICENSE', 'README.md', 'DEVELOPMENT.md')
 PROVENANCE_FILES = ('go.mod', 'go.sum', 'contracts/toolkit.lock.json',
-                    'contracts/expr-patch.json', 'compat/catalog.lock.json')
+                    'contracts/expr-patch.json', 'compat/catalog.lock.json',
+                    'scripts/windows-runtime.json')
 
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def windows_runtime(spec, env=None):
+    """Verify the pinned compiler inputs and return its original runtime notices.
+
+    The native builder calls this before and after linking. The packager calls
+    the same helper against the pin from the exact supplied source archive.
+    """
+    if not isinstance(spec, dict):
+        raise ValueError('Windows runtime pin must be an object')
+    environment = dict(os.environ if env is None else env)
+    compiler = environment.get('CC') or subprocess.check_output(
+        ['go', 'env', 'CC'], env=environment, text=True, timeout=30).strip()
+    resolved = shutil.which(compiler, path=environment.get('PATH'))
+    if resolved is None:
+        raise ValueError('pinned Windows compiler is unavailable: ' + compiler)
+    compiler_path = pathlib.Path(resolved).resolve()
+    if compiler_path.name.lower() != 'gcc.exe':
+        raise ValueError('pinned Windows runtime requires gcc.exe')
+    tool_root = compiler_path.parent.parent
+    notices = {}
+    for category, directory in (('runtimeFiles', tool_root), ('legalFiles', tool_root / 'licenses')):
+        inventory = spec.get(category)
+        if not isinstance(inventory, dict) or not inventory:
+            raise ValueError('Windows runtime pin has no ' + category)
+        for name, expected in inventory.items():
+            relative = pathlib.PurePosixPath(name)
+            if (not relative.parts or relative.is_absolute() or '..' in relative.parts
+                    or '\\' in name or ':' in name
+                    or not isinstance(expected, str) or not re.fullmatch('[0-9a-f]{64}', expected)):
+                raise ValueError('Windows runtime pin has an invalid file or checksum')
+            path = directory.joinpath(*relative.parts)
+            if not path.is_file() or path.is_symlink():
+                raise ValueError('Windows runtime input differs from the pinned distribution: ' + name)
+            value = path.read_bytes()
+            if digest(value) != expected:
+                raise ValueError('Windows runtime input differs from the pinned distribution: ' + name)
+            if category == 'legalFiles':
+                notices['licenses/windows-runtime/' + name] = value
+    if 'bin/gcc.exe' not in spec['runtimeFiles']:
+        raise ValueError('Windows runtime pin does not identify gcc.exe')
+    return notices
+
+
+def verify_windows_notices(spec, files):
+    """Check original notices against the committed runtime distribution pin."""
+    if not isinstance(spec, dict):
+        raise ValueError('Windows runtime pin must be an object')
+    inventory = spec.get('legalFiles')
+    if not isinstance(inventory, dict) or not inventory:
+        raise ValueError('Windows runtime pin has no legalFiles')
+    expected = {'licenses/windows-runtime/' + name: value for name, value in inventory.items()}
+    actual = {name: digest(value) for name, value in files.items()
+              if name.startswith('licenses/windows-runtime/')}
+    if expected != actual:
+        raise ValueError('Windows runtime notices differ from the pinned distribution')
 
 
 def source_files(payload):
@@ -49,6 +107,8 @@ def source_files(payload):
                 destination = 'extension/' + name
             elif name in PROVENANCE_FILES:
                 destination = 'provenance/' + name
+            elif path.parts[:2] == ('licenses', 'windows-runtime'):
+                destination = name
             elif path.parts[0] in ('vendor', 'schemas') and any(
                     token in path.name.upper() for token in ('LICENSE', 'NOTICE', 'COPYING', 'COPYRIGHT', 'PATENTS')):
                 destination = 'licenses/' + name
@@ -62,6 +122,7 @@ def source_files(payload):
             raise ValueError('source archive is missing required file: ' + name)
     if not any(name.startswith('licenses/vendor/') for name in files):
         raise ValueError('native source archive lacks required notices')
+    verify_windows_notices(json.loads(files['provenance/scripts/windows-runtime.json']), files)
     return files, commit
 
 
@@ -129,6 +190,12 @@ def main():
         raise ValueError('native build platform mismatch')
     files, archive_commit = source_files(source)
     provenance = source_identity(settings, archive_commit)
+    windows = None
+    if os_name == 'windows':
+        windows = json.loads(files['provenance/scripts/windows-runtime.json'])
+        actual_notices = windows_runtime(windows)
+        if any(files.get(name) != value for name, value in actual_notices.items()):
+            raise ValueError('Windows compiler notices do not match the source archive')
     if identity.get('catalogHash') != digest(files['provenance/compat/catalog.lock.json']):
         raise ValueError('native catalog hash does not match the source archive')
     go_root = pathlib.Path(subprocess.check_output(['go','env','GOROOT'],text=True,timeout=30).strip())
@@ -147,6 +214,8 @@ def main():
         "The extension contains no embedded server. Removing serverPath enables PATH discovery or a verified release download. "
         "The first managed installation needs a matching published release and network access.\n").encode()
     manifest = {'schemaVersion':1,'product':'argo-workflows','platform':args.platform,'binarySha256':args.sha256,'binarySize':len(payload),'identity':identity,'sourceArchiveSha256':args.source_sha256,'sourceIdentity':provenance,'toolchain':{'goVersion':go_version,'rustToolchain':files['extension/rust-toolchain.toml'].decode()},'filesSha256':{name:digest(data) for name,data in sorted(files.items())}}
+    if windows is not None:
+        manifest['windowsRuntime'] = windows
     files['native/manifest.json'] = (json.dumps(manifest,indent=2,sort_keys=True)+'\n').encode()
     output=pathlib.Path(args.output).resolve()
     name='zed-argo-workflows-dev-'+args.platform.replace('/','-')

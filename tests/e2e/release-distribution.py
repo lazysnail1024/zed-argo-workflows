@@ -27,7 +27,8 @@ def encoded(value):
 
 def synthetic_platform(folder, platform, template, template_files, *, omit=None,
                        different_binary=False, unsafe=False, wrong_source=False,
-                       changed_license=False, wrong_go_platform=False, non_system_runtime=False):
+                       changed_license=False, wrong_go_platform=False, non_system_runtime=False,
+                       changed_windows_notice=False, wrong_windows_runtime=False):
     """Parser inputs only: these bytes never claim to be executed native servers."""
     folder.mkdir(parents=True)
     suffix = platform.replace("/", "-")
@@ -42,6 +43,12 @@ def synthetic_platform(folder, platform, template, template_files, *, omit=None,
     files[executable] = b"different archive bytes" if different_binary else binary
     package = json.loads(encoded(template["package"]))
     package.update(platform=platform, binarySha256=sha(binary), binarySize=len(binary))
+    if platform.startswith("windows/"):
+        package["windowsRuntime"] = json.loads(files["provenance/scripts/windows-runtime.json"])
+        if wrong_windows_runtime:
+            package["windowsRuntime"]["runtimeFiles"]["bin/gcc.exe"] = "0" * 64
+    else:
+        package.pop("windowsRuntime", None)
     if wrong_source:
         package["sourceIdentity"]["nativeCommit"] = "0" * 40
     os_name, arch = platform.split("/")
@@ -60,6 +67,8 @@ def synthetic_platform(folder, platform, template, template_files, *, omit=None,
     if changed_license:
         vendor_notice = next(name for name in files if name.startswith("licenses/vendor/"))
         files[vendor_notice] = b"rewritten notice despite a self-consistent checksum"
+    if changed_windows_notice:
+        files["licenses/windows-runtime/winpthreads/COPYING"] = b"rewritten static runtime notice"
     package["filesSha256"] = {name: sha(value) for name, value in sorted(files.items())}
     manifest = encoded(package)
     files["native/manifest.json"] = manifest
@@ -107,9 +116,9 @@ def main():
         rows.append({"id": name, "checks": checks,
                      "passed": bool(checks) and all(value is True for value in checks.values()), **details})
 
-    def invoke(name, command, expected_error=None, *, timeout=300):
-        process = subprocess.run([str(value) for value in command], cwd=fixture,
-                                 capture_output=True, timeout=timeout)
+    def invoke(name, command, expected_error=None, *, timeout=300, env=None, cwd=None):
+        process = subprocess.run([str(value) for value in command], cwd=cwd or fixture,
+                                 capture_output=True, timeout=timeout, env=env)
         log = output / "logs" / name
         log.mkdir(parents=True)
         (log / "stdout").write_bytes(process.stdout)
@@ -155,6 +164,14 @@ def main():
                 "--release-version", version, "--output", build], timeout=900)
         build_file = build / "build.json"
         build_record = json.loads(build_file.read_bytes())
+        if args.platform == "windows/amd64":
+            spec = json.loads((fixture / "scripts/windows-runtime.json").read_bytes())
+            link_map = build_record["linkMap"]
+            link_bytes = (build / link_map["file"]).read_bytes()
+            record("pinned-windows-static-link", {
+                "runtimeInputsPinned": build_record["windowsRuntime"] == spec,
+                "linkerEvidenceRetained": bool(link_bytes) and sha(link_bytes) == link_map["sha256"],
+                "pthreadStaticArchiveLinked": b"libwinpthread.a" in link_bytes or b"libpthread.a" in link_bytes})
         stage = output / "stage-one"
         stage_args = ["stage", "--build", build_file, *common]
         invoke("stage-real-native-release", tool + stage_args + ["--output", stage])
@@ -177,6 +194,21 @@ def main():
         record("exact-native-identity", {"sameIdentity": identity == build_record["identity"],
                                          "release": identity["buildMode"] == "release",
                                          "exactCommit": identity["sourceCommit"] == commit})
+        if args.platform == "windows/amd64":
+            # A developer runner has MinGW DLLs on PATH. Launch the raw asset
+            # with only the OS search directory and no adjacent dependency files.
+            isolated = output / "standalone-windows-startup"
+            isolated.mkdir()
+            standalone = isolated / executable.name
+            shutil.copyfile(executable, standalone)
+            system32 = Path(os.environ["SYSTEMROOT"]) / "System32"
+            isolated_env = os.environ | {"PATH": str(system32)}
+            observed = json.loads(invoke("execute-without-mingw-path",
+                                        [standalone, "version", "--json"], env=isolated_env,
+                                        cwd=isolated).stdout)
+            record("standalone-windows-identity", {
+                "exactIdentityWithoutToolchainDLLs": observed == identity,
+                "onlyRawExecutableRequired": list(isolated.iterdir()) == [standalone]})
         with zipfile.ZipFile(stage / stage_record["archiveAsset"]) as archive:
             prefix = stage_record["archiveRoot"] + "/"
             template_files = {name[len(prefix):]: archive.read(name) for name in archive.namelist()}
@@ -259,12 +291,15 @@ def main():
             held.rename(chosen)
         windows = inputs / "windows-amd64"
         held_windows = output / "held-windows"
-        windows.rename(held_windows)
-        synthetic_platform(windows, "windows/amd64", stage_record, template_files, non_system_runtime=True)
-        invoke("non-system-windows-runtime-refused", tool + collect + ["--output", output / "runtime-dll"],
-               "Non-system Windows runtime dependency")
-        shutil.rmtree(windows)
-        held_windows.rename(windows)
+        for name, options, reason in (
+                ("non-system-windows-runtime", {"non_system_runtime": True}, "Non-system Windows runtime dependency"),
+                ("altered-windows-runtime-notice", {"changed_windows_notice": True}, "source/license inventory"),
+                ("wrong-windows-runtime-provenance", {"wrong_windows_runtime": True}, "Windows runtime provenance differs")):
+            windows.rename(held_windows)
+            synthetic_platform(windows, "windows/amd64", stage_record, template_files, **options)
+            invoke(name + "-refused", tool + collect + ["--output", output / name], reason)
+            shutil.rmtree(windows)
+            held_windows.rename(windows)
         completed = True
     except Exception as error:
         record("runner", {"completed": False}, error=repr(error))

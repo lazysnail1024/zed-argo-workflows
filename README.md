@@ -23,6 +23,16 @@ You need Zed with YAML support enabled and Rust through **rustup**. The adapter 
 3. In Zed choose **Install Dev Extension** and select the extracted **`extension/`** directory, which contains `extension.toml` and `LICENSE`.
 4. Open a project folder and a Workflows YAML file. On POSIX hosts, run `chmod +x server/argo-workflows-ls` if the unzip tool did not preserve execute permissions.
 
+Keep the ZIP(s) and `SHA256SUMS` from the same developer delivery in one directory. Before extraction, run the following command **in that directory** on Linux; every listed ZIP must report `OK`:
+
+```sh
+sha256sum -c SHA256SUMS
+```
+
+On macOS, use `shasum -a 256 -c SHA256SUMS`. On Windows, use PowerShell's `Get-FileHash .\zed-argo-workflows-dev-windows-amd64.zip -Algorithm SHA256` and compare its hash with that ZIP's entry in the supplied manifest.
+
+Maintainers preparing a Linux developer delivery generate its manifest after packaging with `(cd dist && sha256sum ./*.zip > SHA256SUMS)`, as the development-bundle workflow does. Distribute the referenced ZIP(s) and this manifest together. The relative filenames keep verification working after the delivery directory is moved; users verify against the supplied manifest before selecting the extracted `extension/` folder and separate `serverPath`.
+
 The server stays outside the extension source and WASM. To upgrade a developer package, verify and extract the new ZIP into a new directory, update `serverPath`, install its `extension/` directory and restart the server. Keep the previous directory for an explicit rollback. Linux amd64, Linux arm64, macOS amd64, macOS arm64 and Windows amd64 have native CI jobs; no platform's new installer has yet been accepted in a real Zed session.
 
 For Rename in a Workflow project, optionally add this to the project's `.zed/settings.json` so Zed routes the operation to Workflows while retaining other YAML servers:

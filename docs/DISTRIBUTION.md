@@ -125,8 +125,23 @@ internal directory layout; its release filename is
 `argo-workflows-ls-0.1.0-<os>-<arch>.zip`. The adapter downloads only the raw executable
 and `SHA256SUMS`; the complete ZIP and provenance remain available alongside them.
 
+Windows builds reuse the Argo CD builder's static external-link configuration and
+the same MinGW-Builds `15.2.0-rt_v13-rev1` x86_64 POSIX/SEH/UCRT distribution.
+[`scripts/windows-runtime.json`](../scripts/windows-runtime.json) records its original
+archive URL/SHA-256 and the exact runtime/notice file hashes. The checked-in notice
+copies are unchanged bytes from that distribution. The build verifies the compiler runtime
+inputs and original legal notices before and after linking, and retains the linker
+map with its SHA-256. The legal ZIP carries the complete GCC runtime exception,
+MinGW and winpthreads notices; packaging and collection verify their committed hashes.
+These notices are also retained in the other platform ZIPs as part of the shared
+source distribution; their presence does not mean those platforms use MinGW.
+
 Windows staging runs `objdump -p` and rejects unreviewed non-system DLL dependencies,
-so a compiler installed on the CI host cannot hide an extra runtime requirement.
+including `libwinpthread-1.dll`, so a compiler installed on the CI host cannot hide
+an extra runtime requirement. The Windows release test also launches the raw asset
+from an otherwise empty directory with only Windows System32 in PATH. Both the
+import check and this actual execution must pass; a successful build alone is
+insufficient evidence of a standalone download.
 Linux `ldd` and macOS `otool -L` output are recorded as native dependency evidence.
 The advertised native baselines are the CI hosts in the matrix below; those results
 do not establish compatibility with musl Linux or older system C libraries.
