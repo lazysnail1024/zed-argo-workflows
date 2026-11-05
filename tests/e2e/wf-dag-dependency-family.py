@@ -20,9 +20,6 @@ def strip(marked):
  for match in re.finditer(r'\[\[([A-Za-z0-9_-]+)\|(.*?)\]\](?!\])',marked,re.S):
   text+=marked[cursor:match.start()];a=len(text);text+=match[2];tags[match[1]]=(a,len(text));cursor=match.end()
  text+=marked[cursor:]
- # The task itself is the CEL diagnostic range, independent of a field's marker.
- start=text.index('{name: B,');end=text.index('\n',start)
- tags['task_b']=(start,end)
  return text,tags
 def document(name,tasks):
  return 'apiVersion: argoproj.io/v1alpha1\nkind: Workflow\nmetadata: {name: '+name.lower()+'}\nspec:\n  entrypoint: main\n  templates:\n    - name: main\n      dag:\n        tasks:\n'+''.join('          - '+t+'\n' for t in tasks)+'    - name: worker\n      container: {image: alpine}\n'
@@ -62,7 +59,10 @@ def prepare(version,rows,dest):
  work=dest/'input';work.mkdir(parents=True,exist_ok=False);text='';records=[];expected=[];path=work/'cases.yaml'
  for name,marked,errors in rows:
   if text:text+='---\n'
-  start=len(text);value,tags=strip(marked);text+=value;tags={k:(a+start,z+start) for k,(a,z) in tags.items()}
+  start=len(text);value,tags=strip(marked)
+  # This document's task is the CEL range; strip also handles short expressions.
+  task_start=value.index('{name: B,');tags['task_b']=(task_start,value.index('\n',task_start))
+  text+=value;tags={k:(a+start,z+start) for k,(a,z) in tags.items()}
   diagnostics=[{'uri':path.as_uri(),'range':span(text,tags[tag]),'code':code,'message':message,'severity':'Error','source':'argo-workflows','positionKind':origin,'targetId':str(work)+'#root'} for tag,code,message,origin in errors]
   expected+=diagnostics;records.append({'case':name,'range':span(text,(start,len(text))),'tags':tags,'diagnostics':diagnostics})
  path.write_bytes(text.encode());(work/'.argo-workflows-ls.yaml').write_text('schemaVersion: 1\ntargetVersion: "'+version+'"\nreferencePolicy: closed\n')
