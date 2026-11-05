@@ -178,6 +178,9 @@ func namedInputs(n workflowValue, kind string) map[string]bool {
 }
 
 func referenceDiagnostics(ctx context.Context, snapshot source.Snapshot, sourceRoot yamlview.Node, value any, shared map[source.Span]bool, resourceKind, version string) ([]Diagnostic, error) {
+	if schemaOnlyKind(resourceKind) {
+		return nil, nil
+	}
 	var analysisErr error
 	diagnostics := []Diagnostic{}
 	root := workflowRoot(value, sourceRoot)
@@ -197,9 +200,7 @@ func referenceDiagnostics(ctx context.Context, snapshot source.Snapshot, sourceR
 	inherited := workflowMember(spec, "workflowTemplateRef").present
 	// Both the JSON aggregate alias and standalone-template allowance start
 	// at 3.4.2 in the fixed catalog. Other validation families keep their gates.
-	var major, minor, patch int
-	_, _ = fmt.Sscanf(version, "%d.%d.%d", &major, &minor, &patch)
-	parameterJSON := major == 3 && (minor > 4 || minor == 4 && patch >= 2)
+	parameterJSON := workflowVersionAtLeast(version, 4, 2)
 	independentTemplate := parameterJSON && (resourceKind == "WorkflowTemplate" || resourceKind == "ClusterWorkflowTemplate")
 	parameters, _ := workflowMember(workflowMember(spec, "arguments"), "parameters").value.([]any)
 	aggregateAvailable := len(parameters) > 0

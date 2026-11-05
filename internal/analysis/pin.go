@@ -12,6 +12,7 @@ import (
 )
 
 // ConfigPin changes only an exact block mapping in an already validated config.
+// Automatic compatibility requires no configuration and offers no pin action.
 // Inheritance is valid: no synthetic diagnostic is created for this explicit action.
 func ConfigPin(ctx context.Context, s source.Snapshot, w workspace.Workspace, override string, requested Range) (Fix, error) {
 	view, err := parseView(ctx, s)
@@ -63,7 +64,7 @@ func ConfigPin(ctx context.Context, s source.Snapshot, w workspace.Workspace, ov
 	if override != "" {
 		version = override
 	}
-	if !compat.Accepted(version) || compat.Resolve(version) != nil || target.Kind() != yamlview.Mapping || strings.HasPrefix(target.Raw(), "{") {
+	if version == compat.DefaultVersion || !compat.Accepted(version) || compat.Resolve(version) != nil || target.Kind() != yamlview.Mapping || strings.HasPrefix(target.Raw(), "{") {
 		return Fix{}, fmt.Errorf("no resolved exact pin")
 	}
 	old := member(target, "targetVersion")

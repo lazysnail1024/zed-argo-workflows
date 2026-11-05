@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage and join pinned native releases using the existing verified dev packager."""
+"""Stage and join pinned native releases using the verified editor-independent native packager."""
 
 import argparse
 import hashlib
@@ -14,7 +14,6 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import tomllib
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,12 +47,12 @@ def content(path, limit=MAX_ASSET):
 
 
 def version_matches(version):
-    if not re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", version):
-        raise ValueError("Release version must be a stable semantic version")
-    cargo = tomllib.loads(content(ROOT / "Cargo.toml").decode())
-    extension = tomllib.loads(content(ROOT / "extension.toml").decode())
-    if cargo["package"]["version"] != version or extension["version"] != version:
-        raise ValueError("Release version must match Cargo.toml and extension.toml")
+    # Prereleases use an explicit channel and a numeric revision. The server
+    # version is independent of every editor adapter's package manifest.
+    if not re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:alpha|beta|rc)\.(?:0|[1-9][0-9]*))?", version):
+        raise ValueError("Release version must be a stable semantic version or alpha/beta/rc prerelease")
+    if content(ROOT / "VERSION").decode().strip() != version:
+        raise ValueError("Release version must match the LSP VERSION file")
 
 
 def clean_source(commit):
@@ -69,7 +68,6 @@ def identity_matches(identity, version, commit):
     expected = {"product": "argo-workflows", "serverVersion": version,
                 "adapterContractVersion": 1, "analysisReady": True,
                 "configSchemaVersions": [1], "reportSchemaVersions": [1],
-                "defaultTargetVersion": "3.6.0", "acceptedTargetVersions": ["3.6.0"],
                 "sourceCommit": commit, "dirty": False, "buildMode": "release"}
     if not isinstance(identity, dict) or any(identity.get(key) != value for key, value in expected.items()):
         raise ValueError("Native identity must match the clean pinned release and source commit")
@@ -126,7 +124,7 @@ def source_inventory(commit, destination):
     subprocess.run(["git", "archive", "--format=tar", "--output", str(destination), commit],
                    cwd=ROOT, check=True, capture_output=True, timeout=120)
     source = content(destination, 256 * 1024 * 1024)
-    packager = runpy.run_path(str(ROOT / "scripts/package-dev.py"))
+    packager = runpy.run_path(str(ROOT / "scripts/package-native.py"))
     selected, archived_commit = packager["source_files"](source)
     if archived_commit != commit:
         raise ValueError("Source archive does not identify the exact release commit")
@@ -181,7 +179,7 @@ def validate_record(record, files, version, commit, source_hash, expected_source
     platform = record.get("platform")
     binary_name = asset_name(version, platform)
     archive_name = f"argo-workflows-ls-{version}-{platform.replace('/', '-')}.zip"
-    root = f"zed-argo-workflows-dev-{platform.replace('/', '-')}"
+    root = f"argo-workflows-ls-{version}-{platform.replace('/', '-')}"
     if (record.get("schemaVersion") != 1 or record.get("product") != "argo-workflows"
             or record.get("version") != version or record.get("sourceCommit") != commit):
         raise ValueError("Release record version, product or source commit mismatch")
@@ -206,13 +204,13 @@ def validate_record(record, files, version, commit, source_hash, expected_source
     actual_hashes = {name: digest(value) for name, value in members.items() if name != "native/manifest.json"}
     if actual_hashes != package.get("filesSha256"):
         raise ValueError("Release archive file inventory or checksum mismatch")
-    required = {"extension/LICENSE", "licenses/go/LICENSE", "licenses/go/PATENTS",
+    required = {"LICENSE", "licenses/go/LICENSE", "licenses/go/PATENTS",
                 "licenses/schemas/LICENSE", "provenance/native-build.txt",
                 "provenance/native-version.stdout", "provenance/native-version.stderr"}
     if not required.issubset(members):
         raise ValueError("Release archive is missing required legal or provenance files")
     # Reuse the package source selector to compare every native notice and
-    # adapter/config source byte against the exact committed source, even if
+    # native source byte against the exact committed source, even if
     # someone also rewrote the package's own checksum inventory.
     if any(members.get(name) != value for name, value in expected_source.items()):
         raise ValueError("Release archive source/license inventory differs from exact source")
@@ -220,13 +218,13 @@ def validate_record(record, files, version, commit, source_hash, expected_source
         pinned_runtime = json.loads(expected_source["provenance/scripts/windows-runtime.json"])
         if package.get("windowsRuntime") != pinned_runtime:
             raise ValueError("Windows runtime provenance differs from the exact source pin")
-        packager = runpy.run_path(str(ROOT / "scripts/package-dev.py"))
+        packager = runpy.run_path(str(ROOT / "scripts/package-native.py"))
         packager["verify_windows_notices"](pinned_runtime, members)
     elif "windowsRuntime" in package:
         raise ValueError("Non-Windows package must not claim a Windows runtime build")
-    if any(name.startswith("extension/native/") for name in members):
-        raise ValueError("Native server must not be bundled inside the Zed extension")
-    executable = "server/argo-workflows-ls" + (".exe" if platform.startswith("windows/") else "")
+    if any(name.startswith("extension/") for name in members):
+        raise ValueError("Native release must be independent of all editor adapters")
+    executable = "argo-workflows-ls" + (".exe" if platform.startswith("windows/") else "")
     if members.get(executable) != binary:
         raise ValueError("Raw release binary differs from the legal archive")
     if package.get("binarySha256") != digest(binary) or package.get("binarySize") != len(binary):
@@ -282,7 +280,7 @@ def stage_assets(build_path, output, version, commit):
         # The existing packager checks the actual native product, Go platform,
         # clean VCS revision, catalog provenance and all included notices.
         process = subprocess.run(
-            [sys.executable, str(ROOT / "scripts/package-dev.py"),
+            [sys.executable, str(ROOT / "scripts/package-native.py"),
              "--binary", str(binary_path), "--sha256", digest(binary), "--platform", platform,
              "--source-archive", str(source), "--source-sha256", source_hash,
              "--output", str(folder / "package")],
@@ -353,7 +351,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     tag = sub.add_parser("version")
-    tag.add_argument("--tag", required=True)
+    tag.add_argument("--tag")
+    tag.add_argument("--requested-version", default="")
     tag.add_argument("--source-commit", required=True)
     for name in ("stage", "collect"):
         command = sub.add_parser(name)
@@ -364,11 +363,16 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "version":
-            if not args.tag.startswith("v"):
-                raise ValueError("Release tag must start with v")
-            version_matches(args.tag[1:])
+            version = content(ROOT / "VERSION").decode().strip()
+            if args.tag is not None:
+                if not args.tag.startswith("v"):
+                    raise ValueError("Release tag must start with v")
+                version_matches(args.tag[1:])
+            version_matches(version)
+            if args.requested_version and args.requested_version != version:
+                raise ValueError("Requested release version must match VERSION")
             clean_source(args.source_commit)
-            print("version=" + args.tag[1:])
+            print("version=" + version)
         elif args.command == "stage":
             print(json.dumps(stage_assets(args.build, args.output, args.version, args.source_commit)))
         else:

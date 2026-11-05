@@ -15,7 +15,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import tomllib
 import traceback
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -24,7 +23,7 @@ E2E = ROOT / "tests/e2e"
 # Explicit selection is intentional: several historical scripts require a
 # synthetic binary, a second product, or a constrained Linux cgroup.
 NATIVE = (
-    "wf1", "wf3-lsp", "wf5-edits", "wf-delivery",
+    "wf1", "wf-multi-version", "wf3-lsp", "wf5-edits", "wf-delivery",
     "wf-remediation-semantics", "wf-remediation-lifecycle",
     "wf-remediation-rename", "wf-remediation-targets",
     "wf-default-target-provenance", "wf-schema-queries",
@@ -57,8 +56,8 @@ EXTENDED = (
     "wf-query-marker-collision", "wf-scope-glob-boundaries",
     "wf-preflight-budget", "wf-expr-error-text", "wf-schema-query-sibling",
     "wf-remediation-matrix", "wf-remediation-graph",
-    "wf2-assets", "wf5-snippets", "wf5-official", "wf5-render", "wf-remediation-render",
-    "wf-bundle-checksums", "wf-reaudit-query-io",
+    "wf2-assets", "wf5-official", "wf5-render", "wf-remediation-render",
+     "wf-reaudit-query-io",
 )
 AGGREGATED = {
     "wf-argument-supply": "case", "wf-inheritance-family": "version",
@@ -216,19 +215,15 @@ def build(args):
                 "compiler": checked([os.environ.get("CC", "cc"), "--version"], output / "compiler")}
     if windows:
         windows_spec = json.loads((ROOT / "scripts/windows-runtime.json").read_bytes())
-        verify_windows_runtime = runpy.run_path(str(ROOT / "scripts/package-dev.py"))["windows_runtime"]
+        verify_windows_runtime = runpy.run_path(str(ROOT / "scripts/package-native.py"))["windows_runtime"]
         windows_legal = verify_windows_runtime(windows_spec, env=env)
         metadata["windowsRuntime"] = windows_spec
     save(output / "environment.json", metadata)
     release_version = args.release_version
     linker_flags = ""
     if release_version:
-        if not re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", release_version):
-            raise ValueError("release version must be a stable semantic version")
-        cargo = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))
-        extension = tomllib.loads((ROOT / "extension.toml").read_text(encoding="utf-8"))
-        if cargo["package"]["version"] != release_version or extension["version"] != release_version:
-            raise ValueError("release version must match Cargo.toml and extension.toml")
+        release = runpy.run_path(str(ROOT / "scripts/release.py"))
+        release["version_matches"](release_version)
         if metadata["sourceStatus"]:
             raise ValueError("release build requires an exact clean committed source")
         expected_go = "go" + next(line.split()[1] for line in (ROOT / "go.mod").read_text().splitlines() if line.startswith("go "))
@@ -273,7 +268,7 @@ def build(args):
     identity = json.loads(checked([binary, "version", "--json"], output / "identity"))
     if identity.get("product") != "argo-workflows" or identity.get("analysisReady") is not True:
         raise ValueError(f"wrong native identity: {identity}")
-    if identity.get("defaultTargetVersion") != "3.6.0" or identity.get("acceptedTargetVersions") != ["3.6.0"]:
+    if identity.get("defaultTargetVersion") != "auto" or not identity.get("acceptedTargetVersions"):
         raise ValueError(f"unexpected delivery targets: {identity}")
     if release_version and any(identity.get(key) != value for key, value in {
             "serverVersion": release_version, "sourceCommit": metadata["sourceCommit"],
@@ -294,8 +289,6 @@ def suite(args):
     for name in names:
         destination = args.output / name
         argv = [sys.executable, E2E / (name + ".py"), args.binary, destination]
-        if name == "wf-bundle-checksums":
-            argv = [sys.executable, E2E / (name + ".py"), destination]
         if name in ("wf-inheritance-family", "wf-aggregate-family", "wf-dag-dependency-family"):
             argv += ["--targets", "3.6.0"]
         env = os.environ.copy()
@@ -325,9 +318,9 @@ def package(args):
     source = output / "source.tar"
     checked(["git", "archive", "--format=tar", "--output", source, "HEAD"], output / "archive")
     folder = output / "package-e2e"
-    checked([sys.executable, E2E / "dev-bundle.py", args.binary, source, folder], output / "package-e2e-command", timeout=600)
+    checked([sys.executable, E2E / "native-package.py", args.binary, source, folder], output / "package-e2e-command", timeout=600)
     count = validate_results(folder / "results.json", pass_key="passed", assertion_key="checks", require_assertions=True)
-    package_json = checked([sys.executable, ROOT / "scripts/package-dev.py", "--binary", args.binary,
+    package_json = checked([sys.executable, ROOT / "scripts/package-native.py", "--binary", args.binary,
                             "--sha256", sha(args.binary), "--platform", host_platform(),
                             "--source-archive", source, "--source-sha256", sha(source),
                             "--output", output / "dist"], output / "package-command", timeout=300)
@@ -343,26 +336,6 @@ def package(args):
     save(output / "package.json", produced | {"sourceCommit": manifest["sourceIdentity"]["nativeCommit"],
                                               "semanticCaseCount": count})
     (output / "dist/SHA256SUMS").write_text(f'{produced["zipSha256"]}  {Path(produced["zip"]).name}\n', encoding="utf-8")
-    return True
-
-
-def wasm(args):
-    manifest = ROOT / "Cargo.toml"
-    if args.package:
-        produced = json.loads(args.package.read_text(encoding="utf-8"))
-        manifest = Path(produced["extension"]) / "Cargo.toml"
-    target = ROOT / "build/ci-wasm" / args.output.name
-    env = os.environ | {"CARGO_TARGET_DIR": str(target)}
-    checked(["cargo", "build", "--locked", "--release", "--target", "wasm32-wasip2", "--manifest-path", manifest],
-            args.output / "compile", timeout=600, env=env)
-    artifact = target / "wasm32-wasip2/release/zed_argo_workflows.wasm"
-    if not artifact.is_file() or artifact.stat().st_size <= 8 or artifact.read_bytes()[:4] != b"\0asm":
-        raise ValueError("missing or invalid WASM output")
-    retained = args.output / "zed_argo_workflows.wasm"
-    shutil.copyfile(artifact, retained)
-    save(args.output / "wasm.json", {"manifest": str(manifest), "wasm": str(retained), "sha256": sha(retained),
-                                    "bytes": artifact.stat().st_size, "separateNativePackage": bool(args.package),
-                                    "editorAcceptance": "not-executed"})
     return True
 
 
@@ -428,8 +401,6 @@ def main():
     p.add_argument("--tools", type=Path, help="directory with pinned offline Argo/Helm tools")
     p = sub.add_parser("package")
     p.add_argument("--binary", type=Path, required=True)
-    p = sub.add_parser("wasm")
-    p.add_argument("--package", type=Path)
     p = sub.add_parser("mutations")
     p.add_argument("--group", choices=("core", "audit", "resources"), required=True)
     p = sub.add_parser("schema")
@@ -440,8 +411,6 @@ def main():
     args.output = args.output.resolve()
     if hasattr(args, "binary"):
         args.binary = args.binary.resolve()
-    if getattr(args, "package", None):
-        args.package = args.package.resolve()
     if getattr(args, "tools", None):
         args.tools = args.tools.resolve()
     args.output.mkdir(parents=True, exist_ok=True)

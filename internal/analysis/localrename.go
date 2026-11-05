@@ -599,7 +599,7 @@ func collectLocalBindings(ctx context.Context, s source.Snapshot, version string
 	}
 	kind, _ := queryMember(projected, "kind").(string)
 	api, _ := queryMember(projected, "apiVersion").(string)
-	if !owned(api, kind) || !readOnly && kind != "Workflow" && kind != "CronWorkflow" {
+	if !owned(api, kind) || schemaOnlyKind(kind) || !readOnly && kind != "Workflow" && kind != "CronWorkflow" {
 		return b, fmt.Errorf("only closed Workflow and CronWorkflow symbols can be renamed")
 	}
 	if readOnly {

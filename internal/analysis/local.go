@@ -10,9 +10,10 @@ import (
 
 func localDiagnostics(ctx context.Context, snapshot source.Snapshot, sourceRoot yamlview.Node, value any, shared map[source.Span]bool, kind, version string) []Diagnostic {
 	diagnostics := []Diagnostic{}
-	var major, minor, patch int
-	fmt.Sscanf(version, "%d.%d.%d", &major, &minor, &patch)
-	omittedAvailable := major == 3 && (minor > 3 || minor == 3 && patch >= 9)
+	if schemaOnlyKind(kind) {
+		return diagnostics
+	}
+	omittedAvailable := workflowVersionAtLeast(version, 3, 9)
 	root := workflowRoot(value, sourceRoot)
 	root.shared = shared
 	spec := workflowMember(root, "spec")

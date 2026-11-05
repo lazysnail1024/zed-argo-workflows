@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Accepted/experimental/unknown targets and visible effective source changes."""
+"""Supported/unknown targets and visible effective source changes."""
 import importlib.util,pathlib,sys,json,time
 p=pathlib.Path(__file__).with_name('wf-audit-gaps.py');spec=importlib.util.spec_from_file_location('wire',p);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 text=m.REN_DAG
 for version in ['3.6.0','3.5.0','99.99.99']:
  dest,work=m.setup(version,{'a.yaml':text},m.CONFIG.replace('3.6.0',version));code,data=m.cli(dest,work);c=m.LSP(dest,work);path=work/'a.yaml'
  try:
-  ds=c.open(path,text);r=c.request('textDocument/prepareRename',{'textDocument':{'uri':path.as_uri()},'position':m.pos(text,'name: cleanup',offset=7)});m.result(version,{'complete_only_accepted':data['analysisComplete']==(version=='3.6.0'),'edits_only_accepted':(r.get('result')=={'placeholder':'cleanup','range':{'start':m.pos(text,'name: cleanup',offset=6),'end':m.pos(text,'name: cleanup',offset=13)}} and 'error' not in r) if version=='3.6.0' else (r.get('error',{}).get('code')==(-32602 if version=='3.5.0' else -32803) and 'result' not in r),'status':[d['code'] for d in ds]==([] if version=='3.6.0' else ['WF_EXPERIMENTAL_TARGET' if version=='3.5.0' else 'WF_ANALYSIS_UNAVAILABLE']),'exit':code==(0 if version=='3.6.0' else 2)},{'cli':data,'response':r})
+  ds=c.open(path,text);r=c.request('textDocument/prepareRename',{'textDocument':{'uri':path.as_uri()},'position':m.pos(text,'name: cleanup',offset=7)});m.result(version,{'complete_only_accepted':data['analysisComplete']==(version!='99.99.99'),'edits_only_accepted':(r.get('result')=={'placeholder':'cleanup','range':{'start':m.pos(text,'name: cleanup',offset=6),'end':m.pos(text,'name: cleanup',offset=13)}} and 'error' not in r) if version!='99.99.99' else (r.get('error',{}).get('code')==-32803 and 'result' not in r),'status':[d['code'] for d in ds]==([] if version!='99.99.99' else ['WF_ANALYSIS_UNAVAILABLE']),'exit':code==(0 if version!='99.99.99' else 2)},{'cli':data,'response':r})
  finally:c.close()
 dest,work=m.setup('source-switch',{'a.yaml':text});c=m.LSP(dest,work);path=work/'a.yaml'
 try:

@@ -58,7 +58,7 @@ def cases(version):
   exit_default(kind+'-name-only-exit-default',kind,True)
   one(kind+'-fake-entry-input',kind)
  one('unused-name-only-argument',arguments=args('{name: [[argument|p]]}'),inputs='',errors=[invalid()])
- restricted=v[1]>5 or v[1]==5 and v[2]>=5 or v[1]==4 and v[2]>=17
+ restricted=v[0]>3 or v[1]>5 or v[1]==5 and v[2]>=5 or v[1]==4 and v[2]>=17
  for name,source,bad in [('configmap-form-with-literal','{[[cm|configMapKeyRef]]: {name: cfg, key: p}}',False),('path-form-with-literal','{path: /tmp/p}',True),('configmap-plus-path-with-literal','{[[cm|configMapKeyRef]]: {name: cfg, key: p}, path: /tmp/p}',True)]:
   one(name,arguments=args('{name: p, value: literal, valueFrom: '+('[[form|'+source.replace('[[cm|configMapKeyRef]]','configMapKeyRef')+']]')+'}'),inputs='',errors=[invalid('form',True)] if bad and restricted else [])
  whole('entry-fallback')
@@ -99,6 +99,8 @@ def cases(version):
   for name,marked,errors in rows:
    if name in ['configmap-argument-required-input','configmap-form-with-literal','configmap-plus-path-with-literal']:
     errors.append(('cm','SCHEMA_UNKNOWN_FIELD','field \"configMapKeyRef\" is not defined for target '+version,'Warning','exact'))
+ if v[0]>=4:
+  rows=[(name,marked.replace('  schedule: "* * * * *"\n','  schedules: ["* * * * *"]\n'),errors) for name,marked,errors in rows]
  assert len(rows)==44
  return rows
 def selected_cases(version):
@@ -113,12 +115,12 @@ def prepare(version,rows,dest):
   diagnostics=[{'uri':path.as_uri(),'range':span(text,tags[tag]),'code':code,'message':message,'severity':severity,'source':'argo-workflows','positionKind':origin,'targetId':str(work)+'#root'} for tag,code,message,severity,origin in errors]
   expected+=diagnostics;records.append({'case':name,'range':span(text,(start,len(text))),'tags':tags,'diagnostics':diagnostics,'resourceCount':value.splitlines().count('apiVersion: argoproj.io/v1alpha1')})
  path.write_bytes(text.encode());(work/'.argo-workflows-ls.yaml').write_text('schemaVersion: 1\ntargetVersion: "'+version+'"\nreferencePolicy: closed\n')
- envelope={'configurationErrors':[],'filesAnalyzed':1,'resourcesAnalyzed':text.splitlines().count('apiVersion: argoproj.io/v1alpha1'),'analysisComplete':version=='3.6.0','notEvaluated':[] if version=='3.6.0' else ['target '+version+' is experimental; only 3.6.0 has completed local-contract acceptance']}
- m.save(dest/'expected.json',{'version':version,'cases':records,'diagnostics':expected,'envelope':envelope,'exitCode':int(any(d['severity']=='Error' for d in expected)) if version=='3.6.0' else 2});return work,path,text,records,expected,envelope
+ envelope={'configurationErrors':[],'filesAnalyzed':1,'resourcesAnalyzed':text.splitlines().count('apiVersion: argoproj.io/v1alpha1'),'analysisComplete':True,'notEvaluated':[]}
+ m.save(dest/'expected.json',{'version':version,'cases':records,'diagnostics':expected,'envelope':envelope,'exitCode':int(any(d['severity']=='Error' for d in expected))});return work,path,text,records,expected,envelope
 def report_checks(code,report,expected,envelope,work,version):
  keys=['uri','range','code','message','severity','source','positionKind','targetId'];catalog=HERE.parents[1]/'compat/catalog.lock.json';entry=next(x for x in json.loads(catalog.read_text())['versions'] if x['version']==version)
- target={'id':str(work)+'#root','root':str(work),'scope':'root','version':version,'source':'root','schemaHash':entry['schemaSha256'],'rulesetId':None,'analysisComplete':version=='3.6.0'};targets=report.get('targets',[]);config_hash=targets[0].get('configHash','') if targets else ''
- return {'completeDiagnostics':norm([{k:d[k] for k in keys} for d in report['diagnostics']])==norm(expected),'envelope':code==(int(any(d['severity']=='Error' for d in expected)) if version=='3.6.0' else 2) and {k:report.get(k) for k in envelope}==envelope,'target':len(targets)==1 and {k:targets[0].get(k) for k in target}==target,'catalog':report['catalogHash']==m.sha(catalog),'configHashShape':len(config_hash)==64 and all(c in '0123456789abcdef' for c in config_hash),'reportIdentity':report['product']=='argo-workflows' and report['inputSource']=='disk' and report['reportSchemaVersion']==1 and report['validationScope']=='local-editing-contract'}
+ target={'id':str(work)+'#root','root':str(work),'scope':'root','version':version,'source':'root','schemaHash':entry['schemaSha256'],'rulesetId':None,'analysisComplete':True};targets=report.get('targets',[]);config_hash=targets[0].get('configHash','') if targets else ''
+ return {'completeDiagnostics':norm([{k:d[k] for k in keys} for d in report['diagnostics']])==norm(expected),'envelope':code==int(any(d['severity']=='Error' for d in expected)) and {k:report.get(k) for k in envelope}==envelope,'target':len(targets)==1 and {k:targets[0].get(k) for k in target}==target,'catalog':report['catalogHash']==m.sha(catalog),'configHashShape':len(config_hash)==64 and all(c in '0123456789abcdef' for c in config_hash),'reportIdentity':report['product']=='argo-workflows' and report['inputSource']=='disk' and report['reportSchemaVersion']==1 and report['validationScope']=='local-editing-contract'}
 def digest(path):
  try:return m.sha(path)
  except OSError:return None

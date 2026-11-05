@@ -65,7 +65,7 @@ func WithDocumentReuse(ctx context.Context) context.Context {
 }
 
 // Compiled schemas contain only immutable embedded catalog data. The key set is
-// bounded by the embedded schema files (35), not caller input. Compilation runs
+// bounded by the embedded schema files, not caller input. Compilation runs
 // outside map locks; cancellation never waits for another request to compile.
 var compiledSchemas sync.Map // embedded filename -> *jsonschema.Schema
 

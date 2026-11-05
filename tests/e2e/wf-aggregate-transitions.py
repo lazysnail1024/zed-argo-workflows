@@ -10,7 +10,7 @@ sibling='---\napiVersion: argoproj.io/v1alpha1\nkind: Workflow\nmetadata: {name:
 text+=sibling
 fixed=text.replace('  entrypoint: main\n','  entrypoint: main\n  arguments: {parameters: [{name: absent, value: literal}]}\n',2)
 def expected(value,version):
- rows=([] if version=='3.6.0' else [{'range':{'start':{'line':0,'character':0},'end':{'line':0,'character':0}},'code':'WF_EXPERIMENTAL_TARGET','source':'argo-workflows','severity':2,'message':'target '+version+' is experimental; only 3.6.0 has completed local-contract acceptance'}])
+ rows=[]
  for tag,message in [('workflow.parameters','workflow parameters aggregate is not available'),('workflow.parameters.absent','workflow parameter is not declared: absent')]:
   if value==fixed:continue
   if tag.endswith('.absent') and version!='3.4.1':continue

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/k8s-crd-toolkit/yamlview"
@@ -203,7 +204,12 @@ func project(ctx context.Context, snapshot source.Snapshot, doc yamlview.Documen
 	kind, _ := root["kind"].(string)
 	if owned(api, kind) {
 		if _, err := compat.SchemaFile(version, api, kind); err != nil {
-			return nil, err
+			// A schema-only CRD absent from an older release is valid YAML with
+			// an unavailable resource kind. Keep it projectable so validation
+			// can report that version boundary without inventing template scopes.
+			if !schemaOnlyKind(kind) || !errors.Is(err, compat.ErrSchemaUnavailable) {
+				return nil, err
+			}
 		}
 	}
 	cost := 0

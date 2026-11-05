@@ -40,14 +40,14 @@ func runContext(parent context.Context, args []string) int {
 		if len(args) != 1 {
 			return 2
 		}
-		fmt.Println("argo-workflows-ls: version --json; check --root <dir> --format json|human; serve --stdio\nTarget 3.6.0 is accepted for the local editing contract; other known targets are experimental.")
+		fmt.Println("argo-workflows-ls: version --json; check --root <dir> --format json|human; serve --stdio\nAutomatic compatibility across the embedded supported releases is enabled by default; exact version pins remain available.")
 		return 0
 	case "version":
 		if len(args) != 2 || args[1] != "--json" {
 			fmt.Fprintln(os.Stderr, "usage: version --json")
 			return 2
 		}
-		emit(map[string]any{"product": "argo-workflows", "serverVersion": buildinfo.ServerVersion, "adapterContractVersion": 1, "analysisReady": true, "defaultTargetVersion": compat.DefaultVersion, "acceptedTargetVersions": []string{compat.DefaultVersion}, "configSchemaVersions": []int{1}, "reportSchemaVersions": []int{1}, "toolkitVersion": "v0.0.0-20261103033718-ae52b82ec6c9", "catalogHash": compat.Hash(), "sourceCommit": buildinfo.Commit(), "dirty": buildinfo.IsDirty(), "buildMode": buildinfo.BuildMode})
+		emit(map[string]any{"product": "argo-workflows", "serverVersion": buildinfo.ServerVersion, "adapterContractVersion": 1, "analysisReady": true, "defaultTargetVersion": compat.DefaultVersion, "acceptedTargetVersions": compat.SupportedVersions(), "supportedTargetVersions": compat.SupportedVersions(), "supportedMajors": compat.SupportedMajors(), "supportedVersionRange": compat.SupportedRange(), "automaticVersionSupport": true, "configSchemaVersions": []int{1}, "reportSchemaVersions": []int{1}, "toolkitVersion": "v0.0.0-20261103033718-ae52b82ec6c9", "catalogHash": compat.Hash(), "sourceCommit": buildinfo.Commit(), "dirty": buildinfo.IsDirty(), "buildMode": buildinfo.BuildMode})
 		return 0
 	case "check":
 		flags := flag.NewFlagSet("check", flag.ContinueOnError)
@@ -56,7 +56,7 @@ func runContext(parent context.Context, args []string) int {
 		format := flags.String("format", "human", "json or human")
 		scope := flags.String("scope", "", "scope")
 		file := flags.String("file", "", "output file filter")
-		target := flags.String("target-version", "", "exact target")
+		target := flags.String("target-version", "", "auto or exact supported release")
 		warningsAsErrors := flags.Bool("warnings-as-errors", false, "fail on warnings")
 		if flags.Parse(args[1:]) != nil || flags.NArg() != 0 {
 			return 2
