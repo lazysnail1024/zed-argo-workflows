@@ -8,9 +8,9 @@ import (
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/analysis"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/lsp"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
-	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -76,7 +76,10 @@ func runContext(parent context.Context, args []string) int {
 			if err != nil {
 				configurationErrors = append(configurationErrors, err.Error())
 			} else {
-				filter = (&url.URL{Scheme: "file", Path: filepath.ToSlash(absolute)}).String()
+				filter, err = fileuri.FromPath(absolute)
+				if err != nil {
+					configurationErrors = append(configurationErrors, err.Error())
+				}
 			}
 		}
 		signalContext, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
@@ -114,23 +117,30 @@ func runContext(parent context.Context, args []string) int {
 			localResults := map[source.URI]analysis.Result{}
 			incompleteTargets := map[string]bool{}
 			matched := filter == ""
-			for _, document := range input.Documents {
+			for first := 0; first < len(input.Documents); {
 				if ctx.Err() != nil {
 					break
 				}
-				result := analysis.AnalyzeSchema(ctx, document.Snapshot, document.Target.Version)
-				localResults[document.Snapshot.URI()] = result
-				if !result.Completed {
-					incompleteTargets[document.Target.ID] = true
-				}
-				notEvaluated = append(notEvaluated, result.NotEvaluated...)
-				if filter == "" || filter == string(document.Snapshot.URI()) {
-					for i := range result.Diagnostics {
-						result.Diagnostics[i].TargetID = document.Target.ID
+				count := analysis.PreparseBatch(ctx, input.Documents[first:])
+				for _, document := range input.Documents[first : first+count] {
+					if ctx.Err() != nil {
+						break
 					}
-					diagnostics = append(diagnostics, result.Diagnostics...)
-					matched = true
+					result := analysis.AnalyzeSchema(ctx, document.Snapshot, document.Target.Version)
+					localResults[document.Snapshot.URI()] = result
+					if !result.Completed {
+						incompleteTargets[document.Target.ID] = true
+					}
+					notEvaluated = append(notEvaluated, result.NotEvaluated...)
+					if filter == "" || filter == string(document.Snapshot.URI()) {
+						for i := range result.Diagnostics {
+							result.Diagnostics[i].TargetID = document.Target.ID
+						}
+						diagnostics = append(diagnostics, result.Diagnostics...)
+						matched = true
+					}
 				}
+				first += count
 			}
 			externalDiagnostics, completion := analysis.ExternalDiagnostics(ctx, input)
 			for _, document := range input.Documents {

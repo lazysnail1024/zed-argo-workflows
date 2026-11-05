@@ -11,10 +11,10 @@ import (
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/analysis"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 	"io"
-	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -144,15 +144,7 @@ func (s *session) failure(id json.RawMessage, code int, text string) error {
 	return s.write(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": code, "message": text}})
 }
 func filePath(uri string) (string, error) {
-	u, err := url.Parse(uri)
-	if err != nil || u.Scheme != "file" || u.Host != "" && u.Host != "localhost" {
-		return "", fmt.Errorf("only local file URIs are supported")
-	}
-	name := filepath.Clean(filepath.FromSlash(u.Path))
-	if !filepath.IsAbs(name) {
-		return "", fmt.Errorf("file URI must be absolute")
-	}
-	return name, nil
+	return fileuri.Path(uri)
 }
 func (s *session) root(uri string) string {
 	name, err := filePath(uri)
@@ -175,7 +167,10 @@ func (s *session) workspace(root, selected string) (workspace.Workspace, error) 
 	if w, ok := s.workspaces[workspaceKey{root, selected}]; ok && s.context().Err() == nil {
 		return w, nil
 	}
-	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(filepath.Join(root, ".argo-workflows-ls.yaml"))}).String()
+	uri, err := fileuri.FromPath(filepath.Join(root, ".argo-workflows-ls.yaml"))
+	if err != nil {
+		return workspace.Workspace{}, err
+	}
 	var overlay *string
 	if b, ok := s.buffers[uri]; ok {
 		if b.unavailable != "" {
@@ -217,7 +212,10 @@ func (s *session) workspace(root, selected string) (workspace.Workspace, error) 
 }
 
 func (s *session) workspaceWithConfig(root, selected string, overlay *string) (workspace.Workspace, error) {
-	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(filepath.Join(root, ".argo-workflows-ls.yaml"))}).String()
+	uri, err := fileuri.FromPath(filepath.Join(root, ".argo-workflows-ls.yaml"))
+	if err != nil {
+		return workspace.Workspace{}, err
+	}
 	buffers := map[string]source.Snapshot{}
 	for key, b := range s.buffers {
 		if s.root(key) == root {
@@ -411,7 +409,10 @@ func (s *session) bufferDocument(uri string) (workspace.Document, error) {
 	if b, ok := s.buffers[uri]; ok {
 		snapshot = b.snapshot
 	}
-	configURI := (&url.URL{Scheme: "file", Path: filepath.ToSlash(filepath.Join(root, ".argo-workflows-ls.yaml"))}).String()
+	configURI, err := fileuri.FromPath(filepath.Join(root, ".argo-workflows-ls.yaml"))
+	if err != nil {
+		return workspace.Document{}, err
+	}
 	var overlay *string
 	if config, ok := s.buffers[configURI]; ok {
 		if config.unavailable != "" {

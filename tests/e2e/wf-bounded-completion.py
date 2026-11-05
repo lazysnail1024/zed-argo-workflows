@@ -6,8 +6,8 @@ bad='apiVersion: [\n'
 foreign='apiVersion: v1\nkind: ConfigMap\nmetadata: {name: foreign}\ndata: {parallelism: wrong}\n'
 rows=[]
 for label,files,expected_files,expected_resources,incomplete in [('damaged-gvk',{'case.yaml':bad},0,0,True),('mixed-damaged-gvk',{'case.yaml':good+'---\n'+bad},0,1,True),('separate-damaged-gvk',{'a.yaml':good,'b.yaml':bad},1,1,True),('valid-foreign',{'case.yaml':foreign},1,0,False),('mixed-valid-foreign',{'case.yaml':good+'---\n'+foreign},1,1,False),('damaged-foreign',{'case.yaml':foreign+'broken: [\n'},0,0,True),('valid-unknown-gvk',{'case.yaml':'apiVersion: []\n'},1,0,False)]:
- d=O/label;w=d/'input';w.mkdir(parents=True);(w/'.argo-workflows-ls.yaml').write_text('schemaVersion: 1\ntargetVersion: "3.6.0"\n')
- for n,t in files.items():(w/n).write_text(t)
+ d=O/label;w=d/'input';w.mkdir(parents=True);(w/'.argo-workflows-ls.yaml').write_bytes('schemaVersion: 1\ntargetVersion: "3.6.0"\n'.encode('utf-8'))
+ for n,t in files.items():(w/n).write_bytes(t.encode('utf-8'))
  cmd=[str(B),'check','--root',str(w),'--format','json'];p=subprocess.run(cmd,capture_output=True,timeout=10);(d/'stdout.raw').write_bytes(p.stdout);(d/'stderr.raw').write_bytes(p.stderr);r=json.loads(p.stdout)
  checks={'completionExit':p.returncode==(2 if incomplete else 0),'exactFiles':r['filesAnalyzed']==expected_files,'exactResources':r['resourcesAnalyzed']==expected_resources,'explicitIncompleteInput':any('incomplete' in x.lower() or 'syntax' in x.lower() for x in r['notEvaluated'] if 'not yet implemented' not in x)==incomplete,'noProductSyntaxDiagnostic':r['diagnostics']==[]}
  rows.append({'case':label,'command':cmd,'exitCode':p.returncode,'expectedFiles':expected_files,'expectedResources':expected_resources,'assertions':checks,'pass':all(checks.values()),'report':r});(O/'results.json').write_text(json.dumps(rows,indent=2)+'\n');print(label,rows[-1]['pass'],flush=True)

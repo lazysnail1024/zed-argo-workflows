@@ -16,11 +16,12 @@ def setup(name, files, config=CONFIG):
     dest = OUT / name
     work = dest / 'input'
     work.mkdir(parents=True, exist_ok=True)
-    (work / '.argo-workflows-ls.yaml').write_text(config)
+    # Preserve intentional LF/CRLF bytes on every host, including Windows.
+    (work / '.argo-workflows-ls.yaml').write_bytes(config.encode('utf-8'))
     for name, value in files.items():
         p = work / name
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(value)
+        p.write_bytes(value.encode('utf-8'))
     return dest, work
 def command(dest, label, argv, timeout=20, **kwargs):
     r = subprocess.run([str(a) for a in argv], capture_output=True, timeout=timeout, **kwargs)
@@ -35,7 +36,7 @@ def cli(dest, work, label='check', only=None):
     return r.returncode, json.loads(r.stdout)
 def official(dest, path, label):
     config = dest / 'empty-kubeconfig'
-    config.write_text('apiVersion: v1\nkind: Config\nclusters: []\ncontexts: []\nusers: []\n')
+    config.write_bytes('apiVersion: v1\nkind: Config\nclusters: []\ncontexts: []\nusers: []\n'.encode('utf-8'))
     return command(dest, label, [ARGO, 'lint', '--offline', '--no-color', '--output', 'simple', '--kubeconfig', config, path], env={'PATH': '/usr/bin:/bin', 'KUBECONFIG': str(config)}).returncode
 def wf(ds): return [(d['code'], d['severity']) for d in ds if d['code'].startswith('WF_')]
 def pos(text, needle, occurrence=0, offset=0):

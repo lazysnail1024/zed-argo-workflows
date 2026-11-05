@@ -1,0 +1,236 @@
+name: Automated acceptance
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: acceptance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOWORK: 'off'
+  GOTOOLCHAIN: local
+  CGO_ENABLED: '1'
+  GOFLAGS: ''
+  GOPROXY: 'off'
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+  MACOSX_DEPLOYMENT_TARGET: '13.0'
+
+jobs:
+  native:
+    name: Native / ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+            artifact: linux-amd64
+            binary: argo-workflows-ls
+            cc: gcc-13
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            artifact: linux-arm64
+            binary: argo-workflows-ls
+            cc: gcc-13
+          - runner: macos-15-intel
+            platform: darwin/amd64
+            artifact: darwin-amd64
+            binary: argo-workflows-ls
+            cc: clang
+          - runner: macos-15
+            platform: darwin/arm64
+            artifact: darwin-arm64
+            binary: argo-workflows-ls
+            cc: clang
+          - runner: windows-2025
+            platform: windows/amd64
+            artifact: windows-amd64
+            binary: argo-workflows-ls.exe
+            cc: gcc
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    env:
+      CC: ${{ matrix.cc }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          check-latest: false
+          cache: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14.0'
+      - name: Build actual native server and record source/toolchain identity
+        id: build
+        run: python tests/ci/run.py build --platform "${{ matrix.platform }}" --output artifacts/ci/build
+      - name: Execute CLI and stdio LSP semantic consumers
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: python tests/ci/run.py suite --suite native --binary artifacts/ci/build/${{ matrix.binary }} --output artifacts/ci/native
+      - name: Prepare pinned Rust and WASI toolchain
+        id: rust
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: rustup toolchain install 1.99.1 --profile minimal --target wasm32-wasip2
+      - name: Compile ordinary source extension to WASM
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        run: python tests/ci/run.py wasm --output artifacts/ci/wasm-source
+      - name: Generate and validate development package on its native host
+        id: package
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: python tests/ci/run.py package --binary artifacts/ci/build/${{ matrix.binary }} --output artifacts/ci/package
+      - name: Compile the actual bundled extension to WASM
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' && steps.package.outcome == 'success' }}
+        run: python tests/ci/run.py wasm --bundled artifacts/ci/package/package.json --output artifacts/ci/wasm-bundle
+      - name: Retain native logs, failed fixtures, packages and both WASM outputs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: workflows-native-${{ matrix.artifact }}-${{ github.sha }}
+          path: artifacts/ci/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
+  extended:
+    name: Linux semantic / shard ${{ matrix.shard }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    env:
+      CC: gcc-13
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14.0'
+      - name: Build actual native server
+        id: build
+        run: python tests/ci/run.py build --platform linux/amd64 --output artifacts/ci/build
+      - name: Install checksum-pinned offline oracle tools
+        run: python tests/ci/install-tools.py --output artifacts/ci/tools
+      - name: Execute extended existing consumers
+        run: python tests/ci/run.py suite --suite extended --shard ${{ matrix.shard }}/3 --tools artifacts/ci/tools --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/extended
+      - name: Verify actual and synthetic schema query boundaries separately
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && matrix.shard == 0 }}
+        run: python tests/ci/run.py schema --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/schema
+      - name: Retain semantic evidence including failed runs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: workflows-semantic-${{ matrix.shard }}-${{ github.sha }}
+          path: artifacts/ci/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
+  resources:
+    name: Linux resources / ${{ matrix.suite }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [adversarial, load]
+    env:
+      CC: gcc-13
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14.0'
+      - name: Build outside measured cgroups
+        run: python tests/ci/run.py build --platform linux/amd64 --output artifacts/ci/build
+      - name: Execute existing consumers with enforced CPU, memory and swap limits
+        run: python tests/ci/resources.py --suite ${{ matrix.suite }} --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/resources
+      - name: Retain resource measurements, limits, raw traffic and failed inputs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: workflows-resources-${{ matrix.suite }}-${{ github.sha }}
+          path: artifacts/ci/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
+  mutations:
+    name: Mutation gate / ${{ matrix.group }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [core, resources]
+    env:
+      CC: gcc-13
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14.0'
+      - name: Require passing baselines and specific semantic mutation detection
+        run: python tests/ci/run.py mutations --group ${{ matrix.group }} --output artifacts/ci/mutations
+      - name: Retain mutation diffs, binaries, baseline and mutant evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: workflows-mutations-${{ matrix.group }}-${{ github.sha }}
+          path: artifacts/ci/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
+  acceptance:
+    name: Acceptance gate
+    if: always()
+    needs: [native, extended, resources, mutations]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every platform and mandatory gate
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          results = json.loads(os.environ['RESULTS'])
+          expected = {'native', 'extended', 'resources', 'mutations'}
+          failures = {name: result['result'] for name, result in results.items() if result['result'] != 'success'}
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as out:
+              out.write('## Automated acceptance\n\n')
+              for name, result in results.items():
+                  out.write(f"- {name}: {result['result']}\n")
+              out.write('\nReal Zed editor acceptance: **not executed by this workflow**.\n')
+          if set(results) != expected or failures:
+              raise SystemExit('Mandatory checks did not all succeed: ' + json.dumps(failures))
+          PY

@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
 	"io"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -274,8 +274,14 @@ func load(ctx context.Context, root, selected, override string, overlay *string,
 		if err := ctx.Err(); err != nil {
 			return w, err
 		}
-		u, _ := url.Parse(string(snapshot.URI()))
-		relative, _ := filepath.Rel(absolute, filepath.FromSlash(u.Path))
+		filename, err := fileuri.Path(string(snapshot.URI()))
+		if err != nil {
+			return w, err
+		}
+		relative, err := filepath.Rel(absolute, filename)
+		if err != nil {
+			return w, err
+		}
 		relative = filepath.ToSlash(relative)
 		if matches(config.Exclude, relative) {
 			continue
@@ -314,16 +320,16 @@ func load(ctx context.Context, root, selected, override string, overlay *string,
 
 // OpenDocument assigns an explicit editor buffer without broadening the disk index.
 func OpenDocument(w Workspace, snapshot source.Snapshot, override string) (Document, error) {
-	uri, err := url.Parse(string(snapshot.URI()))
+	filename, err := fileuri.Path(string(snapshot.URI()))
 	if err != nil {
 		return Document{}, err
 	}
-	rel, err := filepath.Rel(w.Root, filepath.FromSlash(uri.Path))
+	rel, err := filepath.Rel(w.Root, filename)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return Document{}, fmt.Errorf("buffer is outside root")
 	}
 	relative := filepath.ToSlash(rel)
-	if HelmTemplate(w.Root, filepath.FromSlash(uri.Path)) {
+	if HelmTemplate(w.Root, filename) {
 		return Document{}, fmt.Errorf("Helm template source is excluded")
 	}
 	name := "root"

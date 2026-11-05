@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import pathlib,json,hashlib,sys
-root=pathlib.Path(__file__).resolve().parents[2]; out=root/'artifacts/wf2-assets';out.mkdir(parents=True,exist_ok=True)
+root=pathlib.Path(__file__).resolve().parents[2]; out=pathlib.Path(sys.argv[2]).resolve() if len(sys.argv)>2 else root/'artifacts/wf2-assets';out.mkdir(parents=True,exist_ok=True)
 e=json.loads((root/'tests/e2e/wf2.expected.json').read_text()); results=[]
 try:
  c=json.loads((root/'compat/catalog.lock.json').read_text()); entries=c['versions']; results.append({'assertion':'nonzero distinct stable versions','pass':len(entries)>0 and len({v['version'] for v in entries})==len(entries) and all(v['version'].startswith('3.') and '-' not in v['version'] for v in entries)})

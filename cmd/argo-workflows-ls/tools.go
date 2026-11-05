@@ -9,9 +9,9 @@ import (
 	"flag"
 	"fmt"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
 	"io"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -300,11 +300,10 @@ func lintOfficial(args []string) int {
 	command := []string{"lint", "--offline", "--no-color", "--output", "simple", "--kubeconfig", kubeconfig}
 	inputHashes := map[string]string{}
 	for _, document := range w.Documents {
-		u, err := url.Parse(string(document.Snapshot.URI()))
+		path, err := fileuri.Path(string(document.Snapshot.URI()))
 		if err != nil {
 			return fail(err)
 		}
-		path := filepath.FromSlash(u.Path)
 		command = append(command, path)
 		sum := sha256.Sum256([]byte(document.Snapshot.Text()))
 		inputHashes[path] = hex.EncodeToString(sum[:])

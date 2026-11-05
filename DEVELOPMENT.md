@@ -53,6 +53,11 @@ The process consumer preserves commands, raw output/exit codes, input and packag
 
 ## Behavioral verification
 
+The automatic PR/main workflow, exact suite inventory, mutation requirements,
+resource limits, artifact layout and distinction from real editor acceptance are
+documented in [Automated acceptance](docs/CI.md). The manual development-bundle
+workflow is only a packaging subset.
+
 Use real CLI/LSP consumers with independent inputs and expectations. Preserve raw output, exit codes, source and executable hashes, and failed runs. Run related checks at the end of a coherent change. Do not infer acceptance from compilation alone.
 
 ```sh
@@ -90,7 +95,7 @@ The extension ID is `argo-workflows-lsp`; the server ID is `argo-workflows-ls`. 
 
 Resource consumers use the fixed 10,000-file/50 MiB workload, bounded retained-fact growth, and an 800 MiB combined Workflows/Argo CD RSS budget. Each measurement must identify its exact binaries and input; earlier measurements are not automatically attributed to later builds. These budgets are not universal memory bounds for arbitrary workloads.
 
-Local Linux development installation in Zed 1.26.2 has been verified, including hover, applied completion, cross-file definition, external-call Rename refusal, local Rename and undo, and live target settings with experimental refusal and recovery. Editor acceptance on other platforms, native platform CI, and formal distribution remain unfinished. Full historical semantic coverage and unsupported dynamic or nested inheritance behavior remain outside this delivery. No release is published by this repository's build commands.
+Previous local Linux development installation in Zed 1.26.2 was verified, including hover, applied completion, cross-file definition, external-call Rename refusal, local Rename and undo, and live target settings with experimental refusal and recovery. That historical result does not establish acceptance of a new artifact. Native platform CI is now defined in `.github/workflows/native.yml`; consult the actual run for its exact commit and outcomes. Real Zed acceptance on other platforms and formal distribution remain separate. Full historical semantic coverage and unsupported dynamic or nested inheritance behavior remain outside this delivery. No release is published by this repository's build commands.
 
 Real-process verification accepts an explicit native executable, for example:
 
@@ -118,7 +123,7 @@ python3 tests/e2e/wf-remediation-render.py build/argo-workflows-ls /absolute/pat
 
 Use fresh artifact directories. Load measurements require an otherwise idle machine; repeat with five independent processes, recording the actual binary SHA-256, hardware, cold/warm state, input dimensions and protocol traffic. The scripts retain real stdout/stderr, expectations, input hashes and results. This supplements the existing multi-scope and dense-reference suites.
 
-The manual development-bundle workflow only builds the Linux amd64 development installation. It builds the actual bundled WASM adapter and exercises the package consumer before uploading a ZIP, checksum and native process evidence; it does not publish a release or register an extension, compile an adapter for ordinary marketplace installation, or establish real Zed acceptance. Native macOS, Windows, Linux arm64 and editor installation/upgrade require their own clean-host execution before support claims expand. A formal publishing workflow remains gated on platform artifacts, locked provenance, independent edit-safety acceptance and explicit publication authorization.
+The manual development-bundle workflow only builds the Linux amd64 development installation. The automatic acceptance workflow additionally builds and executes native consumers on five host platforms, compiles both ordinary and bundled WASM adapters, and runs separate Linux semantic, resource and mutation gates. Neither workflow publishes a release, registers an extension, or establishes real Zed acceptance. Editor installation/upgrade requires its own recorded execution before support claims expand. A formal publishing workflow remains gated on platform artifacts, locked provenance, independent edit-safety acceptance and explicit publication authorization.
 
 
 Runtime retention is separate from semantic admission limits. Parse/projection facts retain at most 8 MiB of source/projected text and 512,000 measured nodes; the 100,000 logical alias/merge expansion limit remains unchanged. Completed external-reference checks retain at most 20,000 per-resource entries and 4 MiB of accounted diagnostic data, keyed by exact caller input, scope/target/configuration, complete candidate sets, namespace, policy and completeness. A changed resource invalidates its callers through those dependency keys. Read-only query results retain at most 16 entries and 4 MiB, and require fresh, complete scope acquisition with the same input fingerprint. Edits still recheck full input and semantic safety. Temporary edit simulations are not captured into external-check retention.

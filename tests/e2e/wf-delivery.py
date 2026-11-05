@@ -30,11 +30,11 @@ def prepare(name):
         config += 'scopes:\n  - name: stable\n    include: ["stable/*.yaml"]\n  - name: preview\n    include: ["preview/*.yaml"]\n    targetVersion: "3.5.0"\n'
     if name in ['experimental','empty-experimental']: config=config.replace('3.6.0','3.5.0')
     if name=='unknown': config=config.replace('3.6.0','9.9.9')
-    if name!='default': (work/'.argo-workflows-ls.yaml').write_text(config)
-    path=work/('stable/case.yaml' if mixed else 'case.yaml');path.parent.mkdir(exist_ok=True);path.write_text(text)
+    if name!='default': (work/'.argo-workflows-ls.yaml').write_bytes(config.encode('utf-8'))
+    path=work/('stable/case.yaml' if mixed else 'case.yaml');path.parent.mkdir(exist_ok=True);path.write_bytes(text.encode('utf-8'))
     if name=='empty-experimental': path.unlink()
     if mixed:
-        peer=work/'preview/case.yaml';peer.parent.mkdir();peer.write_text(VALID)
+        peer=work/'preview/case.yaml';peer.parent.mkdir();peer.write_bytes(VALID.encode('utf-8'))
     code=1 if name in ['error','warnings-as-errors'] else 2 if name in ['experimental','empty-experimental','unknown','mixed','file-filter'] else 0
     complete=code!=2; diagnostics=[];target=str(work)+('#stable' if mixed else '#root')
     if name=='error': diagnostics=[diagnostic(path,text,'absent','WF_LOCAL_TEMPLATE_MISSING','local template does not exist: absent','Error',target)]
@@ -51,10 +51,10 @@ def cli_case(name):
     if name=='selected': argv+=['--scope','stable']
     if name=='file-filter': argv+=['--file',path]
     r=m.command(dest,'check',argv);raw=json.loads(r.stdout)
-    checks={'exit':r.returncode==expected['exitCode'],'diagnostics':norm(raw['diagnostics'])==norm(expected['diagnostics']), 'envelope':all(raw.get(k)==expected[k] for k in ['analysisComplete','notEvaluated','filesAnalyzed','resourcesAnalyzed']) and (len(raw['configurationErrors'])==1 and 'unknown target version: 9.9.9' in raw['configurationErrors'][0] and '3.6.0' in raw['configurationErrors'][0] and 'override' in raw['configurationErrors'][0] if name=='unknown' else raw['configurationErrors']==[]), 'versions':sorted(t['version'] for t in raw['targets'])==sorted(expected['versions']), 'identity':raw['product']=='argo-workflows' and raw['reportSchemaVersion']==1 and raw['catalogHash']==m.sha(CATALOG) and raw['validationScope']=='local-editing-contract', 'targetIdentity':all(t['schemaHash']==SCHEMAS[t['version']] and t.get('experimental')==(t['version']!='3.6.0') and bool(re.fullmatch('[0-9a-f]{64}',t['configHash'])) for t in raw['targets']), 'bytes':not path.exists() if name=='empty-experimental' else path.read_text()==text}
+    checks={'exit':r.returncode==expected['exitCode'],'diagnostics':norm(raw['diagnostics'])==norm(expected['diagnostics']), 'envelope':all(raw.get(k)==expected[k] for k in ['analysisComplete','notEvaluated','filesAnalyzed','resourcesAnalyzed']) and (len(raw['configurationErrors'])==1 and 'unknown target version: 9.9.9' in raw['configurationErrors'][0] and '3.6.0' in raw['configurationErrors'][0] and 'override' in raw['configurationErrors'][0] if name=='unknown' else raw['configurationErrors']==[]), 'versions':sorted(t['version'] for t in raw['targets'])==sorted(expected['versions']), 'identity':raw['product']=='argo-workflows' and raw['reportSchemaVersion']==1 and raw['catalogHash']==m.sha(CATALOG) and raw['validationScope']=='local-editing-contract', 'targetIdentity':all(t.get('version') in SCHEMAS and t.get('schemaHash')==SCHEMAS[t['version']] and t.get('experimental')==(t['version']!='3.6.0') and bool(re.fullmatch('[0-9a-f]{64}',t['configHash'])) for t in raw['targets']), 'bytes':not path.exists() if name=='empty-experimental' else path.read_text()==text}
     if name=='default':checks['defaultOrigin']=len(raw['targets'])==1 and raw['targets'][0]['source']=='default'
     if name=='error':
-        path.write_text(VALID);recovery=m.command(dest,'recovery',[m.BINARY,'check','--root',work,'--format','json']);report=json.loads(recovery.stdout)
+        path.write_bytes(VALID.encode('utf-8'));recovery=m.command(dest,'recovery',[m.BINARY,'check','--root',work,'--format','json']);report=json.loads(recovery.stdout)
         checks['recovery']=recovery.returncode==0 and report['analysisComplete'] is True and report['diagnostics']==[] and report['notEvaluated']==[] and report['filesAnalyzed']==report['resourcesAnalyzed']==1
     m.result(name,checks)
 
@@ -101,7 +101,8 @@ def lsp_case(name):
             checks['settingsRenameRefused']=rename(path,text).get('error',{}).get('code')==-32602
             client.send('workspace/didChangeConfiguration',{'settings':{'targetVersion':'3.6.0'}})
             checks['settingsRecovery']=client.diagnostics(path.as_uri(),1)==[]
-            checks['settingsRenameRestored']='result' in rename(path,text)
+            restored=rename(path,text)
+            checks['settingsRenameRestored']='result' in restored and m.apply(text,restored['result'],path.as_uri(),1)==text.replace('entrypoint: main','entrypoint: renamed').replace('name: main','name: renamed')
         checks['bytes']=path.read_text()==text
     finally:
         if client:client.close();checks['naturalExit']=client.p.returncode==0
@@ -110,7 +111,12 @@ def lsp_case(name):
     m.result(name,checks)
 
 selected=CASES
-if '--cases' in sys.argv:selected=[x for x in CASES if x in sys.argv[sys.argv.index('--cases')+1].split(',')]
+if '--cases' in sys.argv:
+    requested=sys.argv[sys.argv.index('--cases')+1].split(',')
+    unknown=sorted(set(requested)-set(CASES))
+    if unknown:raise SystemExit('unknown delivery cases: '+', '.join(unknown))
+    if len(set(requested))!=len(requested):raise SystemExit('duplicate delivery cases')
+    selected=[x for x in CASES if x in requested]
 if not selected:m.save(m.OUT/'results.json',{'pass':False,'caseCount':0,'nativeStarted':False});raise SystemExit(1)
 if '--prepare' in sys.argv:
     for name in selected:prepare(name)
@@ -122,4 +128,4 @@ else:
         except Exception:
             m.save(m.OUT/(name+'-fatal.json'),{'error':traceback.format_exc()});raise
 m.save(m.OUT/'manifest.json',{'command':sys.argv,'nativeSha256':m.sha(m.BINARY),'consumerSha256':m.sha(Path(__file__)),'helperSha256':m.sha(HERE/'wf-audit-gaps.py'),'caseCount':len(selected),'preparedOnly':'--prepare' in sys.argv})
-raise SystemExit(0 if '--prepare' in sys.argv or all(r['pass'] for r in m.RESULTS) else 1)
+raise SystemExit(0 if '--prepare' in sys.argv or (len(m.RESULTS)==len(selected)+1 and [r['case'] for r in m.RESULTS]==['identity']+selected and all(r['pass'] for r in m.RESULTS)) else 1)

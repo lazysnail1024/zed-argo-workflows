@@ -5,9 +5,9 @@ import (
 	"context"
 	"fmt"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
 	"io"
 	"io/fs"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -104,7 +104,10 @@ func readInput(ctx context.Context, root string, nested []string, buffers map[st
 		if selected != "" && scopeName != selected {
 			return nil
 		}
-		uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
+		uri, err := fileuri.FromPath(path)
+		if err != nil {
+			return err
+		}
 		result.ScopeNames[source.URI(uri)] = scopeName
 		if snapshot, ok := buffers[uri]; ok {
 			result.Snapshots = append(result.Snapshots, snapshot)

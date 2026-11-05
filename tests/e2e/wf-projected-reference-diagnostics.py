@@ -4,7 +4,12 @@ from pathlib import Path
 import importlib.util,json,re,sys,traceback
 HERE=Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('wire',HERE/'wf-audit-gaps.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
-BASE='complete domain rules, version acceptance, and resource budgets are not yet implemented'
+# Expr v1.16.9 receives the source after '=' with both surrounding spaces.
+# Pin the parser reason independently, before any CLI/LSP process is started.
+INVALID_REFERENCE_REASON=('invalid expression: unexpected token EOF (1:28)\n'
+ ' |  inputs.parameters.absent + \n'
+ ' | ...........................^')
+LSP_SEVERITY={'Error':1,'Warning':2,'Information':3}
 HEAD='apiVersion: argoproj.io/v1alpha1\nkind: Workflow\nmetadata:\n  name: references\n  annotations:\n    marker: &marker kept\n    markerUse: *marker\n'
 SIBLING='apiVersion: argoproj.io/v1alpha1\nkind: Workflow\nmetadata: {name: exact-sibling}\nspec:\n  templates:\n    - name: main\n      inputs: {parameters: [{name: [[decl|exact]], default: retained}]}\n      container: {image: alpine, args: ["{{inputs.parameters.[[use|exact]]}}"]}\n'
 CASES=[]
@@ -71,7 +76,7 @@ for name,expr,want,invalid in [
  ('let-shadow',"{{= let inputs = {parameters: {absent: 'local'} }; inputs.parameters.absent }}",[],False),
  ('env',"{{= $env.inputs.parameters.absent }}",[],False),
  ('dynamic',"{{= inputs.parameters[workflow.parameters.selector] }}",[error('bad','dynamic member access is not statically resolved','WF_DYNAMIC_REFERENCE')],False),
- ('invalid',"{{= inputs.parameters.absent + }}",[],True)]:
+ ('invalid',"{{= inputs.parameters.absent + }}",[error('bad','Reference analysis incomplete: '+INVALID_REFERENCE_REASON,'WF_REFERENCE_INCOMPLETE')],True)]:
  text=HEAD+'    expression: &expression '+json.dumps(expr)+'\nspec:\n  arguments: {parameters: [{name: selector, value: ignored}]}\n  templates:\n    - name: main\n      container: {image: alpine, args: [[[bad|*expression]]]}\n'
  add('alias-scalar-'+name,text,want,invalid)
 # The anchor is valid in one template, but the alias use has a different local input scope.
@@ -112,14 +117,23 @@ for name,marked,diags,invalid,policy in CASES:
  sibling,stags=strip(SIBLING);dest,work=m.setup(name,{'case.yaml':text,'sibling.yaml':sibling},m.CONFIG.replace('referencePolicy: closed','referencePolicy: '+policy));path=work/'case.yaml';sp=work/'sibling.yaml'
  def loc(p,t,spans,tag):
   a,z=spans[tag];return {'uri':p.as_uri(),'range':{'start':pos(t,a),'end':pos(t,z)}}
- expected=[loc(path,text,tags,tag)|{'code':code,'message':message,'severity':'Information' if code in ['WF_DYNAMIC_REFERENCE','WF_TEMPLATE_REF_UNRESOLVED'] else 'Error','source':'argo-workflows','positionKind':origin} for tag,code,message,origin in diags]
- decl=loc(sp,sibling,stags,'decl');use=loc(sp,sibling,stags,'use');m.save(dest/'expected.json',{'diagnostics':expected,'exitCode':2 if invalid else int(bool(expected)),'filesAnalyzed':1 if invalid else 2,'resourcesAnalyzed':1 if invalid else 2,'analysisComplete':not invalid,'configurationErrors':[],'notEvaluated':(['invalid expression: <pinned parser reason>'] if invalid else []),'exactSiblingDefinition':[decl],'exactSiblingReferencesFalse':[use],'exactSiblingReferencesTrue':[use,decl],'aliasRename':'refused','noSourceEdits':True});(dest/'original.yaml').write_bytes(text.encode());prepared.append((name,dest,work,path,sp,text,sibling,expected,invalid,decl,use))
+ expected=[loc(path,text,tags,tag)|{'code':code,'message':message,'severity':'Information' if code in ['WF_DYNAMIC_REFERENCE','WF_TEMPLATE_REF_UNRESOLVED'] else 'Warning' if code=='WF_REFERENCE_INCOMPLETE' else 'Error','source':'argo-workflows','positionKind':origin} for tag,code,message,origin in diags]
+ # Without --warnings-as-errors, only Error diagnostics set exit 1; incomplete
+ # analysis takes precedence and exits 2 even when its visible diagnostic warns.
+ expected_exit=2 if invalid else int(any(d['severity']=='Error' for d in expected))
+ notes=[INVALID_REFERENCE_REASON] if invalid else []
+ publication=[{k:d[k] for k in ['range','code','message','source']}|{'severity':LSP_SEVERITY[d['severity']]} for d in expected]
+ if invalid:
+  publication.append({'range':{'start':{'line':0,'character':0},'end':{'line':0,'character':0}},'code':'WF_ANALYSIS_INCOMPLETE','source':'argo-workflows','severity':2,'message':'Analysis did not complete: '+INVALID_REFERENCE_REASON+'. Correct the input or configuration to retry.'})
+ decl=loc(sp,sibling,stags,'decl');use=loc(sp,sibling,stags,'use')
+ contract={'diagnostics':expected,'publication':publication,'exitCode':expected_exit,'filesAnalyzed':1 if invalid else 2,'resourcesAnalyzed':1 if invalid else 2,'analysisComplete':not invalid,'configurationErrors':[],'notEvaluated':notes,'exactSiblingDefinition':[decl],'exactSiblingReferencesFalse':[use],'exactSiblingReferencesTrue':[use,decl],'aliasRename':'refused','noSourceEdits':True}
+ m.save(dest/'expected.json',contract);(dest/'original.yaml').write_bytes(text.encode());prepared.append((name,dest,work,path,sp,text,sibling,contract,decl,use))
 m.save(m.OUT/'manifest.json',{'command':sys.argv,'nativeSha256':m.sha(m.BINARY),'testSha256':m.sha(Path(__file__)),'caseCount':len(prepared),'inputs':{str(p.relative_to(m.OUT)):m.sha(p) for p in m.OUT.glob('*/original.yaml')}})
-for name,dest,work,path,sp,text,sibling,expected,invalid,decl,use in prepared:
+for name,dest,work,path,sp,text,sibling,contract,decl,use in prepared:
  client=None;checks={};responses=[]
  try:
-  code,report=m.cli(dest,work);keys=['uri','range','code','message','severity','source','positionKind'];checks['fullDiagnostics']=norm([{k:d[k] for k in keys} for d in report['diagnostics']])==norm(expected);notes=report['notEvaluated'];checks['envelope']=code==(2 if invalid else int(bool(expected))) and report['filesAnalyzed']==(1 if invalid else 2) and report['resourcesAnalyzed']==(1 if invalid else 2) and report['analysisComplete'] is (not invalid) and report['configurationErrors']==[] and len(notes)==(1 if invalid else 0) and all('invalid expression:' in n for n in notes)
-  client=Client(dest,work);pub=client.open(path,text);want=[{k:d[k] for k in ['range','code','message','source']}|{'severity':3 if d['severity']=='Information' else 1} for d in expected];checks['publication']=norm(pub)==norm(want);client.open(sp,sibling)
+  code,report=m.cli(dest,work);keys=['uri','range','code','message','severity','source','positionKind'];checks['fullDiagnostics']=norm([{k:d[k] for k in keys} for d in report['diagnostics']])==norm(contract['diagnostics']);checks['envelope']=code==contract['exitCode'] and report['analysisComplete'] is contract['analysisComplete'] and all(report[k]==contract[k] for k in ['filesAnalyzed','resourcesAnalyzed','configurationErrors','notEvaluated'])
+  client=Client(dest,work);pub=client.open(path,text);checks['publication']=norm(pub)==norm(contract['publication']);client.open(sp,sibling)
   q={'textDocument':{'uri':sp.as_uri()},'position':use['range']['start']};response=client.request('textDocument/definition',q);responses.append(response);checks['exactSiblingDefinition']=response.get('result')==[decl]
   for inc in [False,True]:
    response=client.request('textDocument/references',q|{'context':{'includeDeclaration':inc}});responses.append(response);checks['exactSiblingReferences'+str(inc)]=norm(response.get('result',[]))==norm([use]+([decl] if inc else [])) and 'error' not in response

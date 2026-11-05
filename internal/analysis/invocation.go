@@ -21,6 +21,7 @@ type invocationKey struct{}
 type invocation struct {
 	imported    *Facts
 	views       map[snapshotIdentity]yamlview.View
+	sharedViews map[string]yamlview.View
 	projections map[projectionIdentity]projectedDocument
 	bytes       int
 }
@@ -35,7 +36,7 @@ func WithInvocation(ctx context.Context) context.Context {
 	if _, ok := ctx.Value(invocationKey{}).(*invocation); ok {
 		return ctx
 	}
-	return context.WithValue(ctx, invocationKey{}, &invocation{views: map[snapshotIdentity]yamlview.View{}, projections: map[projectionIdentity]projectedDocument{}})
+	return context.WithValue(ctx, invocationKey{}, &invocation{views: map[snapshotIdentity]yamlview.View{}, sharedViews: map[string]yamlview.View{}, projections: map[projectionIdentity]projectedDocument{}})
 }
 func snapshotKey(s source.Snapshot) snapshotIdentity {
 	return snapshotIdentity{s.URI(), s.Revision(), s.Text()}
@@ -50,10 +51,18 @@ func parseView(ctx context.Context, s source.Snapshot) (yamlview.View, error) {
 		if v, ok := state.views[key]; ok {
 			return v, nil
 		}
+		// Views contain immutable bytes and spans, not URI/revision/target state.
+		// Reuse only byte-identical input; keep projection and fact identities
+		// separate. Do not retain another identity key (and its text backing
+		// storage) for this hit: the original 50 MiB cache budget still applies.
+		if v, ok := state.sharedViews[key.text]; ok {
+			return v, nil
+		}
 	}
 	v, err := yamlview.Parse(ctx, s)
 	if err == nil && ctx.Err() == nil && state != nil && state.bytes+len(s.Text()) <= 50*1024*1024 {
 		state.views[key] = v
+		state.sharedViews[key.text] = v
 		state.bytes += len(s.Text())
 	}
 	return v, err

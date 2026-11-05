@@ -13,7 +13,7 @@ try:
  replies=c.wait(lambda ms:ms if len([m for m in ms if m.get('id') in list(range(3000,3021))+[3999]])>=22 else None,5)
  c.send('exit');c.p.wait(timeout=5);elapsed=time.monotonic()-start
  terminal=[m for m in replies if m.get('id') in range(3000,3021)]
- a.result('active-and-queued-shutdown',{'one_terminal_each':sorted(m['id'] for m in terminal)==list(range(3000,3021)),'active_cancelled':next(m for m in terminal if m['id']==3000).get('error',{}).get('code')==-32800,'shutdown_replied':any(m.get('id')==3999 and 'result' in m for m in replies),'clean_bounded_process_exit':c.p.returncode==0 and elapsed<5},{'responses':terminal,'elapsedSeconds':elapsed,'exitCode':c.p.returncode})
+ a.result('active-and-queued-shutdown',{'one_terminal_each':sorted(m['id'] for m in terminal)==list(range(3000,3021)),'active_cancelled':next(m for m in terminal if m['id']==3000).get('error',{}).get('code')==-32800,'shutdown_replied':any(m.get('id')==3999 and 'result' in m and m['result'] is None and 'error' not in m for m in replies),'clean_bounded_process_exit':c.p.returncode==0 and elapsed<5},{'responses':terminal,'elapsedSeconds':elapsed,'exitCode':c.p.returncode})
 finally:c.close()
 sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
 a.save(a.OUT/'manifest.json',{'command':sys.argv,'pythonVersion':sys.version,'binarySha256':sha(a.BINARY),'testSha256':sha(HERE/'wf-shutdown-active.py'),'clientSha256':sha(HERE/'wf-lifecycle-gaps.py'),'expectedSha256':sha(HERE/'wf-shutdown-active.expected.json'),'inputHashes':{str(p.relative_to(a.OUT)):sha(p) for p in (a.OUT).rglob('*.yaml')}})
