@@ -27,7 +27,9 @@ class MultiVersionGateTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="wf-version-gate-")
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        # macOS maps /var to /private/var. Match the real runner's canonical
+        # CLI argv and verifier paths instead of trusting the temporary alias.
+        self.root = Path(self.temporary.name).resolve()
         self.binary = self.root / "argo-workflows-ls"
         self.binary.write_bytes(b"synthetic test only; not a real LSP")
         self.output = self.root / "wf-multi-version"
