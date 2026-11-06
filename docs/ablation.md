@@ -36,6 +36,19 @@ the baseline completed. This experiment establishes a resource regression. It
 does **not** establish semantic parity for the incomplete mutant, and the
 measurements are not a portable performance promise.
 
+The native Linux ablation gate originally accepted a deadline regression only
+when **both** valid mutant probes timed out. In PR #9 CI, the expanded-schema
+mutant exhausted the unchanged deadline for the historical Workflow, while the
+simpler current Workflow completed; despite a 17.33× larger schema and 22.47×
+higher measured peak RSS for the latter, the gate incorrectly reported that the
+regression was undetected. The gate now accepts either two completed valid
+probes or any mixture of completed valid probes and explicitly reported
+analysis-deadline exhaustion (with at least one timeout), while retaining the
+schema-size and memory-ratio thresholds. Other error codes, diagnostics and
+unrelated incomplete results never count as evidence. The classifier is
+tested with eight positive and negative cases before running the expensive
+ablation. This change affects test evidence classification, not LSP behavior.
+
 Loading all eight automatic resource schemas initially exceeded the existing
 128 MiB session gate. WorkflowTemplate and ClusterWorkflowTemplate differed only
 in their root description in every supported release. Normalizing that
@@ -50,6 +63,7 @@ peak across other subprocesses.
 ```sh
 python3 tests/native_isolation.py --output artifacts/native-isolation
 python3 tests/e2e/wf-multi-version-ablation.py /path/to/argo-workflows-ls artifacts/version-ablation
+python3 tests/e2e/wf-multi-version-ablation.py --self-test
 cd editors/zed
 python3 tests/ablate_distribution.py --output ../../artifacts/zed-ablation
 ```
