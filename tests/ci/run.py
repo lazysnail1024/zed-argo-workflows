@@ -11,6 +11,7 @@ import re
 import runpy
 import signal
 import shutil
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -64,6 +65,7 @@ AGGREGATED = {
     "wf-inheritance-family-boundaries": "case", "wf-aggregate-family": "version",
     "wf-dag-dependency-family": "version", "wf-dag-dependency-boundaries": "case",
 }
+MULTI_VERSION_SHARDS = 4
 
 
 def save(path, value):
@@ -169,6 +171,134 @@ def consumer_results(name, destination):
         if (folder / "case-results.json").exists():
             count += validate_results(folder / "case-results.json", assertion_key="checks")
     return count
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def verify_multi_version_shards(destination, binary, shard_count=MULTI_VERSION_SHARDS):
+    """Independently gate every exact release and its real CLI evidence.
+
+    A partial shard returning zero is NOT acceptance. Only the disjoint, ordered
+    union of all releases plus the non-matrix semantic consumers may pass.
+    """
+    lock = json.loads((ROOT / "compat/catalog.lock.json").read_text(encoding="utf-8"))
+    versions = [version["version"] for version in lock["versions"]]
+    require(len(versions) == 146 and len(set(versions)) == 146, "locked release inventory changed")
+    require(2 <= shard_count <= 8, "invalid multi-version shard count")
+    binary = binary.resolve()
+    fingerprint = {"binarySha256": sha(binary),
+                   "testSha256": sha(E2E / "wf-multi-version.py"),
+                   "catalogSha256": sha(ROOT / "compat/catalog.lock.json")}
+    case_count, timings, all_versions, total_pairs = 0, [], [], 0
+    for index in range(shard_count):
+        shard = destination / f"shard-{index}"
+        expected = versions[index::shard_count]
+        manifest = json.loads((shard / "manifest.json").read_text(encoding="utf-8"))
+        for key, value in fingerprint.items():
+            require(manifest.get(key) == value, f"shard {index}: mismatched {key}")
+        require(manifest.get("releaseShard") == f"{index}/{shard_count}" and
+                manifest.get("selectedVersions") == expected and
+                manifest.get("totalReleaseCount") == 146 and
+                manifest.get("releaseCount") == len(expected),
+                f"shard {index}: incomplete or mismatched manifest")
+        require(manifest.get("celRulesExercised") == (10 if index == shard_count - 1 else 0),
+                f"shard {index}: missing CEL assertions or unexpected partial semantics")
+        results = json.loads((shard / "results.json").read_text(encoding="utf-8"))
+        names = [row.get("case") for row in results]
+        require(names[:3] == ["release-provenance", "machine-identity", "every-release-consumer"],
+                f"shard {index}: prerequisite checks missing")
+        require(len(results[0].get("assertions", {})) >= 447 and
+                len(results[1].get("assertions", {})) >= 5 and
+                results[2].get("assertions", {}).get("exactShardOrder") is True and
+                results[2].get("assertions", {}).get("everyReleaseAccepted") is True,
+                f"shard {index}: provenance, identity or matrix assertions were weakened")
+        if index == shard_count - 1:
+            require(len(results) >= 77 and "all-kinds-automatic-session" in names and
+                    "unavailable-WorkflowTaskSet-hover" in names,
+                    "final shard omitted non-release CLI/LSP assertions")
+        else:
+            require(len(results) == 3, f"shard {index}: unexpected partial result shape")
+        case_count += validate_results(shard / "results.json", require_assertions=True)
+        rows = json.loads((shard / "releases.json").read_text(encoding="utf-8"))
+        require(isinstance(rows, list) and [row.get("version") for row in rows] == expected,
+                f"shard {index}: missing, duplicated or reordered releases")
+        pairs = 0
+        for row, version in zip(rows, expected):
+            kinds = [source["kind"] for release in lock["versions"] if release["version"] == version
+                     for source in release["sources"]]
+            require(row.get("kinds") == kinds, f"{version}: incomplete kind coverage")
+            require(row.get("pass") is True, f"{version}: failed semantic row")
+            checks = row.get("checks")
+            require(isinstance(checks, dict) and len(checks) >= 10 and
+                    all(value is True for value in checks.values()), f"{version}: invalid semantic assertions")
+            for key in ("fixtureSeconds", "cliWallSeconds", "processAndEvidenceOverheadSeconds"):
+                value = row.get(key)
+                require(type(value) in (int, float) and abs(value) < 1000,
+                        f"{version}: missing or invalid {key}")
+            millis = row.get("analysisMilliseconds")
+            require(type(millis) is int and 0 <= millis <= 5000 and
+                    0 < row["cliWallSeconds"] <= 20.1,
+                    f"{version}: native CLI analysis or process deadline regression")
+            evidence = shard / f"release-{version}"
+            command_record = json.loads((evidence / "check.command.json").read_text(encoding="utf-8"))
+            argv = [str(binary), "check", "--root", str((evidence / "input").resolve()), "--format", "json"]
+            require(command_record.get("argv") == argv and command_record.get("exitCode") == 0 and
+                    command_record.get("timedOut") is False,
+                    f"{version}: CLI did not execute cleanly against the selected release")
+            report = json.loads((evidence / "check.stdout").read_text(encoding="utf-8"))
+            targets = report.get("targets", [])
+            require(report.get("analysisComplete") is True and
+                    report.get("notEvaluated") == [] and report.get("configurationErrors") == [] and
+                    report.get("diagnostics") == [] and report.get("filesAnalyzed") == 1 and
+                    report.get("resourcesAnalyzed") == len(kinds) and
+                    len(targets) == 1 and targets[0].get("version") == version and
+                    targets[0].get("experimental") is False and
+                    report.get("elapsedMilliseconds") == millis,
+                    f"{version}: CLI evidence contradicts the successful row")
+            pairs += len(kinds)
+            timings.append({"version": version, "analysisMilliseconds": millis,
+                            "cliWallSeconds": row["cliWallSeconds"],
+                            "processAndEvidenceOverheadSeconds": row["processAndEvidenceOverheadSeconds"]})
+        require(manifest.get("resourceVersionPairs") == pairs,
+                f"shard {index}: resource/version pair count mismatch")
+        total_pairs += pairs
+        all_versions += expected
+    require(len(all_versions) == 146 and set(all_versions) == set(versions) and total_pairs == 1052,
+            "incomplete release or resource/version coverage")
+    milliseconds = [row["analysisMilliseconds"] for row in timings]
+    measured = {"releaseCount": len(timings), "resourceVersionPairs": total_pairs,
+                "perVersion": timings, "analysisMilliseconds": {
+                    "sum": sum(milliseconds), "median": statistics.median(milliseconds),
+                    "p95": statistics.quantiles(milliseconds, n=100, method="inclusive")[94],
+                    "maximum": max(milliseconds)},
+                "scope": "all exact release CLI executions; runner process timing is observational"}
+    save(destination / "performance.json", measured)
+    return {"caseCount": case_count, "releaseCount": len(timings),
+            "resourceVersionPairs": total_pairs, "performance": measured["analysisMilliseconds"]}
+
+
+def multi_version_consumer(args):
+    destination = args.output / "wf-multi-version"
+    shard_rows = []
+    for index in range(MULTI_VERSION_SHARDS):
+        name = f"wf-multi-version-shard-{index}"
+        argv = [sys.executable, E2E / "wf-multi-version.py", args.binary,
+                destination / f"shard-{index}", "--release-shard", f"{index}/{MULTI_VERSION_SHARDS}"]
+        shard_rows.append(command(argv, args.output / "logs" / name, timeout=300))
+    row = {"name": "wf-multi-version", "seconds": round(sum(r["seconds"] for r in shard_rows), 3),
+           "shards": shard_rows, "pass": all(r["pass"] for r in shard_rows)}
+    try:
+        row.update(verify_multi_version_shards(destination, args.binary))
+    except (OSError, ValueError, TypeError, KeyError, IndexError):
+        row["pass"] = False
+        row["evidenceError"] = traceback.format_exc()
+        print(row["evidenceError"], flush=True)
+    print(f'{"PASS" if row["pass"] else "FAIL"} full 146-release matrix '
+          f'({row["seconds"]:.2f}s across {MULTI_VERSION_SHARDS} serial shards)', flush=True)
+    return row
 
 
 def summary(output, rows, classification):
@@ -287,6 +417,10 @@ def suite(args):
         names = names[index::total]
     rows = []
     for name in names:
+        if name == "wf-multi-version":
+            rows.append(multi_version_consumer(args))
+            summary(args.output, rows, args.suite + " E2E")
+            continue
         destination = args.output / name
         argv = [sys.executable, E2E / (name + ".py"), args.binary, destination]
         if name in ("wf-inheritance-family", "wf-aggregate-family", "wf-dag-dependency-family"):

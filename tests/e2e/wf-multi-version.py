@@ -3,13 +3,27 @@
 
 Checks schema editing contracts, not controller execution or admission on a cluster.
 """
-import copy, importlib.util, json, pathlib, re, sys, time
+import argparse, copy, importlib.util, json, pathlib, re, sys, time
 HERE = pathlib.Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('wire', HERE / 'wf-audit-gaps.py')
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 ROOT = HERE.parents[1]
 LOCK = json.loads((ROOT / 'compat/catalog.lock.json').read_text())
 VERSIONS = [v['version'] for v in LOCK['versions']]
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--release-shard', help='zero-based index/total; CI must verify the complete union')
+options = parser.parse_args(sys.argv[3:])
+SHARD = None
+if options.release_shard:
+    match = re.fullmatch(r'(\d+)/(\d+)', options.release_shard)
+    if not match:
+        parser.error('release shard must be index/total')
+    SHARD = tuple(map(int, match.groups()))
+    if not 0 <= SHARD[0] < SHARD[1] or not 2 <= SHARD[1] <= 8:
+        parser.error('release shard requires 2–8 nonempty partitions')
+SELECTED = VERSIONS[SHARD[0]::SHARD[1]] if SHARD else VERSIONS
+
 KINDS = {'Workflow', 'WorkflowTemplate', 'ClusterWorkflowTemplate', 'CronWorkflow', 'WorkflowEventBinding',
          'WorkflowArtifactGCTask', 'WorkflowTaskResult', 'WorkflowTaskSet'}
 INTRODUCED = {'WorkflowArtifactGCTask':'3.4.0', 'WorkflowTaskResult':'3.3.0', 'WorkflowTaskSet':'3.2.0'}
@@ -35,6 +49,14 @@ def check(name, value, version=None, error=None):
     return report
 
 # Independently compare exact tags with the locked upstream Git inventory.
+hashes = {}
+def cached_sha(path):
+    # Immutable, repository-locked assets recur under many releases. Read each
+    # unique path once while preserving every provenance assertion below.
+    if path not in hashes:
+        hashes[path] = m.sha(path)
+    return hashes[path]
+
 tags={line.split()[1].removeprefix('refs/tags/') for line in (ROOT/'compat/upstream/tags.txt').read_text().splitlines()}
 final_tags=[tag for tag in tags if re.fullmatch(r'v\d+\.\d+\.\d+',tag)]
 latest=max(tuple(map(int,tag[1:].split('.'))) for tag in final_tags)
@@ -51,9 +73,9 @@ for v in LOCK['versions']:
     for src in v['absentSources']:
         provenance['absence:'+v['version']+':'+src['kind']] = len(src['checks'])==2 and all(x['status']==404 and x['url']=='https://raw.githubusercontent.com/argoproj/argo-workflows/'+v['upstreamCommit']+'/'+x['upstreamPath'] for x in src['checks'])
     for src in v['sources']:
-        provenance['raw:'+src['sha256']] = m.sha(ROOT/src['path']) == src['sha256']
+        provenance['raw:'+src['sha256']] = cached_sha(ROOT/src['path']) == src['sha256']
         for schema in src['normalizedSchemas'].values():
-            provenance['schema:'+schema['sha256']] = m.sha(ROOT/'internal/assets/schemas'/schema['file']) == schema['sha256']
+            provenance['schema:'+schema['sha256']] = cached_sha(ROOT/'internal/assets/schemas'/schema['file']) == schema['sha256']
 m.result('release-provenance', provenance, {'releases': len(VERSIONS), 'majors': [latest[0]-1,latest[0]], 'kinds': sorted(KINDS)})
 identity = json.loads(m.command(m.OUT, 'version', [m.BINARY, 'version', '--json']).stdout)
 m.result('machine-identity', {'automaticDefault': identity.get('defaultTargetVersion') == 'auto', 'acceptedReleases': identity.get('acceptedTargetVersions') == VERSIONS,
@@ -75,14 +97,60 @@ def resource_values(version, available):
 def release(version):
     available=[src['kind'] for src in next(v for v in LOCK['versions'] if v['version']==version)['sources']]
     values=resource_values(version,available)
+    started=time.monotonic()
     dest,work=m.setup('release-'+version, {'case.yaml':'\n---\n'.join(json.dumps(v) for v in values)+'\n'}, 'schemaVersion: 1\ntargetVersion: "'+version+'"\n')
+    fixture_seconds=time.monotonic()-started
+    cli_started=time.monotonic()
     code,report = m.cli(dest,work)
-    return {'version':version, 'kinds':available, 'pass':code == 0 and report['analysisComplete'] is True and report['notEvaluated'] == [] and report['configurationErrors'] == [] and report['diagnostics'] == [] and report['resourcesAnalyzed'] == len(available) and report['targets'][0]['experimental'] is False}
+    cli_seconds=time.monotonic()-cli_started
+    targets=report.get('targets',[])
+    elapsed=report.get('elapsedMilliseconds')
+    checks={'exitZero':code==0, 'complete':report.get('analysisComplete') is True,
+            'allEvaluated':report.get('notEvaluated')==[], 'validConfiguration':report.get('configurationErrors')==[],
+            'noDiagnostics':report.get('diagnostics')==[], 'oneFile':report.get('filesAnalyzed')==1,
+            'allKinds':report.get('resourcesAnalyzed')==len(available),
+            'exactTarget':len(targets)==1 and targets[0].get('version')==version,
+            'notExperimental':len(targets)==1 and targets[0].get('experimental') is False,
+            'analysisWithinFiveSeconds':type(elapsed) is int and 0<=elapsed<=5000}
+    return {'version':version, 'kinds':available, 'checks':checks,
+            'pass':all(value is True for value in checks.values()),
+            'fixtureSeconds':round(fixture_seconds,3), 'cliWallSeconds':round(cli_seconds,3),
+            'analysisMilliseconds':elapsed,
+            'processAndEvidenceOverheadSeconds':round(cli_seconds-(elapsed or 0)/1000,3)}
+
+def manifest(cel_rules):
+    try:
+        import resource
+        peak=resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+    except ImportError:peak=None
+    m.save(m.OUT/'manifest.json', {'command':sys.argv,'binarySha256':m.sha(m.BINARY),
+        'testSha256':m.sha(pathlib.Path(__file__)),'catalogSha256':m.sha(ROOT/'compat/catalog.lock.json'),
+        'releaseShard':options.release_shard,'selectedVersions':SELECTED,
+        'totalReleaseCount':len(VERSIONS),'releaseCount':len(release_rows),
+        'resourceVersionPairs':sum(len(r['kinds']) for r in release_rows),
+        'kinds':sorted(KINDS),'celRulesExercised':cel_rules,'peakChildRSSPlatformUnits':peak,
+        'scope':'CRD schema and local editing, not controller execution or cluster admission'})
+
 # Keep this correctness matrix within each server's unchanged analysis budget.
 # Concurrency and load are covered by the dedicated resource consumers.
-release_rows = [release(version) for version in VERSIONS]
-m.save(m.OUT/'releases.json', release_rows)
-m.result('every-release-consumer', {'all146':len(release_rows)==146 and '3.0.5' in VERSIONS and '3.2.10' in VERSIONS, 'everyReleaseAccepted':all(x['pass'] for x in release_rows)}, {'failures':[x for x in release_rows if not x['pass']]})
+release_rows=[]
+for version in SELECTED:
+    row=release(version)
+    release_rows.append(row)
+    m.save(m.OUT/'releases.json', release_rows)  # retain progress before a runner timeout
+    print(f"release {version}: {'PASS' if row['pass'] else 'FAIL'} "
+          f"analysis={row['analysisMilliseconds']}ms CLI={row['cliWallSeconds']:.3f}s",flush=True)
+release_checks={'exactShardOrder':[r['version'] for r in release_rows]==SELECTED,
+                'everyReleaseAccepted':all(r['pass'] for r in release_rows)}
+if SHARD is None:
+    release_checks['all146']=len(release_rows)==146 and '3.0.5' in VERSIONS and '3.2.10' in VERSIONS
+m.result('every-release-consumer',release_checks,{'failures':[x for x in release_rows if not x['pass']],
+                                                'releaseShard':options.release_shard})
+if SHARD is not None and SHARD[0]!=SHARD[1]-1:
+    # These are explicitly partial consumers, never a standalone 146-version gate.
+    # The CI orchestrator rejects any missing, duplicate, or failed shard.
+    manifest(0)
+    raise SystemExit(0 if all(x['pass'] for x in m.RESULTS) else 1)
 
 # All kind schemas coexist in one automatic LSP session. The existing 128 MiB
 # process budget is retained; Linux exposes its exact high-water mark via procfs.
@@ -213,10 +281,6 @@ for kind in INTRODUCED:
     query('unavailable-'+kind+'-completion',typed_head+complete,'completion',label,False,version='3.0.0')
     query('unavailable-'+kind+'-hover',typed_head+hover,'hover',typ,False,version='3.0.0')
 
-# Python's children usage is observational; the enforced regression budgets live in bounded suites.
-try:
-    import resource
-    peak=resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
-except ImportError: peak=None
-m.save(m.OUT/'manifest.json', {'command':sys.argv,'binarySha256':m.sha(m.BINARY),'testSha256':m.sha(pathlib.Path(__file__)),'catalogSha256':m.sha(ROOT/'compat/catalog.lock.json'),'releaseCount':len(VERSIONS),'resourceVersionPairs':sum(len(r['kinds']) for r in release_rows),'kinds':sorted(KINDS),'celRulesExercised':len(cel),'peakChildRSSPlatformUnits':peak,'scope':'CRD schema and local editing, not controller execution or cluster admission'})
+# Python child RSS remains observational; bounded resource suites own the hard budget.
+manifest(len(cel))
 raise SystemExit(0 if all(x['pass'] for x in m.RESULTS) else 1)
