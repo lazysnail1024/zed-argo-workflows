@@ -9,26 +9,31 @@ target version is needed.
 
 ## Install in Zed
 
-1. Download **[zed-argo-workflows-0.0.1-alpha.1.zip](https://github.com/lazysnail1024/zed-argo-workflows/releases/download/zed-v0.0.1-alpha.1/zed-argo-workflows-0.0.1-alpha.1.zip)**
-   from the [Zed alpha release](https://github.com/lazysnail1024/zed-argo-workflows/releases/tag/zed-v0.0.1-alpha.1).
-2. Close Zed, extract the ZIP, and copy its **`argo-workflows-lsp`** folder into:
+Close Zed, then run one command:
 
-   | OS | Installation directory |
-   | --- | --- |
-   | Linux | `$XDG_DATA_HOME/zed/extensions/installed/` (default `~/.local/share/zed/extensions/installed/`) |
-   | macOS | `~/Library/Application Support/Zed/extensions/installed/` |
-   | Windows | `%LOCALAPPDATA%\Zed\extensions\installed\` |
+Linux / macOS:
 
-3. Start Zed and open a project folder containing Argo Workflows YAML. The adapter downloads
-   the matching native server and checks its SHA-256 and identity. Subsequent starts
-   work offline. Keep Zed's general YAML support enabled.
+```sh
+curl -fsSL https://raw.githubusercontent.com/lazysnail1024/zed-argo-workflows/main/editors/zed/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/lazysnail1024/zed-argo-workflows/main/editors/zed/install.ps1 | iex
+```
+
+Restart Zed and open a project containing Argo Workflows YAML. **Run the same
+command to upgrade.** The installer verifies the release ZIP against
+`SHA256SUMS`, preserves one previous installation for rollback, and leaves
+Zed's native-server cache alone. If you prefer to inspect a script before
+running it, download it from [`editors/zed/`](editors/zed/) first.
 
 This precompiled package needs **no Rust or Go installation**. The native download
 supports Linux amd64/arm64, macOS amd64/arm64 and Windows amd64. This is a manual
 alpha installation; the extension is not yet in the Zed extension store.
 
-For an upgrade, keep a copy of the previous extension folder, close Zed, and replace
-it with the new release's folder. [Checksums, offline setup and troubleshooting](docs/distribution.md).
+[Rollback, manual/offline installation and troubleshooting](docs/distribution.md).
 
 ## Try it
 
