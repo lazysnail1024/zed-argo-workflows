@@ -12,6 +12,13 @@ explicit `native-server-version` pin and direct release URL; it never relies on
 GitHub's latest-stable-release endpoint. Published versions are not overwritten.
 Corrections receive a new alpha number.
 
+The Windows native-cache activation repair is prepared for adapter
+`0.0.1-alpha.2`, retaining native LSP `0.0.1-alpha.1`. A source change or passing
+PR check is not a published upgrade: the new `zed-v` release must contain its
+verified ZIP and `SHA256SUMS` before installation. The published `alpha.1`
+adapter retains the older cache activation behavior described in
+[the incident lessons](lessons-learned.md).
+
 ## Release automation
 
 Merging a change to root `VERSION` into `main` starts the native release workflow.
@@ -75,6 +82,9 @@ The automated E2E uses isolated HOME/XDG/LOCALAPPDATA and actual public Release
 bytes on Linux, macOS and Windows. It tests installation, idempotence, replacement,
 checksum/ZIP rejection, rollback and injected activation failure, **not** a real
 Zed GUI session. GUI activation remains a separate manual acceptance step.
+CI explicitly selects a published fixture with `--version` and records
+`sourceAdapterVersion` separately from `exercisedReleaseVersion`; `zed.yml`
+independently verifies the new candidate's WASM and package before publication.
 
 The portable ZIP contains `argo-workflows-lsp/extension.toml`, `extension.wasm`, snippets and
 licenses. With Zed closed, place that folder below its `extensions/installed`
@@ -109,9 +119,17 @@ The adapter chooses:
 
 An invalid explicit selection is reported. For managed downloads, SHA-256 is
 checked before execution, then the native product, contract, readiness and release
-identity are verified. Downloads activate a new complete version/platform cache
-directory; a failed download leaves previous versions intact. Existing valid
-cache entries are rechecked and reused without network access.
+identity are verified. The repaired installer reserves a unique
+`servers/v<version>-<platform>.gen2-<nonce>/` directory, verifies the EXE at that
+unchanging path, then atomically creates its `.complete/` directory. Unmarked
+new generations are ignored, including after interruption. Activation does not
+rename a directory after executing its EXE.
+
+Existing fixed-version and `.gen-` caches remain supported without fabricated
+markers. Every reused cache is rechecked without network access. Previously
+published generations are never moved or deleted during installation or repair;
+two installers may safely retain two complete generations. Cleanup of the
+current failed attempt is best effort and cannot replace its original error.
 
 For offline first use, extract the native platform archive and put its executable
 on PATH, or configure its absolute path in Zed settings:
@@ -138,12 +156,23 @@ after correcting permissions or network access. Keep the general YAML language
 server enabled. Ordinary Argo YAML receives semantic analysis; raw Helm template
 sources are not silently rendered. Use explicit `render-check` for rendered input.
 
+On Windows, the `alpha.1` pair `Cannot activate verified server` and
+`Cannot clean temporary cache servers/.download-*` points to native-cache
+activation, not Workflow validation. Its `os error 2` is reported through WASI;
+do not treat that number alone as Win32 "file not found". Use the adapter
+containing the repair once it is published, or temporarily select an
+independently verified EXE with `serverPath` as above. Do not run Zed as
+administrator, disable antivirus or purge all extension caches merely to work
+around this error. See [cause, evidence limits and prevention](lessons-learned.md).
+
 Native CI executes five actual operating-system/architecture hosts. Rust tests
-exercise installer transport and process boundaries through the production
-installer's host interface. Package tests inspect the compiled WASM and archive,
-and native tests execute extracted servers. These do not claim a full real Zed
-GUI session on every platform. Manual GUI acceptance remains separately tracked
-for this alpha; the release is not a Zed extension-store approval.
+exercise the cache protocol with injected transport and process boundaries.
+The separate WASI runtime acceptance executes the production installer with
+real native identity probes and controlled Windows file-sharing restrictions.
+Package tests inspect the compiled WASM and archive, and native tests execute
+extracted servers. These checks do not claim a full real Zed GUI session on
+every platform. Manual GUI acceptance remains separately tracked for this
+alpha; the release is not a Zed extension-store approval.
 
 Upstream installation behavior is defined by Zed's
 [extension host](https://github.com/zed-industries/zed/blob/main/crates/extension_host/src/extension_host.rs)

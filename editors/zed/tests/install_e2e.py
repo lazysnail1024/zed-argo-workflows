@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -20,9 +21,8 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 EXTENSION = tomllib.loads((ROOT / "extension.toml").read_text())
 ID = EXTENSION["id"]
-VERSION = EXTENSION["version"]
+SOURCE_VERSION = EXTENSION["version"]
 REPO = EXTENSION["repository"].removeprefix("https://github.com/")
-ARCHIVE = f"{REPO.split('/')[-1]}-{VERSION}.zip"
 IS_WINDOWS = sys.platform == "win32"
 SCRIPT = ROOT / ("install.ps1" if IS_WINDOWS else "install.sh")
 
@@ -58,8 +58,31 @@ def check_identity(folder, version):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--report", type=Path)
+    parser.add_argument("--version", default=SOURCE_VERSION,
+                        help="Exact published adapter fixture; defaults to the source version, never falls back")
     args = parser.parse_args()
+    version = args.version
+    archive_name = f"{REPO.split('/')[-1]}-{version}.zip"
     cases = []
+    report = {"repository": REPO, "sourceAdapterVersion": SOURCE_VERSION,
+              "exercisedReleaseVersion": version, "platform": sys.platform,
+              "scope": "filesystem-only with explicit released fixture; candidate package tested separately; Zed GUI not launched",
+              "passed": False, "cases": cases}
+
+    def save_report():
+        if args.report:
+            args.report.mkdir(parents=True, exist_ok=True)
+            (args.report / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+
+    save_report()
+    shell_defaults = re.findall(r"(?m)^version=([^\r\n]+)$", (ROOT / "install.sh").read_text())
+    powershell_defaults = re.findall(r"(?m)^\s*\[string\]\$Version\s*=\s*'([^']+)',\s*$",
+                                    (ROOT / "install.ps1").read_text())
+    assert shell_defaults == [SOURCE_VERSION], "Shell installer default differs from source adapter version"
+    assert powershell_defaults == [SOURCE_VERSION], "PowerShell installer default differs from source adapter version"
+    report["installerDefaultsMatchSource"] = True
+    save_report()
+
     with tempfile.TemporaryDirectory(prefix="zed-alpha-file-install-") as temporary:
         root = Path(temporary)
         home = root / "User Home With Spaces"
@@ -78,6 +101,10 @@ def main():
 
         def run(label, *options, expected_success=True, script=SCRIPT, process_env=env,
                 windows_host="powershell.exe"):
+            version_flag = "-Version" if IS_WINDOWS else "--version"
+            if version_flag not in options:
+                options = (version_flag, version, *options)
+            requested_version = options[options.index(version_flag) + 1]
             if IS_WINDOWS:
                 command = [windows_host, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
                            "-File", str(script), *options]
@@ -87,13 +114,10 @@ def main():
                                     timeout=240)
             successful = result.returncode == 0
             cases.append({"case": label, "exitCode": result.returncode,
+                          "requestedVersion": requested_version,
                           "expectedSuccess": expected_success,
                           "output": (result.stdout + result.stderr)[-800:]})
-            if args.report:
-                args.report.mkdir(parents=True, exist_ok=True)
-                (args.report / "report.json").write_text(json.dumps(
-                    {"repository": REPO, "platform": sys.platform, "cases": cases},
-                    indent=2) + "\n")
+            save_report()
             assert successful == expected_success, f"{label}: {result.stdout}\n{result.stderr}"
             assert not list(state_dir.glob(f".{ID}.install.*")), f"{label}: staging was not cleaned"
             assert sorted(p.name for p in installed.iterdir()) == [ID], (
@@ -109,7 +133,7 @@ def main():
 
         # Exercise the actual online download path (shell curl / Windows Invoke-WebRequest).
         run("online-real-release")
-        check_identity(target, VERSION)
+        check_identity(target, version)
         original = snapshot(target)
         assert original and previous.exists() is False
         original_timestamp = (target / "extension.wasm").stat().st_mtime_ns
@@ -119,7 +143,7 @@ def main():
         # Local fixtures contain the unchanged downloaded public release assets;
         # only negative cases modify copies under this isolated test directory.
         assets = root / "actual release assets"
-        download(VERSION, assets)
+        download(version, assets)
         result = run("idempotent-reinstall", *opts(assets))
         assert "Already installed" in result.stdout, (
             f"Idempotence was not detected: {result.stdout!r} {result.stderr!r}; "
@@ -155,29 +179,29 @@ def main():
         shutil.copytree(assets, bad_hash)
         sums = bad_hash / "SHA256SUMS"
         sums.write_text(sums.read_text().replace(
-            hashlib.sha256((assets / ARCHIVE).read_bytes()).hexdigest(), "0" * 64))
+            hashlib.sha256((assets / archive_name).read_bytes()).hexdigest(), "0" * 64))
         run("reject-mismatched-checksum", *opts(bad_hash), expected_success=False)
         unchanged()
 
         bad_zip = root / "corrupt downloaded archive"
         shutil.copytree(assets, bad_zip)
-        with (bad_zip / ARCHIVE).open("ab") as stream:
+        with (bad_zip / archive_name).open("ab") as stream:
             stream.write(b"corrupt!")
         run("reject-corrupt-download", *opts(bad_zip), expected_success=False)
         unchanged()
 
         bad_payload = root / "invalid zip with matching checksum"
         shutil.copytree(assets, bad_payload)
-        (bad_payload / ARCHIVE).write_bytes(b"invalid zip")
-        checksum = hashlib.sha256((bad_payload / ARCHIVE).read_bytes()).hexdigest()
-        (bad_payload / "SHA256SUMS").write_text(f"{checksum}  {ARCHIVE}\n")
+        (bad_payload / archive_name).write_bytes(b"invalid zip")
+        checksum = hashlib.sha256((bad_payload / archive_name).read_bytes()).hexdigest()
+        (bad_payload / "SHA256SUMS").write_text(f"{checksum}  {archive_name}\n")
         run("reject-invalid-zip-even-when-hash-matches", *opts(bad_payload),
             expected_success=False)
         unchanged()
 
         bad_identity = root / "wrong identity with matching checksum"
         shutil.copytree(assets, bad_identity)
-        archive = bad_identity / ARCHIVE
+        archive = bad_identity / archive_name
         replacement = root / "wrong-identity.zip"
         with zipfile.ZipFile(archive) as source, zipfile.ZipFile(replacement, "w") as output:
             for member in source.infolist():
@@ -188,7 +212,7 @@ def main():
                 output.writestr(member, data)
         shutil.move(replacement, archive)
         checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
-        (bad_identity / "SHA256SUMS").write_text(f"{checksum}  {ARCHIVE}\n")
+        (bad_identity / "SHA256SUMS").write_text(f"{checksum}  {archive_name}\n")
         run("reject-wrong-adapter-identity", *opts(bad_identity), expected_success=False)
         unchanged()
 
@@ -227,14 +251,12 @@ def main():
             fallback = env.copy()
             fallback.pop("XDG_DATA_HOME")
             run("linux-home-default", *opts(assets), process_env=fallback)
-            check_identity(home / ".local/share/zed/extensions/installed" / ID, VERSION)
+            check_identity(home / ".local/share/zed/extensions/installed" / ID, version)
 
-    report = {"repository": REPO, "version": VERSION, "platform": sys.platform,
-              "scope": "filesystem-only; Zed GUI not launched", "cases": cases}
-    if args.report:
-        args.report.mkdir(parents=True, exist_ok=True)
-        (args.report / "report.json").write_text(json.dumps(report, indent=2) + "\n")
-    print(f"PASS {REPO}: {len(cases)} isolated filesystem acceptance cases on {sys.platform}")
+    report["passed"] = True
+    save_report()
+    print(f"PASS {REPO}: source adapter {SOURCE_VERSION}, released fixture {version}; "
+          f"{len(cases)} isolated filesystem acceptance cases on {sys.platform}")
 
 
 if __name__ == "__main__":

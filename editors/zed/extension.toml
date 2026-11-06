@@ -1,6 +1,6 @@
 id = "argo-workflows-lsp"
 name = "Argo Workflows"
-version = "0.0.1-alpha.1"
+version = "0.0.1-alpha.2"
 schema_version = 1
 snippets = ["snippets/yaml.json"]
 authors = ["snail (lazysnail1024)"]

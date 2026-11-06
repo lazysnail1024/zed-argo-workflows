@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify adapter independence and prove retained package guards detect regressions."""
+"""Verify adapter independence and prove installer/package guards detect regressions."""
 import argparse
 import hashlib
 import json
@@ -63,14 +63,65 @@ def main():
                         else "default_native_release_is_pinned_separately_from_the_adapter_version")
             distribution = tree / "src/distribution.rs"
             original_distribution = distribution.read_text()
-            anchor = 'include_str!("../native-server-version").trim()'
-            assert original_distribution.count(anchor) == 1
-            distribution.write_text(original_distribution.replace(anchor, 'env!("CARGO_PKG_VERSION")', 1))
-            result, row = run("restore-cargo-server-version-coupling", [*cargo_command, "test", "--locked", "--offline", testcase], 101)
-            row["runtimeAssertionFailed"] = "test result: FAILED" in result.stdout
-            row["passed"] = row["passed"] and row["runtimeAssertionFailed"]
-            assert row["passed"], "A compilation failure is not a detected behavior regression"
-            distribution.write_text(original_distribution)
+            publication = '''        fs::create_dir(stage.join(COMPLETE)).map_err(|error| {
+            format!(
+                "Cannot publish verified server cache {}: {error}",
+                stage.display()
+            )
+        })?;
+'''
+            probe = '        crate::identity::validate(&host.identity(&binary)?, Some(version))?;\n'
+            mutations = [
+                ("restore-cargo-server-version-coupling",
+                 [('include_str!("../native-server-version").trim()', 'env!("CARGO_PKG_VERSION")')],
+                 testcase, "assertion `left == right` failed"),
+                ("restore-post-probe-directory-rename",
+                 [("        Ok(binary)\n    })();", '''        let destination = root.join(format!("{slot}.gen2-moved-{}", nonce()?));
+        fs::rename(&stage, &destination).map_err(|error| error.to_string())?;
+        Ok(destination.join(&asset))
+    })();''')],
+                 "installation_keeps_the_identity_probe_path",
+                 "Do not move a directory after executing its server"),
+                ("remove-new-generation-completion-check",
+                 [("&& (!needs_marker || existing_directory(&generation.join(COMPLETE))?)", "&& true")],
+                 "complete_bytes_are_invisible_until_the_identity_probe_finishes",
+                 "An unfinished generation must not be selected"),
+                ("publish-completion-before-identity",
+                 [(publication, ""), (probe, publication + probe)],
+                 "complete_bytes_are_invisible_until_the_identity_probe_finishes",
+                 "Publish completion only after the native identity has passed"),
+                ("remove-download-digest-check",
+                 [("if !regular(&binary, MAX_BINARY)? || digest(&binary)? != expected {",
+                   "if !regular(&binary, MAX_BINARY)? {")],
+                 "digest_mismatch_never_chmods_or_probes_download",
+                 "called `Result::unwrap_err()` on an `Ok` value"),
+            ]
+            for label, replacements, testcase, assertion in mutations:
+                mutant = original_distribution
+                for anchor, replacement in replacements:
+                    assert mutant.count(anchor) == 1, f"{label}: expected one live mutation anchor"
+                    mutant = mutant.replace(anchor, replacement, 1)
+                distribution.write_text(mutant)
+                try:
+                    qualified = f"distribution::tests::{testcase}"
+                    result, row = run(label, [*cargo_command, "test", "--locked", "--offline", "--lib",
+                                             qualified, "--", "--exact", "--nocapture", "--color", "never"], 101)
+                    row["expectedTest"] = qualified
+                    # Exit 101 also denotes a compiler error. Require one named
+                    # runtime failure and its intended assertion, not zero tests
+                    # or an unrelated filesystem/network/toolchain failure.
+                    lines = result.stdout.splitlines()
+                    row["exactTestExecuted"] = ("running 1 test" in lines
+                                                and f"test {qualified} ... FAILED" in lines)
+                    row["runtimeAssertionFailed"] = "test result: FAILED. 0 passed; 1 failed; 0 ignored;" in result.stdout
+                    row["detectedByExpectedCheck"] = assertion in result.stdout + result.stderr
+                    row["passed"] = (row["passed"] and row["exactTestExecuted"]
+                                     and row["runtimeAssertionFailed"] and row["detectedByExpectedCheck"])
+                    assert row["passed"], f"{label}: intended runtime assertion did not fail: {result.stdout[-2000:]} {result.stderr[-2000:]}"
+                finally:
+                    distribution.write_text(original_distribution)
+            assert distribution.read_text() == original_distribution
+            run("restored-distribution-tests", [*cargo_command, "test", "--locked", "--offline"])
 
             package = tree / "package.py"
             original_package = package.read_text()
