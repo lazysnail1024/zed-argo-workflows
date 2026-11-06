@@ -5,6 +5,45 @@ No production tree is changed. Observable black-box outcomes decide which small
 mechanisms are necessary; the final variant measures the cost of removing $defs.
 """
 import copy, hashlib, importlib.util, json, os, pathlib, shutil, subprocess, sys, time
+
+def classify_inlining_results(outcomes):
+    """Accept only completed success or a reported analysis deadline for each valid probe."""
+    def success(result):
+        return result['exit']==0 and result['complete'] and not result['codes'] and not result['notEvaluated']
+    def deadline(result):
+        return (result['exit']==3 and not result['complete'] and not result['codes']
+                and bool(result['notEvaluated'])
+                and all(reason=='context deadline exceeded' for reason in result['notEvaluated']))
+    return (all(success(result) for result in outcomes),
+            any(deadline(result) for result in outcomes)
+            and all(success(result) or deadline(result) for result in outcomes))
+
+def test_inlining_classifier():
+    good={'exit':0,'complete':True,'codes':[],'notEvaluated':[]}
+    timeout={'exit':3,'complete':False,'codes':[],'notEvaluated':['context deadline exceeded']}
+    other_error={'exit':3,'complete':False,'codes':[],'notEvaluated':['permission denied']}
+    diagnostics={'exit':1,'complete':True,'codes':['SCHEMA_UNKNOWN_FIELD'],'notEvaluated':[]}
+    bad_timeout={**timeout,'codes':['SCHEMA_UNKNOWN_FIELD']}
+    cases=[
+        ([good,good],(True,False)),
+        ([good,timeout],(False,True)),
+        ([timeout,good],(False,True)),
+        ([timeout,timeout],(False,True)),
+        ([good,other_error],(False,False)),
+        ([good,diagnostics],(False,False)),
+        ([timeout,other_error],(False,False)),
+        ([good,bad_timeout],(False,False)),
+    ]
+    for inputs,expected in cases:
+        actual=classify_inlining_results(inputs)
+        assert actual==expected,(inputs,expected,actual)
+    return len(cases)
+
+classifier_checks=test_inlining_classifier()
+if len(sys.argv)==2 and sys.argv[1]=='--self-test':
+    print(f'PASS schema inlining classifier: {classifier_checks} cases')
+    raise SystemExit(0)
+
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 BINARY=pathlib.Path(sys.argv[1]).resolve();OUT=pathlib.Path(sys.argv[2]).resolve();OUT.mkdir(parents=True,exist_ok=True)
 spec=importlib.util.spec_from_file_location('wire',ROOT/'tests/e2e/wf-audit-gaps.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
@@ -95,8 +134,10 @@ for name in ['latest-only','open-alternatives','no-query-selection','no-schema-i
             row['decision']='Keep query branch selection so completion cannot suggest a field incompatible with the current document.'
         else:
             row['base']=run(binary,'base',name);row['old']=run(binary,'old',name)
-            row['semanticParity']=all(row[k]['exit']==0 and row[k]['complete'] for k in ['base','old'])
-            row['budgetExhausted']=all(row[k]['exit']==3 and not row[k]['complete'] and not row[k]['codes'] and 'context deadline exceeded' in row[k]['notEvaluated'] for k in ['base','old'])
+            # A resource regression may exhaust the unchanged deadline only on
+            # a more demanding valid release. Do not require both inputs to time
+            # out, but reject all unrelated failures and incomplete diagnostics.
+            row['semanticParity'],row['budgetExhausted']=classify_inlining_results([row['base'],row['old']])
             row['sizeRatio']=row['schemaBytes']/len(original_schema)
             row['memoryRatio']=row['base']['peakRSSKiB']/baseline['base']['peakRSSKiB'] if baseline['base']['peakRSSKiB'] else None
             row['detected']=(row['semanticParity'] or row['budgetExhausted']) and row['sizeRatio']>3 and (row['memoryRatio'] is None or row['memoryRatio']>1.5)

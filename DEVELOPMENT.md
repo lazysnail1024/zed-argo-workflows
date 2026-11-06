@@ -53,6 +53,26 @@ for waiting and failure behavior.
 The precompiled ZIP is the ordinary alpha installation path and does not need a
 Rust toolchain on the user's machine. See [distribution](docs/distribution.md).
 
+Installer changes also require the WASI cache runtime acceptance in `zed.yml`:
+the production installer runs as `wasm32-wasip2`, probes the pinned released
+native executable through a host bridge, and exercises retained Windows handles
+that forbid moving/deleting the executable. Native Rust tests alone do not cover
+that runtime boundary. This is not a Zed GUI test. The
+[Windows activation lessons](docs/lessons-learned.md) record the incident,
+publication invariants, acceptance layers and prevention checklist.
+
+From `editors/zed`, on Linux amd64 or Windows amd64 with the pinned Rust
+toolchain/target and Python installed, use a fresh evidence directory:
+
+```sh
+python tests/cache_runtime_e2e.py --output ../../artifacts/zed-cache-runtime
+python tests/ablate_distribution.py --output ../../artifacts/zed-distribution-ablation
+```
+
+The runtime consumer verifies the pinned Wasmtime download and the native
+release asset before use. It needs network access for those downloads; a
+download or runtime setup failure does not count as a passing cache test.
+
 ## Changes and tests
 
 Use the existing real-process E2E consumers for changed behavior. Keep raw failure
@@ -60,6 +80,12 @@ output and reject timeouts, missing reports and unexpected successful mutants.
 Foreign-platform synthetic archives test aggregation rules only; they do not
 replace native execution. Keep actual upstream CRD tests separate from synthetic
 schema query fixtures.
+
+For cache protocol changes, run the installer tests, the WASI runtime consumer
+and `editors/zed/tests/ablate_distribution.py`. Require a passing baseline and
+the intended assertion failure after each isolated mutation; compilation errors,
+unrelated failures and zero matching tests must not count as regression detection.
+Record exact-commit evidence separately from any manual Zed acceptance.
 
 Version collection and normalization preserve upstream commit IDs and SHA-256
 source identities. The default auto window is derived from the latest two stable

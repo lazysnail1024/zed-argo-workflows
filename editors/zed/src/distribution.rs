@@ -39,6 +39,7 @@ fn valid_release_version(version: &str) -> bool {
 pub const MAX_BINARY: u64 = 128 * 1024 * 1024;
 pub const MAX_CHECKSUMS: u64 = 64 * 1024;
 const REPOSITORY: &str = "https://github.com/lazysnail1024/zed-argo-workflows";
+const COMPLETE: &str = ".complete";
 static ATTEMPT: AtomicU64 = AtomicU64::new(0);
 
 pub trait Host {
@@ -202,22 +203,27 @@ fn nonce() -> Result<String, String> {
     Ok(format!("{now}-{}", ATTEMPT.fetch_add(1, Ordering::Relaxed)))
 }
 
-fn unique(root: &Path, prefix: &str) -> Result<PathBuf, String> {
-    Ok(root.join(format!(".{prefix}-{}", nonce()?)))
-}
-
-fn staging(root: &Path) -> Result<PathBuf, String> {
+fn generation(
+    root: &Path,
+    slot: &str,
+    mut next_nonce: impl FnMut() -> Result<String, String>,
+) -> Result<PathBuf, String> {
     for _ in 0..8 {
-        let path = unique(root, "download")?;
+        let path = root.join(format!("{slot}.gen2-{}", next_nonce()?));
         match fs::create_dir(&path) {
             Ok(()) => return Ok(path),
             // Clocks and per-process counters can coincide across hosts. Only
-            // exclusive creation establishes ownership of a staging directory.
+            // exclusive creation establishes ownership. Never write a collision.
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(format!("Cannot create download staging directory: {error}")),
+            Err(error) => {
+                return Err(format!(
+                    "Cannot create server generation {}: {error}",
+                    path.display()
+                ))
+            }
         }
     }
-    Err("Cannot allocate a download staging directory after repeated collisions".into())
+    Err("Cannot allocate a server generation after repeated collisions".into())
 }
 
 fn cached<H: Host>(
@@ -233,23 +239,28 @@ fn cached<H: Host>(
             return Ok(Some(binary));
         }
     }
-    let prefix = format!("{slot}.gen-");
+    let legacy_prefix = format!("{slot}.gen-");
+    let prefix = format!("{slot}.gen2-");
     let mut generations = Vec::new();
     for entry in fs::read_dir(root).map_err(|error| error.to_string())? {
         let entry = entry.map_err(|error| error.to_string())?;
-        if entry
-            .file_name()
-            .to_str()
-            .is_some_and(|name| name.starts_with(&prefix) && name.len() > prefix.len())
-        {
-            generations.push(entry.path());
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        let needs_marker = name.starts_with(&prefix) && name.len() > prefix.len();
+        if needs_marker || (name.starts_with(&legacy_prefix) && name.len() > legacy_prefix.len()) {
+            generations.push((entry.path(), needs_marker));
         }
     }
     generations.sort();
-    for generation in generations {
-        if existing_directory(&generation)? {
-            // Incomplete or byte-corrupt slots are retained but not executed.
-            // A valid immutable repair generation can still work offline.
+    for (generation, needs_marker) in generations {
+        if existing_directory(&generation)?
+            && (!needs_marker || existing_directory(&generation.join(COMPLETE))?)
+        {
+            // New generations can be visible while their owner is downloading
+            // or probing. Only the atomic final marker publishes them. Legacy
+            // slots were published by rename and intentionally have no marker.
             if let Some(binary) = verified(&generation, asset, version, host)? {
                 return Ok(Some(binary));
             }
@@ -274,58 +285,11 @@ fn remove_directory(path: &Path) -> Result<(), String> {
         .map_err(|error| format!("Cannot clean temporary cache {}: {error}", path.display()))
 }
 
-fn activate<H: Host>(
-    stage: &Path,
-    root: &Path,
-    slot: &str,
-    asset: &str,
-    version: &str,
-    host: &mut H,
-    rename: &mut impl FnMut(&Path, &Path) -> std::io::Result<()>,
-) -> Result<(PathBuf, bool), String> {
-    let mut destination = root.join(format!("{slot}.gen-{}", nonce()?));
-    for _ in 0..8 {
-        // Published slots always contain the manifest and executable. Directory
-        // rename cannot replace a nonempty destination on Unix or Windows. We
-        // never move or remove a published slot, even when it is byte-corrupt.
-        match rename(stage, &destination) {
-            Ok(()) => return Ok((destination.join(asset), true)),
-            Err(error) => {
-                if !existing_directory(&destination)? {
-                    return Err(format!("Cannot activate verified server: {error}"));
-                }
-                if let Some(winner) = verified(&destination, asset, version, host)? {
-                    return Ok((winner, false));
-                }
-                // A repair may also have completed in another immutable slot
-                // after our final cache lookup. Prefer it before allocating one.
-                if let Some(winner) = cached(root, slot, asset, version, host)? {
-                    return Ok((winner, false));
-                }
-                destination = root.join(format!("{slot}.gen-{}", nonce()?));
-            }
-        }
-    }
-    Err("Cannot activate verified server after repeated cache directory collisions".into())
-}
-
 pub fn install<H: Host>(
     root: &Path,
     platform: &str,
     version: &str,
     host: &mut H,
-) -> Result<PathBuf, String> {
-    install_with_rename(root, platform, version, host, &mut |from, to| {
-        fs::rename(from, to)
-    })
-}
-
-fn install_with_rename<H: Host>(
-    root: &Path,
-    platform: &str,
-    version: &str,
-    host: &mut H,
-    rename: &mut impl FnMut(&Path, &Path) -> std::io::Result<()>,
 ) -> Result<PathBuf, String> {
     let asset = asset_name(version, platform)?;
     directory(root)?;
@@ -333,8 +297,10 @@ fn install_with_rename<H: Host>(
     if let Some(binary) = cached(root, &slot, &asset, version, host)? {
         return Ok(binary);
     }
-    let stage = staging(root)?;
-    let mut stage_owned = true;
+    // Keep this pathname for the entire lifetime of the executable. Windows
+    // can refuse to rename or delete a directory after its executable is probed,
+    // even though hashing and native execution succeeded.
+    let stage = generation(root, &slot, nonce)?;
     let result = (|| {
         let url = format!("{REPOSITORY}/releases/download/v{version}");
         let sums = stage.join("SHA256SUMS");
@@ -358,17 +324,22 @@ fn install_with_rename<H: Host>(
         }
         host.make_executable(&binary)?;
         crate::identity::validate(&host.identity(&binary)?, Some(version))?;
-        if let Some(winner) = cached(root, &slot, &asset, version, host)? {
-            return Ok(winner);
-        }
-        let (binary, moved) = activate(&stage, root, &slot, &asset, version, host, rename)?;
-        stage_owned = !moved;
+        // An empty directory is an atomic completion marker: there is no partial
+        // payload for a concurrent reader to observe. It is not a trust bypass;
+        // cached() still verifies every byte and the native identity on reuse.
+        fs::create_dir(stage.join(COMPLETE)).map_err(|error| {
+            format!(
+                "Cannot publish verified server cache {}: {error}",
+                stage.display()
+            )
+        })?;
         Ok(binary)
     })();
-    // After publication the old staging pathname is no longer ours. Another
-    // process may reuse it; successful rename must not trigger any cleanup there.
-    let cleanup = if stage_owned {
-        stage
+    // Successful generations never move and are never cleaned here. Concurrent
+    // installers can each publish one. A failed attempt is unmarked and ignored;
+    // cleanup is best effort, including if Windows still holds its executable.
+    let result = if let Err(error) = result {
+        let cleanup = stage
             .try_exists()
             .map_err(|error| error.to_string())
             .and_then(|exists| {
@@ -377,18 +348,16 @@ fn install_with_rename<H: Host>(
                 } else {
                     Ok(())
                 }
-            })
-    } else {
-        Ok(())
-    };
-    if let Err(cleanup) = cleanup {
-        match &result {
-            // The selected server has already passed validation. A leftover
-            // staging directory must not prevent it from starting.
-            Ok(_) => eprintln!("{cleanup}; temporary cache cleanup deferred"),
-            Err(error) => return Err(format!("{error}; {cleanup}")),
+            });
+        match cleanup {
+            Ok(()) => Err(error),
+            Err(cleanup) => Err(format!(
+                "{error}; {cleanup}; incomplete cache cleanup deferred"
+            )),
         }
-    }
+    } else {
+        result
+    };
     result.map_err(|error| format!("Cannot install Workflows server v{version} for {platform}: {error}. Check network access and release assets, or configure lsp.argo-workflows-ls.settings.serverPath for an offline installation. Existing versions are retained; no older release is selected automatically."))
 }
 

@@ -1,6 +1,9 @@
 use super::*;
 use serde_json::{json, Value};
 
+#[cfg(target_os = "wasi")]
+mod runtime;
+
 const VERSION: &str = "0.0.1-alpha.1";
 
 #[test]
@@ -49,7 +52,8 @@ fn release_pins_are_canonical_stable_or_prerelease_versions() {
 struct Cache(PathBuf);
 impl Cache {
     fn new() -> Self {
-        let path = unique(&std::env::temp_dir(), "workflows-installer-test").unwrap();
+        let path =
+            std::env::temp_dir().join(format!("workflows-installer-test-{}", nonce().unwrap()));
         fs::create_dir(&path).unwrap();
         Self(path)
     }
@@ -206,112 +210,90 @@ fn install_verifies_before_probe_and_reuses_cache_without_network() {
 }
 
 #[test]
-fn concurrent_installation_keeps_verified_winner_and_defers_unavailable_cleanup() {
-    struct ConcurrentHost {
-        inner: FakeHost,
-        winner: PathBuf,
-        asset: String,
-        stage: Option<PathBuf>,
-        obstruct_cleanup: bool,
-    }
-    impl Host for ConcurrentHost {
-        fn fetch(&mut self, url: &str, destination: &Path, limit: u64) -> Result<(), String> {
-            self.inner.fetch(url, destination, limit)?;
-            if url.ends_with("/SHA256SUMS") {
-                // Another process finishes while this process's first download
-                // is in flight. Its marker must survive our subsequent install.
-                fs::create_dir(&self.winner).unwrap();
-                fs::copy(destination, self.winner.join("SHA256SUMS")).unwrap();
-                fs::write(self.winner.join(&self.asset), &self.inner.bytes).unwrap();
-                fs::write(self.winner.join("winner-sentinel"), b"concurrent winner").unwrap();
-                self.stage = Some(destination.parent().unwrap().to_path_buf());
-            }
-            Ok(())
-        }
-        fn make_executable(&mut self, path: &Path) -> Result<(), String> {
-            self.inner.make_executable(path)
-        }
-        fn identity(&mut self, path: &Path) -> Result<Vec<u8>, String> {
-            let identity = self.inner.identity(path)?;
-            if self.obstruct_cleanup && path.parent() == Some(self.winner.as_path()) {
-                // Make cleanup fail deterministically on every host, including
-                // privileged test runners where chmod cannot deny deletion.
-                let stage = self.stage.as_ref().unwrap();
-                fs::remove_dir_all(stage).unwrap();
-                fs::write(stage, b"unexpected staging entry").unwrap();
-            }
-            Ok(identity)
-        }
-    }
+fn installation_keeps_the_identity_probe_path() {
+    let cache = Cache::new();
+    let mut host = FakeHost::new(VERSION);
+    let selected = install(&cache.root(), "windows-amd64", VERSION, &mut host).unwrap();
+    assert_eq!(
+        host.events.last(),
+        Some(&format!("probe:{}", selected.display())),
+        "Do not move a directory after executing its server: Windows may retain a non-delete-sharing handle"
+    );
+    assert_eq!(fs::read(selected).unwrap(), host.bytes);
+}
 
-    for obstruct_cleanup in [false, true] {
-        let cache = Cache::new();
-        let asset = asset_name(VERSION, "linux-amd64").unwrap();
-        let winner = cache.root().join(format!("v{VERSION}-linux-amd64"));
-        let mut host = ConcurrentHost {
-            inner: FakeHost::new(VERSION),
-            winner: winner.clone(),
-            asset: asset.clone(),
-            stage: None,
-            obstruct_cleanup,
-        };
-        let path = install(&cache.root(), "linux-amd64", VERSION, &mut host).unwrap();
-        assert_eq!(path, winner.join(&asset));
-        assert_eq!(fs::read(&path).unwrap(), host.inner.bytes);
-        assert_eq!(
-            fs::read(winner.join("winner-sentinel")).unwrap(),
-            b"concurrent winner"
-        );
-        assert_eq!(host.inner.probes(), 2); // Staging and the actual winning cache.
-        assert_eq!(
-            host.inner.events.last().unwrap(),
-            &format!("probe:{}", path.display())
-        );
-        let entries: Vec<_> = fs::read_dir(cache.root())
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name())
-            .collect();
-        assert!(!entries
-            .iter()
-            .any(|name| name.to_string_lossy().starts_with(".previous-")));
-        let stage = host.stage.unwrap();
-        if obstruct_cleanup {
-            assert_eq!(entries.len(), 2);
-            assert_eq!(fs::read(stage).unwrap(), b"unexpected staging entry");
-        } else {
-            assert_eq!(entries.len(), 1);
-            assert!(!stage.exists());
-        }
+struct ProbeHost<F> {
+    inner: FakeHost,
+    after_probe: F,
+}
+impl<F: FnMut(&Path) -> Result<(), String>> Host for ProbeHost<F> {
+    fn fetch(&mut self, url: &str, destination: &Path, limit: u64) -> Result<(), String> {
+        self.inner.fetch(url, destination, limit)
+    }
+    fn make_executable(&mut self, path: &Path) -> Result<(), String> {
+        self.inner.make_executable(path)
+    }
+    fn identity(&mut self, path: &Path) -> Result<Vec<u8>, String> {
+        let identity = self.inner.identity(path)?;
+        (self.after_probe)(path)?;
+        Ok(identity)
     }
 }
 
 #[test]
-fn publication_after_final_lookup_preserves_both_installers_and_offline_reuse() {
+fn complete_bytes_are_invisible_until_the_identity_probe_finishes() {
+    let cache = Cache::new();
+    let mut host = ProbeHost {
+        inner: FakeHost::new(VERSION),
+        after_probe: |path: &Path| {
+            assert!(
+                !path.parent().unwrap().join(COMPLETE).exists(),
+                "Publish completion only after the native identity has passed"
+            );
+            // A second instance arrives after all bytes have been downloaded,
+            // but while A's native probe is still in progress. Hashes alone
+            // must not make this generation eligible for cached execution.
+            let mut observer = FakeHost::new(VERSION);
+            observer.failure = Some("offline");
+            let error = install(&cache.root(), "linux-amd64", VERSION, &mut observer)
+                .expect_err("An unfinished generation must not be selected");
+            assert!(error.contains("network unavailable"));
+            assert_eq!(observer.probes(), 0);
+            assert_eq!(observer.executable_calls(), 0);
+            Ok(())
+        },
+    };
+    let selected = install(&cache.root(), "linux-amd64", VERSION, &mut host).unwrap();
+    assert!(selected.parent().unwrap().join(COMPLETE).is_dir());
+    assert_eq!(cache.entries(), 1);
+    let mut offline = FakeHost::new(VERSION);
+    offline.failure = Some("offline");
+    assert_eq!(
+        install(&cache.root(), "linux-amd64", VERSION, &mut offline).unwrap(),
+        selected
+    );
+    assert_eq!(offline.network_calls(), 0);
+    assert_eq!(offline.probes(), 1);
+}
+
+#[test]
+fn overlapping_installs_keep_both_paths_and_support_offline_reuse() {
     for repair in [false, true] {
         let cache = Cache::new();
-        let mut host = FakeHost::new(VERSION);
+        let mut original = FakeHost::new(VERSION);
         let corrupt = if repair {
-            let path = install(&cache.root(), "linux-amd64", VERSION, &mut host).unwrap();
+            let path = install(&cache.root(), "linux-amd64", VERSION, &mut original).unwrap();
             fs::write(&path, b"corrupted published server").unwrap();
             Some(path)
         } else {
             None
         };
-        host.events.clear();
         let mut winner = None;
-        let mut rename_calls = 0;
-        let selected = install_with_rename(
-            &cache.root(),
-            "linux-amd64",
-            VERSION,
-            &mut host,
-            &mut |stage, destination| {
-                rename_calls += 1;
-                assert_eq!(rename_calls, 1);
-                // A has finished its final cache lookup. Run B's complete
-                // installer before A's actual rename, then keep a live reference
-                // to B's published directory as a real Zed process would.
-                let path = install(
+        let mut host = ProbeHost {
+            inner: FakeHost::new(VERSION),
+            after_probe: |path: &Path| {
+                assert!(!path.parent().unwrap().join(COMPLETE).exists());
+                let other = install(
                     &cache.root(),
                     "linux-amd64",
                     VERSION,
@@ -319,19 +301,21 @@ fn publication_after_final_lookup_preserves_both_installers_and_offline_reuse() 
                 )
                 .unwrap();
                 fs::write(
-                    path.parent().unwrap().join("winner-sentinel"),
+                    other.parent().unwrap().join("winner-sentinel"),
                     b"still in use",
                 )
                 .unwrap();
-                winner = Some(path);
-                fs::rename(stage, destination)
+                winner = Some(other);
+                Ok(())
             },
-        )
-        .unwrap();
+        };
+        let selected = install(&cache.root(), "linux-amd64", VERSION, &mut host).unwrap();
+        drop(host);
         let winner = winner.unwrap();
         assert_ne!(selected, winner);
         for path in [&selected, &winner] {
-            assert_eq!(fs::read(path).unwrap(), host.bytes);
+            assert_eq!(fs::read(path).unwrap(), original.bytes);
+            assert!(path.parent().unwrap().join(COMPLETE).is_dir());
         }
         assert_eq!(
             fs::read(winner.parent().unwrap().join("winner-sentinel")).unwrap(),
@@ -341,154 +325,200 @@ fn publication_after_final_lookup_preserves_both_installers_and_offline_reuse() 
             assert_eq!(fs::read(corrupt).unwrap(), b"corrupted published server");
         }
         assert_eq!(cache.entries(), if repair { 3 } else { 2 });
-        assert!(fs::read_dir(cache.root()).unwrap().all(|entry| {
-            let name = entry.unwrap().file_name();
-            !name.to_string_lossy().starts_with('.')
-        }));
 
-        // A fresh adapter instance must find a verified generation without any
-        // download, even when a retained corrupt slot sorts before it.
         let mut offline = FakeHost::new(VERSION);
         offline.failure = Some("offline");
         let reused = install(&cache.root(), "linux-amd64", VERSION, &mut offline).unwrap();
         assert!(reused == selected || reused == winner);
         assert_eq!(offline.network_calls(), 0);
         assert_eq!(offline.probes(), 1);
-        assert_eq!(fs::read(&selected).unwrap(), host.bytes);
-        assert_eq!(fs::read(&winner).unwrap(), host.bytes);
+    }
+}
+
+fn write_cache_fixture(folder: &Path, platform: &str) -> PathBuf {
+    fs::create_dir(folder).unwrap();
+    let asset = asset_name(VERSION, platform).unwrap();
+    let bytes = FakeHost::new(VERSION).bytes;
+    fs::write(
+        folder.join("SHA256SUMS"),
+        format!("{:x}  {asset}\n", Sha256::digest(&bytes)),
+    )
+    .unwrap();
+    let binary = folder.join(asset);
+    fs::write(&binary, bytes).unwrap();
+    binary
+}
+
+#[test]
+fn legacy_fixed_and_generation_caches_are_reused_offline_without_markers() {
+    for suffix in ["", ".gen-old-publisher"] {
+        let cache = Cache::new();
+        directory(&cache.root()).unwrap();
+        // Construct the historical on-disk format independently of install().
+        let folder = cache
+            .root()
+            .join(format!("v{VERSION}-windows-amd64{suffix}"));
+        let binary = write_cache_fixture(&folder, "windows-amd64");
+        let mut host = FakeHost::new(VERSION);
+        host.failure = Some("offline");
+        assert_eq!(
+            install(&cache.root(), "windows-amd64", VERSION, &mut host).unwrap(),
+            binary
+        );
+        assert_eq!(host.network_calls(), 0);
+        assert_eq!(host.probes(), 1);
+        assert!(!folder.join(COMPLETE).exists());
+        assert_eq!(cache.entries(), 1);
     }
 }
 
 #[test]
-fn publication_collision_reuses_verified_target_without_moving_it() {
+fn unmarked_new_generation_is_not_treated_as_a_legacy_cache() {
     let cache = Cache::new();
+    directory(&cache.root()).unwrap();
+    let folder = cache
+        .root()
+        .join(format!("v{VERSION}-linux-amd64.gen2-crashed"));
+    let binary = write_cache_fixture(&folder, "linux-amd64");
     let mut host = FakeHost::new(VERSION);
-    let asset = asset_name(VERSION, "linux-amd64").unwrap();
-    let mut collided = None;
-    let selected = install_with_rename(
-        &cache.root(),
-        "linux-amd64",
-        VERSION,
-        &mut host,
-        &mut |stage, destination| {
-            // Simulate a coincident generation name across two processes. Both
-            // candidates are complete, and the real filesystem decides which
-            // rename wins; no platform-specific error kind is assumed.
-            fs::create_dir(destination).unwrap();
-            for name in ["SHA256SUMS", asset.as_str()] {
-                fs::copy(stage.join(name), destination.join(name)).unwrap();
-            }
-            fs::write(destination.join("winner-sentinel"), b"published first").unwrap();
-            collided = Some(destination.to_path_buf());
-            fs::rename(stage, destination)
-        },
-    )
-    .unwrap();
-    let collided = collided.unwrap();
-    assert_eq!(selected, collided.join(asset));
-    assert_eq!(fs::read(&selected).unwrap(), host.bytes);
-    assert_eq!(
-        fs::read(collided.join("winner-sentinel")).unwrap(),
-        b"published first"
-    );
-    assert_eq!(host.probes(), 2); // Staged candidate, then the actual winner.
-    assert_eq!(
-        host.events.last().unwrap(),
-        &format!("probe:{}", selected.display())
-    );
-    assert_eq!(cache.entries(), 1);
-}
-
-#[test]
-fn corrupt_publication_collision_uses_another_generation_without_removal() {
-    let cache = Cache::new();
-    let mut host = FakeHost::new(VERSION);
-    let mut collided = None;
-    let mut calls = 0;
-    let selected = install_with_rename(
-        &cache.root(),
-        "linux-amd64",
-        VERSION,
-        &mut host,
-        &mut |stage, destination| {
-            calls += 1;
-            if calls == 1 {
-                fs::create_dir(destination).unwrap();
-                fs::write(destination.join("SHA256SUMS"), b"corrupted manifest").unwrap();
-                fs::write(destination.join("keep-sentinel"), b"do not delete").unwrap();
-                collided = Some(destination.to_path_buf());
-            }
-            fs::rename(stage, destination)
-        },
-    )
-    .unwrap();
-    let collided = collided.unwrap();
-    assert_ne!(selected.parent().unwrap(), collided);
-    assert_eq!(calls, 2);
-    assert_eq!(fs::read(&selected).unwrap(), host.bytes);
-    assert_eq!(
-        fs::read(collided.join("keep-sentinel")).unwrap(),
-        b"do not delete"
-    );
-    assert_eq!(
-        fs::read(collided.join("SHA256SUMS")).unwrap(),
-        b"corrupted manifest"
-    );
-    assert_eq!(host.probes(), 1);
-    assert_eq!(cache.entries(), 2);
-    host.events.clear();
     host.failure = Some("offline");
+    assert!(install(&cache.root(), "linux-amd64", VERSION, &mut host).is_err());
+    assert_eq!(host.probes(), 0);
+    assert_eq!(host.executable_calls(), 0);
+    assert_eq!(fs::read(&binary).unwrap(), host.bytes);
+    assert!(!folder.join(COMPLETE).exists());
+    assert_eq!(cache.entries(), 1);
+
+    // Only the atomic marker changes eligibility; it never replaces validation.
+    fs::create_dir(folder.join(COMPLETE)).unwrap();
+    host.events.clear();
     assert_eq!(
         install(&cache.root(), "linux-amd64", VERSION, &mut host).unwrap(),
-        selected
+        binary
     );
     assert_eq!(host.network_calls(), 0);
+    assert_eq!(host.probes(), 1);
 }
 
 #[test]
-fn successful_publication_does_not_clean_reused_staging_pathname() {
+fn generation_collisions_never_write_or_remove_an_existing_entry() {
     let cache = Cache::new();
-    let mut host = FakeHost::new(VERSION);
-    let mut reused = None;
-    let selected = install_with_rename(
-        &cache.root(),
-        "linux-amd64",
-        VERSION,
-        &mut host,
-        &mut |stage, destination| {
-            fs::rename(stage, destination)?;
-            fs::create_dir(stage)?;
-            fs::write(stage.join("other-installer-sentinel"), b"new owner")?;
-            reused = Some(stage.to_path_buf());
+    directory(&cache.root()).unwrap();
+    let slot = format!("v{VERSION}-linux-amd64");
+    let complete = cache.root().join(format!("{slot}.gen2-0"));
+    let binary = write_cache_fixture(&complete, "linux-amd64");
+    fs::create_dir(complete.join(COMPLETE)).unwrap();
+    let incomplete = cache.root().join(format!("{slot}.gen2-1"));
+    fs::create_dir(&incomplete).unwrap();
+    fs::write(incomplete.join("keep"), b"another installer").unwrap();
+    let file = cache.root().join(format!("{slot}.gen2-2"));
+    fs::write(&file, b"unexpected file").unwrap();
+    let mut attempts = 0;
+    let selected = generation(&cache.root(), &slot, || {
+        let value = attempts.to_string();
+        attempts += 1;
+        Ok(value)
+    })
+    .unwrap();
+    assert_eq!(attempts, 4);
+    assert_eq!(selected, cache.root().join(format!("{slot}.gen2-3")));
+    assert_eq!(fs::read(binary).unwrap(), FakeHost::new(VERSION).bytes);
+    assert_eq!(
+        fs::read(incomplete.join("keep")).unwrap(),
+        b"another installer"
+    );
+    assert_eq!(fs::read(file).unwrap(), b"unexpected file");
+
+    let mut attempts = 0;
+    assert!(generation(&cache.root(), &slot, || {
+        attempts += 1;
+        Ok("0".into())
+    })
+    .unwrap_err()
+    .contains("repeated collisions"));
+    assert_eq!(attempts, 8);
+    assert_eq!(cache.entries(), 4);
+}
+
+#[test]
+fn completion_marker_failure_is_visible_and_retryable() {
+    let cache = Cache::new();
+    let mut host = ProbeHost {
+        inner: FakeHost::new(VERSION),
+        after_probe: |path: &Path| {
+            fs::write(path.parent().unwrap().join(COMPLETE), b"obstruct marker").unwrap();
             Ok(())
         },
+    };
+    let error = install(&cache.root(), "windows-amd64", VERSION, &mut host).unwrap_err();
+    assert!(error.contains("Cannot publish verified server cache"));
+    assert!(error.contains(&format!("v{VERSION} for windows-amd64")));
+    assert!(error.contains("settings.serverPath"));
+    assert_eq!(cache.entries(), 0);
+    let selected = install(
+        &cache.root(),
+        "windows-amd64",
+        VERSION,
+        &mut FakeHost::new(VERSION),
     )
     .unwrap();
-    assert_eq!(fs::read(selected).unwrap(), host.bytes);
-    assert_eq!(
-        fs::read(reused.unwrap().join("other-installer-sentinel")).unwrap(),
-        b"new owner"
-    );
-    assert_eq!(cache.entries(), 2);
+    assert!(selected.parent().unwrap().join(COMPLETE).is_dir());
 }
 
 #[test]
-fn publication_failure_without_destination_is_visible_and_retryable() {
+fn cleanup_failure_preserves_primary_error_and_installation_context() {
+    let cache = Cache::new();
+    let mut replaced = None;
+    let mut host = ProbeHost {
+        inner: FakeHost::new(VERSION),
+        after_probe: |path: &Path| {
+            let folder = path.parent().unwrap();
+            // Deterministic type/ownership obstruction on every host. The
+            // separate WASI/Windows E2E exercises real sharing violations.
+            fs::remove_dir_all(folder).unwrap();
+            fs::write(folder, b"unexpected replacement").unwrap();
+            replaced = Some(folder.to_path_buf());
+            Err("native identity probe denied".into())
+        },
+    };
+    let error = install(&cache.root(), "windows-amd64", VERSION, &mut host).unwrap_err();
+    drop(host);
+    for detail in [
+        "native identity probe denied",
+        "Refusing to remove non-directory",
+        "incomplete cache cleanup deferred",
+        "windows-amd64",
+        VERSION,
+        "settings.serverPath",
+    ] {
+        assert!(error.contains(detail), "missing {detail}: {error}");
+    }
+    let replaced = replaced.unwrap();
+    assert_eq!(fs::read(&replaced).unwrap(), b"unexpected replacement");
+    fs::remove_file(replaced).unwrap();
+    assert!(install(
+        &cache.root(),
+        "windows-amd64",
+        VERSION,
+        &mut FakeHost::new(VERSION)
+    )
+    .is_ok());
+}
+
+#[test]
+fn completion_marker_must_be_a_directory_and_is_not_a_trust_bypass() {
     let cache = Cache::new();
     let mut host = FakeHost::new(VERSION);
-    let error = install_with_rename(
-        &cache.root(),
-        "linux-amd64",
-        VERSION,
-        &mut host,
-        &mut |_, _| Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
-    )
-    .unwrap_err();
-    assert!(error.contains("Cannot activate verified server"));
-    assert_eq!(cache.entries(), 0);
+    let selected = install(&cache.root(), "linux-amd64", VERSION, &mut host).unwrap();
+    let marker = selected.parent().unwrap().join(COMPLETE);
+    fs::remove_dir(&marker).unwrap();
+    fs::write(marker, b"not an atomic completion marker").unwrap();
+    host.events.clear();
     assert!(install(&cache.root(), "linux-amd64", VERSION, &mut host)
-        .unwrap()
-        .is_file());
+        .unwrap_err()
+        .contains("regular directory"));
+    assert_eq!(host.probes(), 0);
+    assert_eq!(host.network_calls(), 0);
 }
 
 #[test]

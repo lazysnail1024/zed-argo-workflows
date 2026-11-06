@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   rust:
-    name: Rust installer behavior (${{ matrix.runner }})
+    name: Installer acceptance (${{ matrix.runner }})
     strategy:
       fail-fast: false
       matrix:
@@ -40,17 +40,26 @@ jobs:
           persist-credentials: false
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --target wasm32-wasip2
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        if: matrix.runner != 'macos-15'
+        with:
+          python-version: '3.14.0'
       - name: Check formatting and actual installer tests
         run: |
           mkdir -p ../../artifacts/zed-rust
           cargo fmt --all -- --check
           cargo test --locked 2>&1 | tee ../../artifacts/zed-rust/tests.log
+      - name: Execute WASI installer, real native probes and Windows sharing controls
+        if: matrix.runner != 'macos-15'
+        run: python tests/cache_runtime_e2e.py --output ../../artifacts/zed-wasi
       - name: Retain Rust evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.1
         with:
           name: zed-argo-workflows-zed-rust-${{ matrix.runner }}
-          path: artifacts/zed-rust/
+          path: |
+            artifacts/zed-rust/
+            artifacts/zed-wasi/
           if-no-files-found: ignore
           retention-days: 30
 

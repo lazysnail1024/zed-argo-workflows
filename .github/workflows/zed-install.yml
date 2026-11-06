@@ -27,9 +27,11 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.14.0'
-      - name: Install, upgrade, roll back and fault-inject using public Release assets
+      - name: Install, replace, roll back and fault-inject using the published alpha.1 fixture
         shell: bash
-        run: python editors/zed/tests/install_e2e.py --report artifacts/zed-installer
+        # A new-version PR has no published candidate yet. Keep this immutable
+        # fixture explicit; zed.yml independently tests the current candidate package.
+        run: python editors/zed/tests/install_e2e.py --version 0.0.1-alpha.1 --report artifacts/zed-installer
       - name: Retain file-install evidence (not a Zed GUI test)
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.1
