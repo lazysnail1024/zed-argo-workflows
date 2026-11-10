@@ -8,14 +8,14 @@ const VERSION: &str = "0.0.1-alpha.1";
 
 #[test]
 fn default_native_release_is_pinned_separately_from_the_adapter_version() {
-    assert_eq!(server_version(), VERSION);
+    let version = include_str!("../../native-server-version").trim();
+    assert_eq!(server_version(), version);
     let cache = Cache::new();
-    let mut host = FakeHost::new(VERSION);
+    let mut host = FakeHost::new(version);
     let path = resolve(&cache.root(), Some("linux-amd64"), false, None, &mut host).unwrap();
     assert_eq!(fs::read(path).unwrap(), host.bytes);
-    assert!(host.events.iter().any(
-        |event| event.ends_with("/v0.0.1-alpha.1/argo-workflows-ls-0.0.1-alpha.1-linux-amd64")
-    ));
+    let asset = format!("/v{version}/argo-workflows-ls-{version}-linux-amd64");
+    assert!(host.events.iter().any(|event| event.ends_with(&asset)));
 }
 
 #[test]

@@ -23,3 +23,5 @@ args = ["version", "--json"]
 kind = "download_file"
 host = "github.com"
 path = ["lazysnail1024", "zed-argo-workflows", "releases", "download", "**"]
+
+# alpha.3 uses native alpha.2 for YAML diagnostic ownership isolation.
