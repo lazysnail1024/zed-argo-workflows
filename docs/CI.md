@@ -1,333 +1,151 @@
-# Automated acceptance
+# 自动化验收
 
-`.github/workflows/native.yml` runs on every pull request, pushes to `main`, and
-manual dispatch. Its stable **Acceptance gate** check requires every native,
-extended semantic, resource and mutation job to succeed. Failure, cancellation
-or a skipped mandatory job cannot produce a successful aggregate check.
-Configure **Acceptance gate** as a required status check in the repository's
-branch rules to make it a merge requirement; adding a workflow does not modify
-GitHub branch protection.
+本页描述当前可执行门禁。某个候选是否通过，应查看该源码 commit 对应的完整运行结果；
+文档中的门禁配置本身不等于验收通过。原生、adapter 与真实 Zed GUI 的证据分别记录。
 
-The workflow has read-only repository permissions, pinned action commits,
-disabled persisted checkout credentials, bounded jobs and commands, and
-per-PR/ref concurrency. It does not publish a release or a marketplace extension.
-The existing manually dispatched Linux development-bundle workflow remains a
-smaller packaging convenience, not the complete acceptance check.
+## Workflow 与职责
 
-## What is executed
-
-| Job | Hosts | Evidence and acceptance |
-| --- | --- | --- |
-| Native | Linux amd64/arm64, macOS amd64/arm64, Windows amd64 | Build the real CGO executable from vendor; focused Go tests and `go vet`; Linux race check; CLI and stdio LSP consumers; test installer lifecycle; compile source and developer-package Rust adapters to `wasm32-wasip2`; generate and verify each native development ZIP |
-| Extended semantic | Linux amd64, three independent shards | Existing workflow/reference/inheritance/DAG/query/edit/lifecycle consumers, source asset integrity, snippets, pinned offline Argo and Helm integration |
-| Schema contracts | Linux amd64, semantic shard 0 | Actual CRD boundaries and separately built synthetic schema query/branch/projection fixtures |
-| Resource adversarial | Linux amd64 | Actual cgroup memory limits, oversized aggregate input, expression depth/width, buffer/snapshot limits, alias/merge budgets, subprocess output floods, timeout/cancellation and descendant reclamation |
-| Resource load | Linux amd64 | Existing 10,000-file/50 MiB workload, cold and active diagnostics, query semantics/latency, 600 edits over 60 seconds, 10,000 open/edit/close operations, memory retention, explicit CLI cancellation |
-| Resource index | Linux amd64 | Five fresh samples each of 10,000 and 50,000 WorkflowTemplates with 4 KiB padding; four CPUs/8 GiB/no swap, complete first and second discovery passes, current-file latency, missed-event convergence and 512 MiB server RSS |
-| Mutation core | Linux amd64 | Passing baseline plus detection of nine specific semantic mutations |
-| Mutation audit | Linux amd64 | Passing baseline plus nine targeted mutations for metadata Rename, missed-watcher recovery, configuration diagnostics, isolated-scope actions, completion acquisition and cache freshness |
-| Mutation resources | Linux amd64 | Passing baseline plus output-limit and descendant-reclamation mutations under a 512 MiB cgroup |
-
-The native matrix uses the same runner families and pinned toolchain/action
-versions already used by `zed-argocd`, but every build command and consumer is
-selected for this repository. Go is read from `go.mod`; Rust is pinned in
-`rust-toolchain.toml`; Cargo builds use `--locked`. The compiler version, platform,
-Python, Go environment, source commit/status, native identity and binary hash
-are recorded. `.gitattributes` keeps hashed and embedded source bytes identical
-on Windows and Unix.
-
-Enabling the Windows native gate also required one product portability fix:
-local file URI conversion is shared by CLI filters, disk snapshots, workspace
-buffers and LSP configuration. Windows drive paths use `file:///C:/...`, with
-the drive in the path, not the URI authority. Local absolute paths retain
-percent-escaped characters correctly; unsupported remote/UNC/device URIs are
-rejected. Test fixture writers preserve explicit UTF-8 LF/CRLF bytes instead of
-letting the host silently change them.
-
-`tests/ci/run.py` contains the explicit portable/extended suite inventories.
-The orchestration invokes existing `tests/e2e/*.py` consumers; it does not
-duplicate their workflow fixtures or product assertions. Extended family tests
-exercise accepted 3.6.0 behavior and existing version-boundary transitions.
-Coverage of a historical transition does not declare that historical target
-accepted: the product's accepted delivery target remains exactly 3.6.0.
-
-Linux-only FIFOs, `/proc`, process-group signals, cgroup accounting and CPU
-affinity tests do not establish equivalent operating-system behavior on macOS
-or Windows. The native matrix executes the portable CLI/LSP and package checks
-on those hosts without cross-compilation or emulation.
-
-## Semantic results, not just exit codes
-
-The orchestration requires both a successful consumer process and nonempty
-semantic result files. Explicit `pass`/`passed` fields and assertion values must
-be boolean `true`; strings, missing reports, empty selections and exceptions
-fail. Family consumers' parent exit records are insufficient: the gate checks
-the exact expected worker set, every worker's semantic `result.json`, and its
-per-case results. `--prepare` runs cannot satisfy acceptance.
-
-The reused checks verify diagnostic codes/severity/ranges, JSON report envelopes,
-document versions, exact edit bytes, recovery after errors, and explicit JSON-RPC
-error codes. Changes in this PR remove several old weak checks:
-
-- A stale document update is checked with a subsequent query over the current
-  buffer, instead of inferring correctness from a short absence of publication.
-- Restored settings and undo must produce the expected edits against the current
-  document version; a nonempty response or literal `True` is insufficient.
-- Cancellation must return `-32800` exactly once, with no result, and subsequent
-  requests must still work. Shutdown must return null and exit cleanly.
-- Workspace removal must produce a new clearing publication after the removal;
-  an earlier empty diagnostic cannot satisfy it.
-- Invalid configuration must visibly publish `WF_ANALYSIS_UNAVAILABLE` on affected workflows and `WF_CONFIGURATION_ERROR` on the configuration buffer. Valid configuration and restored workflow diagnostic inventories must recover exactly.
-- Unknown target output is checked as a semantic mismatch, rather than crashing
-  the Python test while indexing a nonexistent schema.
-- Historical exit expectations now match the current accepted-target policy:
-  complete valid/error analyses exit 0/1; experimental/incomplete analyses exit 2.
-- The valid expression-boundary fixtures supply their required parameter.
-  Their success requires complete analysis with no diagnostics; refusal cases
-  require the expression-specific incomplete diagnostic and exit 2. A deadline
-  or an unrelated missing-argument error cannot satisfy either case.
-
-The shared LSP client enforces absolute response deadlines even under unrelated
-message traffic and saves traffic/stderr on initialization or shutdown failure.
-CLI timeouts retain partial stdout/stderr and command receipts.
-
-The re-audit consumers also exercise metadata literals beside real tagged and
-raw references, applied Quick Fix bytes and version transitions for excluded or
-internal-directory buffers, and both creation and deletion of an external
-dependency without watcher notifications. The reconciliation consumer waits for
-the real 30-second timer, compares queried clients with no-query controls, and
-requires an unchanged idle Quick Fix to remain valid. Renaming a configured
-scope must retire its old publication dependencies instead of triggering work
-on every later maintenance tick. A missing publication is
-a semantic failure; a dead server or an incomplete run is an infrastructure
-failure. The Linux checksum consumer executes the production workflow command,
-then the README verification command against delivered and relocated ZIPs. It
-also requires tampering and the old path layout to fail verification.
-
-`wf-reaudit-query-io.py` runs in the Linux extended suite and counts actual file
-open events on its private fixtures with inotify. Local completion and isolated
-configuration validation must open zero resource files. Each external completion
-must acquire its selected dependency once and never read the unrelated scope. Measurement starts after the initial bounded discovery pass, so independent discovery I/O cannot masquerade as foreground acquisition.
-Every request must still return the correct nonempty candidates. Elapsed times
-are descriptive evidence, not the acceptance predicate; the existing constrained
-load and latency gates remain in place.
-
-## Fault-injection gate
-
-`tests/e2e/ablate-ci.py` runs selected historical and re-audit recipes through
-`mutation_support.py`. It builds its own baseline from the same isolated source
-snapshot as the mutants; it cannot silently test a stale prebuilt executable.
-
-| Mutation | Existing consumer / required observable change |
+| 入口 | 执行范围 |
 | --- | --- |
-| Post-output deadline recheck | A completed report keeps its 0/1 exit status while stdout is blocked past five seconds |
-| Unknown target admission | Delivery unknown-target report envelope |
-| Document version guard | LSP stale-version buffer semantics |
-| DAG cycle detection | Local workflow diagnostic codes |
-| Stale code action identity | Delivery stale action error |
-| Nested workspace ownership | Exactly one nested-root symbol |
-| Request cancellation | Explicit cancellation response |
-| YAML scalar edit encoding | Exact completion/edit bytes for five cases |
-| Metadata raw binding | Literal annotations remain untouched and plain prose cannot block Rename |
-| Incomplete publication acknowledgement | A local-only publication cannot hide the required external publication after a complete reconciliation pass |
-| Obsolete publication scope | Rebinding a configured scope does not cause periodic invalidation of unchanged input |
-| Editor-only scope acquisition | Exact immediate Quick Fix edits for excluded and internal-directory buffers |
-| Isolated action configuration identity | Policy and default-namespace changes invalidate a previously offered edit |
-| Configuration diagnostic path | A valid configuration buffer has an empty diagnostic inventory |
-| Local completion acquisition | Correct local candidates with no scope resource reads |
-| External completion acquisition | Correct selected-scope candidates with no unrelated scope reads |
-| Detached candidate generation | A new indexed resource invalidates a warm resource-name completion even though the materialized caller bytes are unchanged |
-| Tool output budget | Bounded combined stdout/stderr |
-| Process tree cleanup | No surviving descendants after tool exit |
+| [native.yml](../.github/workflows/native.yml) | 五个平台实际构建/执行 Go 服务；Linux 语义、资源与 mutation；汇总 `Acceptance gate` 并校验完整原生分发 |
+| [zed.yml](../.github/workflows/zed.yml) | Linux/macOS/Windows 的 Rust 安装器测试；Linux/Windows 的 WASI 安装运行时；独立 WASM、package 和隔离负向控制；汇总 `Zed acceptance gate` |
+| [zed-install.yml](../.github/workflows/zed-install.yml) | 三个操作系统使用已发布 `0.0.1-alpha.1` fixture 做文件系统安装、替换、回滚；该 fixture 不等于当前 adapter 或 native pin |
+| [release.yml](../.github/workflows/release.yml)、[zed-release.yml](../.github/workflows/zed-release.yml) | 对固定源码和版本运行各自门禁后发布；发布规则见 [分发](distribution.md) |
 
-For each mutation, the baseline must pass, every source selector must match
-exactly once, the mutant must compile, and the expected assertion must change
-from true to false. Baseline and mutant case/assertion inventories must match.
-Compilation errors, a missing Go toolchain, timeout, signal exit, malformed
-results, empty cases, Python exceptions and a nonclean LSP exit are **errors**,
-not successful mutation detections. A surviving mutant fails the gate. There is
-no automatic retry or `continue-on-error` that turns a failure green.
+原生支持 Linux amd64/arm64、macOS amd64/arm64、Windows amd64；Go 版本来自
+[go.mod](../go.mod)，CGO parser 要求 C 编译器。Rust 使用 adapter 的固定工具链和 `--locked`。
+原生 workflow 不构建 Rust、不依赖 editor checkout；adapter workflow 不构建 Go。
+验收 workflow 使用只读权限，发布 job 单独声明所需的写入权限。固定 action commit、
+禁用持久 checkout 凭据、命令/job 超时与并发取消规则均由实际 YAML 定义。
+必须任务失败、取消或跳过不会通过 aggregate gate；
+是否把 gate 设为合并必需项由仓库 branch rules 决定。
 
-The remaining historical `ablate-*` scripts are not claimed as CI gates. Some
-still encode old local toolchain paths or historic expectations. The curated
-entry point states exactly which mutations it executes and preserves their
-source diffs, before/after hashes, builds, binaries and consumer evidence.
+## 原生门禁
 
-## Real resource limits
+| 门禁 | 当前检查内容 |
+| --- | --- |
+| Native matrix | vendor 原生构建、`go vet`；analysis/assets/lsp/workspace 单元测试；实际 CLI/stdio 消费者、版本矩阵、原生打包与 release staging |
+| Linux race | 同一组 Go 包的 `-race`，覆盖 catalog 生命周期和共享文件权威 |
+| Linux semantic，三个 shard | 现有模板/引用/继承/DAG/编辑/生命周期测试，来源资产，固定且校验 hash 的 Argo/Helm 工具；真实 schema 与合成查询 fixture 分开记录 |
+| Linux resources：adversarial | aggregate input、表达式、alias/merge、buffer/snapshot、子进程输出上限、取消与后代回收 |
+| Linux resources：load | 10,000 文件/50 MiB；CLI 完整计数、冷启动、活跃诊断、查询、600 次持续编辑、10,000 次 open/edit/close 与内存保留 |
+| Linux resources：index | 每个 10,000/50,000 WorkflowTemplate 规模五个新进程，每文件 4 KiB padding；完整首轮/维护轮次、当前文件响应、漏事件收敛与 RSS |
+| Mutation：core/audit/resources | 同源通过基线后，验证指定语义、publication/cache 或资源保护移除会触发对应断言 |
+| Complete native distribution | 五平台原生身份、源码、校验和、原始 license/provenance 与包库存完整性 |
 
-`tests/ci/resources.py` uses transient systemd services on the Ubuntu runner.
-It verifies `memory.max`, `memory.swap.max`, `cpu.max`, and four-CPU affinity
-inside each service before executing the consumer. Native builds occur outside
-these measured cgroups. The worker interpreter receives setup-python's library
-path before launch; the tests' own resource guards remain unchanged.
+精确消费者清单由 [tests/ci/run.py](../tests/ci/run.py) 的 `NATIVE`/`EXTENDED` 维护；
+资源清单由 [resources.py](../tests/ci/resources.py) 维护，不复制一份易过期的测试计数。
+当前 3.5.0 与 3.6.0 都是受支持的精确 target；混合 scope 负载要求完整计数、正确版本、
+无实验性标记及实际期望的诊断/退出码。
 
-- Adversarial consumers run with 512 MiB and no swap.
-- The legitimate exact 128 MiB snapshot input case uses its existing separate
-  1 GiB process limit; overflow/refusal cases retain the 512 MiB limit.
-- Fixed-load consumers run with at most four CPUs, 8 GiB and no swap.
-- Services have a runtime bound and process-tree cleanup; failure to establish
-  the requested cgroup fails acceptance.
+### 多版本完整性
 
-The fixed workload intentionally alternates 50 accepted 3.6 scopes and 50
-experimental 3.5 scopes. Its CLI result must therefore be exit 2 with exactly
-the documented experimental reasons, all 10,000 file/resource counts, correct
-scope identities and no unrelated errors. The existing five-second CLI analysis
-bound is still required. The cold LSP symbol consumer separately requires a responsive partial query, complete Ready discovery within 60 seconds, then all 20,000 expected declarations in a query within five seconds. An unexpected deadline is not accepted as an
-experimental-target result. Load tests run sequentially on their dedicated job;
-they are not multiplied concurrently inside the same runner.
+每个平台实际消费当前离线目录的 146 个版本、1,052 个版本/资源对。
+四个串行 shard 分别包含 37/37/36/36 个版本，每条命令仍有 300 秒上限；
+单版本原生进程 watchdog 为 20 秒，产品分析 deadline 为五秒。
+聚合器逐版本核对顺序、集合、hash、计时、原始 CLI 报告和退出状态；
+最后 shard 保留非矩阵的 CLI/LSP、CEL 规范化和缺失 kind 断言。
+[版本消费者](../tests/e2e/wf-multi-version.py) 和
+[聚合器反例自测](../tests/ci/test_multi_version.py) 同时必需。
 
-These are explicit workload/consumer bounds, not universal process-memory or
-controller performance guarantees. An isolated Runner failure is evidence to
-investigate; the workflow does not weaken a threshold to make it pass.
+### 持续索引与证据边界
 
-Identical document bytes may share one immutable YAML view within the current
-analysis. URI, revision, target, projection and logical expansion admission keep
-their own identities; the existing 50 MiB view-cache budget is unchanged. This
-removes repeated parsing in the legitimate 128 MiB snapshot case without
-increasing its deadline or input/memory limits.
+[wf-index-boundaries](../tests/e2e/wf-index-boundaries.py)、
+[wf-mixed-parent-index](../tests/e2e/wf-mixed-parent-index.py)、
+[wf-persistent-workspace](../tests/e2e/wf-persistent-workspace.py) 和
+[wf-persistent-slowio](../tests/e2e/wf-persistent-slowio.py) 进入 native suite。
+它们验证已知变化立即失效、未知无 watcher 文件经真实维护发现、准确最终位置、
+源签名变化、当前 buffer 优先与超五秒 discovery 继续运行。
+慢 I/O 消费者单独构建有身份记录的读取延迟 overlay，不放宽生产 deadline。
 
-The CLI also preparses small files in ordered batches of at most four, respecting
-`GOMAXPROCS`, with at most 64 KiB of new text per batch. Workers only produce
-immutable syntax views. The caller admits successful views in input order under
-the same cache budget, then performs schema checks, diagnostics and global
-alias/merge admission sequentially. Large files use the ordinary path. Errors
-are not cached, and cancellation joins the current parser workers before the CLI
-returns. Analysis still runs inside its original five-second deadline.
+`internal/lsp/catalog_test.go` 的正向用例覆盖共享 Documents、队列及完整扫描的接入。
+额外的 [ablate-shared-lifecycle.py](../tests/e2e/ablate-shared-lifecycle.py) 是可重复的七项控制入口；
+它并未被当前 native workflow 自动调用，不能写成已有 CI gate。
 
-The CLI freezes cancellation/deadline state before publishing the completed
-report. Top-level and target completeness, reasons and the exit code use that
-same terminal state; a slow stdout reader cannot retroactively change a complete
-result into exit 3. `wf-report-deadline.py` runs on every native host and blocks
-output for more than five seconds after the first byte, checking complete JSON
-success/error reports and human output against exact diagnostic inventories.
-The core mutation restores the post-output live-clock check and must invalidate
-all three exit assertions. The separate `wf-bounded-external-counts.py` consumer
-continues to require a genuinely interrupted analysis with incomplete counts,
-explicit external-analysis/deadline reasons and exit 3 within its original bound.
+## 真实资源约束
 
-A small, documented [vendored JSON Schema queue patch](VENDORED_PATCHES.md)
-removes repeated linear lookup during cold CRD compilation while preserving
-schema identity and compilation order. The dependency remains pinned at v6.0.3;
-the local patch and its vendor-regeneration requirements are explicit.
+[resources.py](../tests/ci/resources.py) 使用 systemd transient service，并在 service 内读取和验证
+`memory.max`、`memory.swap.max`、`cpu.max` 与四 CPU affinity。构建在测量组外完成；
+没有权限、cgroup v2 或足够 CPU 时，资源验收失败，不降级成无约束测试。
 
-## Development package integrity
+| 负载 | 环境与断言 |
+| --- | --- |
+| adversarial | 通常 512 MiB/no swap；合法精确 128 MiB snapshot case 保留独立 1 GiB 环境 |
+| 固定 load | 四 CPU、最多 8 GiB、no swap，消费者保持现有语义/延时/计数要求 |
+| 持续 index | 四 CPU、8 GiB/no swap；10k/50k 的每轮收敛分别 60/300 秒，server RSS ≤ 512 MiB |
 
-The package command archives the exact checked-out commit with
-`git archive --format=tar HEAD`. Every adapter source, lock, snippet, example,
-document and dependency notice comes from that archive. A VCS-stamped native
-binary must be clean and match the archive's commit; its embedded catalog hash
-must match the archived catalog bytes. CI requires
-`sourceIdentity.status == "verified-vcs"`. Unstamped local builds record
-`unavailable` and cannot be delivered by this CI gate.
+内存环境、逻辑输入限额、Go 软目标和原生进程 RSS 是不同指标。
+测试同时保存它们；受约束的固定 fixture 通过不能外推成任意磁盘/编辑器的性能保证。
+Linux FIFO、inotify、`/proc` 和进程组控制不代表 Windows/macOS 对应系统机制已被验证。
 
-This source identity check compares native Go build metadata and archived inputs;
-it is not a claim of reproducible bit-for-bit Go builds.
+## 结果判定和防虚假通过
 
-`dev-bundle.py` verifies deterministic ZIP bytes, CRCs, exact archive/folder/
-manifest inventories, every file hash, native executable permissions, extracted
-native startup and full identity, and all required source/provenance/license
-files independently derived from the original archive. Invalid inputs must fail
-for the expected reason. Wrong-product/contract/readiness/target fixtures are
-real compiled executables, so Windows execution-format failures cannot falsely
-satisfy identity checks.
+进程退出成功和语义证据必须同时满足。报告非空、预期 case 集合完整、`pass`/`passed` 和
+所有 assertion 都是布尔 `true`；字符串、缺报告、空选择、prepare-only、异常与超时都失败。
+family 测试验证子 worker 的结果，不能仅相信父进程记录。LSP 消费者有绝对响应 deadline，
+取消要返回一次 `-32800`，无关消息不能延长等待。
 
-The final delivered ZIP must have the same actual SHA-256 as the already
-integrity-tested deterministic ZIP. The workflow also compiles the actual
-standalone Cargo manifest from the package and retains that WASM output separately. Development ZIPs
-contain an `extension/` directory for **Install Dev Extension** and a separate `server/` executable selected with `serverPath`;
-they are not preinstalled editor sessions or marketplace releases.
+[ablate-ci.py](../tests/e2e/ablate-ci.py) 使用同一个隔离源码构建基线和 mutant；
+源选择器必须唯一匹配，mutant 必须成功编译，case/assertion 集合相同且指定语义断言改变。
+编译错误、崩溃、timeout、空报告、缺测试或无关失败不算 mutation 检测。
+未被当前入口选择的 `ablate-*` 脚本不自动获得 CI gate 身份。
 
-## Evidence and reruns
+报告冻结、非 Workflow 归属、维护 publication、精确编辑字节和候选 generation 等教训，
+以及各自的回归测试，统一见 [经验教训](lessons-learned.md)。
 
-Every job uploads `artifacts/ci/` with `if: always()` and 30-day retention,
-including failures. This directory contains only generated test/build evidence;
-hidden fixture configuration files are included intentionally. Per-command raw
-stdout/stderr, execution/timeout receipts, result JSON, input hashes, protocol
-traffic, source/native identity, cgroup limits, packages and WASM outputs remain
-inspectable. A job killed before artifact upload cannot promise a complete
-archive; GitHub's job log remains the record of that interruption.
+## 打包身份与验收留证
 
-Use fresh output directories. From a clean checkout with the pinned Go and Rust
-toolchains, Python 3.14 and a C compiler installed:
+release-mode build 从精确 commit 的临时 worktree 构建，防止本地 ignored Go/C/embed 文件混入。
+二进制 Go VCS metadata、源码 commit、catalog hash、构建模式和原始 dependency/schema/runtime
+法律文本都必须一致。包消费测试实际解压并运行 native identity，独立检查文件库存、hash、权限和拒绝路径。
+这是来源校验，不是声明 Go 二进制可逐字节复现。
+
+各 job 以 `always()` 上传 `artifacts/ci/` 等证据，通常保留 30 天：原始 stdout/stderr、
+命令/timeout 回执、JSON 断言、协议流量、源码/二进制 hash、工具链、实际资源限制和产物。
+job 在上传前被终止时不能承诺完整 artifact；该次 GitHub job log 仍需检查。
+
+## 运行入口
+
+使用固定 Go/Rust、Python 与 C 编译器，并为每次运行选择新的输出目录。
+下面是原生构建和常用语义入口；Windows 使用 `.exe` 文件名。
 
 ```sh
 python tests/ci/run.py build --output artifacts/ci/build
 python tests/ci/run.py suite --suite native \
   --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/native
-python tests/ci/run.py wasm --output artifacts/ci/wasm-source
 python tests/ci/run.py package \
   --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/package
-python tests/ci/run.py wasm --package artifacts/ci/package/package.json \
-  --output artifacts/ci/wasm-bundle
 python tests/ci/install-tools.py --output artifacts/ci/tools
 python tests/ci/run.py suite --suite extended --tools artifacts/ci/tools \
   --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/extended
 python tests/ci/run.py schema \
   --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/schema
-python tests/ci/run.py mutations --group core --output artifacts/ci/mutations
-python tests/ci/run.py mutations --group audit --output artifacts/ci/audit-mutations
+python tests/ci/run.py mutations --group core --output artifacts/ci/mutations-core
+python tests/ci/run.py mutations --group audit --output artifacts/ci/mutations-audit
+python tests/e2e/ablate-shared-lifecycle.py artifacts/ci/shared-lifecycle
 ```
 
-On Windows use the `.exe` native filename. Extended integration/tool installation
-and resources require Linux; the resource commands additionally require systemd,
-cgroup v2, four CPUs and noninteractive sudo:
+Linux 资源入口额外需要 systemd、cgroup v2、四 CPU 和非交互 sudo：
 
 ```sh
 python tests/ci/resources.py --suite adversarial \
   --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/adversarial
 python tests/ci/resources.py --suite load \
   --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/load
-python tests/ci/run.py mutations --group resources --output artifacts/ci/resource-mutations
+python tests/ci/resources.py --suite index \
+  --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/index
+python tests/ci/run.py mutations --group resources --output artifacts/ci/mutations-resources
 ```
 
-## Runner acceptance versus Zed editor acceptance
+Rust/WASI/package 入口见 [开发指南](../DEVELOPMENT.md)。需要交付身份的构建必须从干净 commit
+按 workflow 传入 release version；普通开发构建不因此变成可发布 release。
 
-Successful Actions establishes only the checks listed above at the run's exact
-commit, platform and toolchain. It does **not** launch a real Zed editor. The
-workflow summary states `editorAcceptance: not-executed`.
+## 与真实编辑器验收的关系
 
-Real editor acceptance remains a separate recorded procedure: Install Dev
-Extension on a clean editor profile, no server override, verify pinned release download and warm-cache offline startup,
-diagnostics, applied completion, definition/navigation, valid and refused rename,
-Quick Fix plus undo, settings forwarding, error visibility/recovery, cache repair,
-and coexistence with YAML/Helm servers. Record Zed version, OS/architecture,
-extension/native hashes, settings, logs and observed outcomes. Use the explicit per-platform checklist in [Distribution and store readiness](distribution.md). A previous local
-Zed result must not be attributed to a different CI artifact or another platform.
+Native CI 证明实际 CLI/stdio 和包行为；原生 Rust 测试证明注入 Host 边界下的安装协议；
+WASI 消费者证明实际安装代码、原生 identity probe 和受控 Windows 文件句柄的交互；
+文件系统安装测试证明安装/回滚过程。它们都不启动完整 Zed GUI。
 
-## Persistent editor index gates
-
-[The architecture and freshness contract](incremental-workspace.md) describe the
-production integration. The native suite now includes `wf-index-boundaries`,
-`wf-mixed-parent-index`, `wf-persistent-workspace` and `wf-persistent-slowio`.
-The two consumers that emit a single `checks` object are independently validated
-for a nonempty all-boolean assertion inventory; an exit-zero or `pass: true` alone
-is insufficient. The build tests `internal/analysis`, `internal/lsp` and
-`internal/workspace` inside the exact disposable source snapshot used for release
-builds. Linux also runs those packages with `-race`.
-
-Known file changes are observable immediately; an unknown URI created without a
-watcher is required to converge through the natural reconciliation pass. Tests
-that exercise explicit creation, configuration and close transitions retain every
-intermediate response and forbid obsolete external locations while waiting for
-the final exact candidate. Unrelated files no longer cause a diagnostic publication
-barrier: consumers observe their actual indexed symbols before testing scope edit
-proofs. None of these tests weaken missing-target, unique-binding or exact-edit
-requirements while the selected scope is complete.
-
-The curated mutations target current catalog ownership, publication acknowledgement
-and scope generations. The removed publication-input map and full-directory
-foreground acquisition are not retained as dead code for historical selectors.
-Warm-query disk/configuration scenarios remain in the positive suite; the current
-cache mutation specifically removes the generation of detached candidates, whose
-source is outside the materialized closure.
-
-Run the bounded dense-resource samples with:
-
-```sh
-python tests/ci/resources.py --suite index --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/index
-```
-
-Recorded local evidence and its limits are in
-[the validation record](incremental-index-validation.md). CI wiring is not evidence
-that its five native platforms, the constrained five-sample matrix, or real Zed
-interaction have already run for an uncommitted candidate.
+真实编辑器验收需要记录 Zed/OS、adapter/native 身份、设置和日志，并观察首次下载、
+离线缓存启动、诊断/补全/跳转、允许和拒绝的 Rename、Quick Fix/undo、配置恢复和
+YAML/Helm 服务共存。详细使用和排障见 [分发与安装](distribution.md)。

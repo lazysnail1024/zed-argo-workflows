@@ -30,11 +30,11 @@ and publishes the native assets. An exact version-tag push or a manual run on
 ## Shared toolkit source
 
 The toolkit dependency is pinned to source commit
-`79c46c0625b94d61156e40994ac603db69e2438f`, represented by Go pseudo-version
-`v0.0.0-20261110063134-79c46c0625b9`. It does not require a toolkit release tag.
+`b1e411d4b3abe5c1ad70518be161c1daff717d61`, represented by Go pseudo-version
+`v0.0.0-20261110114800-b1e411d4b3ab`. It does not require a toolkit release tag.
 The vendored `source`, `yamlview`, `edit`, `index`, and `workspace` packages match
 that commit; builds need no sibling checkout or local `replace` directive.
-`contracts/toolkit-design-2.md` is the byte-identical API contract, with its
+`contracts/toolkit-design-3.md` is the byte-identical API contract, with its
 implementation and content identities in `contracts/toolkit.lock.json`.
 The vendor script also restores the existing Expr formatter and JSON Schema
 compiler patches, verifying their input and output hashes against
@@ -59,7 +59,9 @@ cargo build --locked --release --target wasm32-wasip2
 
 Select this directory when using Zed's Install Dev Extension. The independent
 `native-server-version` file chooses a released LSP; the adapter's own version can
-change independently. The adapter package command is also in this directory.
+change independently. Building the adapter does not build or select the current
+Go source. To test local native changes in Zed, build the native executable and
+point `settings.serverPath` to that absolute path. The adapter package command is also in this directory.
 `zed.yml` owns adapter CI. Bump the matching Cargo and extension versions and merge
 the changed `editors/zed/extension.toml` into `main` to start `zed-release.yml`.
 It also accepts matching `zed-v*` tags and manual runs. After its own gates pass,
@@ -67,7 +69,7 @@ it waits up to 45 minutes for the exact native pin to be published with all five
 platform executables and `SHA256SUMS`, then creates its tag and publishes the ZIP.
 The native release can precede the adapter release and use a different commit;
 no Go build is part of the adapter workflow. Existing releases and drafts are
-never replaced. See [release automation](docs/distribution.md#release-automation)
+never replaced. See [release automation](docs/distribution.md#发布自动化)
 for waiting and failure behavior.
 
 The precompiled ZIP is the ordinary alpha installation path and does not need a
@@ -111,4 +113,4 @@ Version collection and normalization preserve upstream commit IDs and SHA-256
 source identities. The default auto window is derived from the latest two stable
 majors. A new catalog must pass version compatibility consumers before release.
 See [configuration](docs/configuration.md), [architecture](docs/architecture.md),
-and the ablation report for the current boundaries and measured experiments.
+[CI](docs/CI.md), and [lessons learned](docs/lessons-learned.md) for current boundaries and regression requirements.

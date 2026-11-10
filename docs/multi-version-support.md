@@ -2,8 +2,10 @@
 
 The native language server defaults to `auto`. It embeds official Argo Workflows
 schemas for **146 exact versions from 3.0.0 through 4.1.6**, across the two most
-recent major versions in the source snapshot. Installation and editing require no
-version setting or network access.
+recent major versions in the source snapshot, whose cutoff is
+`2026-11-05T13:59:59Z` in [catalog.lock.json](../compat/catalog.lock.json).
+This is a bundled offline inventory, not a live claim about the newest upstream release.
+Analysis requires no version setting or network schema access.
 
 ## Coverage
 
@@ -77,12 +79,11 @@ particular deployment.
 
 The inventory includes every official tag of the form `vMAJOR.MINOR.PATCH` in the
 latest two major versions. Tags with `rc`, `alpha`, `beta` or other suffixes are
-excluded. A GitHub Release record is not required: historical `v3.2.10` is a
-published tag without such a record; `v3.0.5` has an old release marked prerelease
-but is still an exact final-format tag. Both are intentionally included. Release
-metadata and raw source hashes remain in the catalog for auditing.
+excluded. A GitHub Release record is not required, and a release record marked
+prerelease does not remove an otherwise matching final-format tag. Release
+metadata, tag provenance and raw source hashes remain in the catalog for auditing.
 
-## Design and verification
+## Implementation and verification
 
 Automatic schemas contain complete release alternatives and shared `$defs` for
 identical schema subtrees. Root descriptions that only restate a resource kind

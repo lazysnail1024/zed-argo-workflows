@@ -1,4 +1,4 @@
-# Argo Workflows language server — initial alpha
+# Argo Workflows language server — prerelease
 
 This is a prerelease before `0.0.1`.
 
@@ -9,7 +9,7 @@ This is a prerelease before `0.0.1`.
 
 Choose the archive for your platform and retain its legal notices. Raw executable
 assets are provided for the Zed adapter's verified downloader. The precompiled
-Zed adapter has a separate `zed-v0.0.1-alpha.1` release and its own version lifecycle.
+Zed adapter uses separate `zed-v<adapter-version>` releases and its own version lifecycle.
 
 This alpha does local static analysis. It does not execute Argo controllers or
 infer a deployment's runtime version. Automated native CLI/LSP and package tests

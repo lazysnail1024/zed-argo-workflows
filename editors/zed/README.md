@@ -26,4 +26,7 @@ cargo build --locked --release --target wasm32-wasip2
 ```
 
 For source development, select this directory in Zed's **Install Dev Extension**
-action. Use the release installation guide when using a precompiled adapter.
+action. To run current Go source changes, build the native server separately and
+set `settings.serverPath` to that executable; rebuilding this adapter keeps its
+release pin. See [development](../../DEVELOPMENT.md) and the
+[documentation index](../../docs/README.md).
