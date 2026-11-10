@@ -392,14 +392,14 @@ def build(args):
             try:
                 checked(compile_command, output / "compile", timeout=600, env=env, cwd=snapshot)
                 retain_windows_runtime(snapshot)
-                checked(["go", "test", "-mod=vendor", "-count=1", "./internal/analysis", "./internal/lsp", "./internal/workspace"], output / "go-tests", timeout=300, env=env, cwd=snapshot)
+                checked(["go", "test", "-mod=vendor", "-count=1", "./internal/analysis", "./internal/assets", "./internal/lsp", "./internal/workspace"], output / "go-tests", timeout=300, env=env, cwd=snapshot)
                 checked(["go", "vet", "-mod=vendor", "./..."], output / "vet", timeout=300, env=env, cwd=snapshot)
             finally:
                 checked(["git", "worktree", "remove", "--force", snapshot], output / "source-worktree-cleanup")
     else:
         checked(compile_command, output / "compile", timeout=600, env=env)
         retain_windows_runtime(ROOT)
-        checked(["go", "test", "-mod=vendor", "-count=1", "./internal/analysis", "./internal/lsp", "./internal/workspace"], output / "go-tests", timeout=300, env=env)
+        checked(["go", "test", "-mod=vendor", "-count=1", "./internal/analysis", "./internal/assets", "./internal/lsp", "./internal/workspace"], output / "go-tests", timeout=300, env=env)
         checked(["go", "vet", "-mod=vendor", "./..."], output / "vet", timeout=300, env=env)
     checked(["go", "version", "-m", binary], output / "native-build", env=env)
     identity = json.loads(checked([binary, "version", "--json"], output / "identity"))

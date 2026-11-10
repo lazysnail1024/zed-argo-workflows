@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"runtime/debug"
 	"sort"
 	"time"
 
@@ -35,6 +36,13 @@ type workerResult struct {
 // request and one background publication worker run on immutable snapshots.
 // Publication is accepted per URI, so a later timeout cannot discard progress.
 func Serve(in io.Reader, out, log io.Writer) int {
+	// Leave room for native YAML parsing, embedded mappings and the client.
+	// This controls Go's heap headroom, not RSS or the explicit input limits.
+	previousLimit := debug.SetMemoryLimit(-1)
+	if previousLimit > 288*1024*1024 {
+		debug.SetMemoryLimit(288 * 1024 * 1024)
+		defer debug.SetMemoryLimit(previousLimit)
+	}
 	s := session{out: out, log: log, buffers: map[string]buffer{}, actions: map[string]pendingAction{}, pending: map[string]bool{}}
 	var err error
 	s.catalog, err = newCatalog()
@@ -216,6 +224,9 @@ func Serve(in io.Reader, out, log io.Writer) int {
 			if err == nil && state.factInput != nil && ctx.Err() == nil {
 				state.facts = analysis.CaptureFacts(ctx, *state.factInput)
 			}
+			// The owner accepts detached caches and actions only. Do not carry
+			// worker parsing contexts or borrowed input through the result queue.
+			state.ctx, state.factInput, state.workspaces, state.buffers = nil, nil, nil, nil
 			send(workerResult{output: append([]byte(nil), output.Bytes()...), log: logs.Bytes(), state: state, err: err, canceled: ctx.Err() != nil, epoch: state.epoch, background: background, final: true, proofs: state.proofs})
 		}()
 	}

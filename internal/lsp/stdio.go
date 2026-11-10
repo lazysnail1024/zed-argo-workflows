@@ -311,7 +311,11 @@ func (s *session) queryDocument(uri string) (workspace.Document, error) {
 	if _, ok := s.buffers[uri]; ok {
 		return s.bufferDocument(uri)
 	}
-	return s.catalog.document(s.context(), uri)
+	document, proof, err := s.catalog.document(s.context(), uri)
+	if err == nil {
+		s.proofs = append(s.proofs, proof)
+	}
+	return document, err
 }
 
 // Check retained text before constructing a snapshot. Refused updates retain

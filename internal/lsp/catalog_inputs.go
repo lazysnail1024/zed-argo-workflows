@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/lazysnail1024/k8s-crd-toolkit/index"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
@@ -144,21 +145,47 @@ func (c *catalog) limited(root, target string) string {
 	return "workspace inputs are incomplete"
 }
 
-func (c *catalog) document(ctx context.Context, uri string) (workspace.Document, error) {
-	c.mu.Lock()
-	root := c.rootFor(source.URI(uri))
-	r := c.roots[root]
-	if r == nil {
+func (c *catalog) document(ctx context.Context, uri string) (workspace.Document, catalogProof, error) {
+	for {
+		if err := ctx.Err(); err != nil {
+			return workspace.Document{}, catalogProof{}, err
+		}
+		c.mu.Lock()
+		root := c.rootFor(source.URI(uri))
+		r := c.roots[root]
+		if r == nil {
+			c.mu.Unlock()
+			return workspace.Document{}, catalogProof{}, fmt.Errorf("document is outside workspace")
+		}
+		if r.problem == "configuration pending" {
+			// Describe is metadata-only. A local closed-file request waits for
+			// that result, never for directory discovery or scope completeness.
+			c.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return workspace.Document{}, catalogProof{}, ctx.Err()
+			case <-time.After(5 * time.Millisecond):
+			}
+			continue
+		}
+		if r.problem != "" {
+			problem := r.problem
+			c.mu.Unlock()
+			return workspace.Document{}, catalogProof{}, fmt.Errorf("%s", problem)
+		}
+		header, override := r.header, r.override
+		proof := catalogProof{root: root, epoch: r.epoch}
+		if file := c.files[source.URI(uri)]; file != nil {
+			proof.files = map[source.URI]catalogInput{source.URI(uri): {file.stamp, file.hash}}
+		}
 		c.mu.Unlock()
-		return workspace.Document{}, fmt.Errorf("document is outside workspace")
+		snapshot, err := c.readSnapshot(ctx, source.URI(uri))
+		if err != nil {
+			return workspace.Document{}, proof, err
+		}
+		document, err := workspace.OpenDocument(header, snapshot, override)
+		return document, proof, err
 	}
-	header, override := r.header, r.override
-	c.mu.Unlock()
-	snapshot, err := c.readSnapshot(ctx, source.URI(uri))
-	if err != nil {
-		return workspace.Document{}, err
-	}
-	return workspace.OpenDocument(header, snapshot, override)
 }
 
 // closure follows known key candidates without interpreting absence as proof.
@@ -197,7 +224,7 @@ func (c *catalog) closure(ctx context.Context, header workspace.Workspace, selec
 		uri := queue[n]
 		file, found, _ := c.index.GetFile(uri)
 		if (!found || !file.Fresh) && string(uri) == focus {
-			document, err := c.document(ctx, focus)
+			document, _, err := c.document(ctx, focus)
 			if err != nil {
 				return nil, err
 			}
@@ -354,9 +381,8 @@ func (c *catalog) workspace(ctx context.Context, root, selected, focus string, r
 	w := header
 	w.Documents = nil
 	w.IncompleteScopes = incomplete
-	bytes := 0
 	for _, uri := range uris {
-		document, err := c.document(ctx, string(uri))
+		document, _, err := c.document(ctx, string(uri))
 		if err != nil {
 			if isMissing(err) {
 				c.mu.Lock()
@@ -372,10 +398,6 @@ func (c *catalog) workspace(ctx context.Context, root, selected, focus string, r
 		}
 		if selected != "" && document.Target.Scope != selected {
 			continue
-		}
-		bytes += len(document.Snapshot.Text())
-		if bytes > catalogTextLimit {
-			return w, proof, fmt.Errorf("dependency input exceeds 128 MiB")
 		}
 		c.mu.Lock()
 		file := c.files[uri]

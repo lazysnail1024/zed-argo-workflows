@@ -90,7 +90,7 @@ jobs:
       run: python tests/ci/run.py build --platform "${{ matrix.platform }}" --release-version "${{ needs.prepare.outputs.version }}" --output artifacts/ci/build
     - name: Race-check shared catalog lifecycle and file authority
       if: matrix.platform == 'linux/amd64'
-      run: go test -mod=vendor -race -count=1 ./internal/analysis ./internal/lsp ./internal/workspace
+      run: go test -mod=vendor -race -count=1 ./internal/analysis ./internal/assets ./internal/lsp ./internal/workspace
     - name: Execute CLI and stdio LSP semantic consumers
       if: ${{ !cancelled() && steps.build.outcome == 'success' }}
       run: python tests/ci/run.py suite --suite native --binary artifacts/ci/build/${{ matrix.binary }} --output artifacts/ci/native

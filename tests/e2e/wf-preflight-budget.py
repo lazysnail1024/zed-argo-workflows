@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""Real CLI/LSP preflight admission, refusal, foreign ownership and recovery.
+"""CLI preflight refusal and bounded per-file LSP discovery/recovery.
 
-All expected responses are declared before launch. A refused projection must
-not turn workspace/symbol into a successful list containing only its sibling.
-This tests propagation only and proposes no relaxation of the older cap.
+Workspace symbols expose admitted detached candidates. A refused file must stay
+Limited, publish its budget refusal when opened, and never supply partial facts.
 """
 from pathlib import Path
 import hashlib
 import importlib.util
 import json
+import os
 import platform
 import re
 import shutil
 import sys
+import time
 import traceback
 
 ROOT = Path(__file__).resolve().parent
@@ -47,6 +48,23 @@ def symbols(path, text, pattern):
 
 def normalize(items):
     return sorted(json.dumps(item, sort_keys=True) for item in items)
+
+def index_states(client, work):
+    result = []
+    for line in bytes(client.stderr_raw).splitlines():
+        try: row = json.loads(line)
+        except (ValueError, UnicodeError): continue
+        if row.get('phase') == 'index' and row.get('root') == str(work): result.append(row)
+    return result
+
+def settled_index(client, work, expected, marker=0):
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        rows = index_states(client, work)[marker:]
+        if rows and rows[-1].get('state') == expected and rows[-1].get('files') == 2:
+            return rows[-1]
+        time.sleep(.02)
+    raise AssertionError({'expectedIndexState': expected, 'observed': index_states(client, work)})
 
 SIBLING = ('apiVersion: argoproj.io/v1alpha1\nkind: WorkflowTemplate\n'
            'metadata: {name: sibling}\nspec:\n  templates:\n'
@@ -83,23 +101,23 @@ for name, refused in [('alias-99902', False), ('alias-100000', True), ('plain-10
                 'graphLogicalNodes': 0 if name == 'plain-100000' else 100000 if refused else 99902,
                 'graphPreflightNodes': 100098 if refused else 100000,
                 'plainSiblingAggregateCharge': 0}
-    if refused:
-        expected |= {'errorCode': -32803, 'messageContains': ['alias', '100000'], 'resultAbsent': True}
-    else:
-        expected['result'] = ([] if name == 'foreign-admitted' else symbols(work / 'a-graph.yaml', text, r'name: (t[0-9]{3})\n')) + symbols(work / 'z-plain.yaml', SIBLING, r'name: (exact)\n')
+    expected['indexState'] = 'Limited' if refused else 'Ready'
+    expected['result'] = ([] if refused or name == 'foreign-admitted' else symbols(work / 'a-graph.yaml', text, r'name: (t[0-9]{3})\n')) + symbols(work / 'z-plain.yaml', SIBLING, r'name: (exact)\n')
     m.save(dest / 'expected.json', expected)
     cases.append((name, refused, dest, work, expected))
 
 m.save(OUT / 'manifest.json', {'command': sys.argv, 'binarySha256': EXPECTED_SHA,
+       'runtimeEnvironment': {key: os.environ.get(key) for key in ['GOMEMLIMIT', 'GOGC', 'GODEBUG', 'GOMAXPROCS']},
        'testSha256': m.sha(Path(__file__)), 'helperSha256': m.sha(HELPER),
        'python': sys.version, 'platform': platform.platform(), 'caseCount': 5,
        'inputHashes': {str(path.relative_to(OUT)): m.sha(path) for path in OUT.glob('*/input/*')},
        'expectedHashes': {str(path.relative_to(OUT)): m.sha(path) for path in OUT.glob('*/expected.json')},
-       'scope': 'Legacy preflight refusal propagation only; no performance claim or cap relaxation.'})
+       'scope': 'CLI aggregate admission plus LSP per-file admission, explicit Limited state and current-buffer refusal; no performance claim or cap relaxation.'})
 for name, refused, dest, work, expected in cases:
     client = None
     checks = {}
     response = None
+    initial = state = None
     try:
         wanted = {'analysisComplete': not refused, 'diagnostics': [], 'configurationErrors': [], 'filesAnalyzed': 1 if refused else 2, 'resourcesAnalyzed': 1 if refused or name == 'foreign-admitted' else 2, 'notEvaluated': ['alias expansion exceeds 100000 nodes'] if refused else []}
         m.save(dest / 'cli.expected.json', wanted)
@@ -107,22 +125,33 @@ for name, refused, dest, work, expected in cases:
         cli_checks = {'cliExit': code == (2 if refused else 0), **{k: report.get(k) == v for k, v in wanted.items()}}
         m.save(dest / 'cli.expected.json', wanted)
         client = Client(dest, work)
+        initial = client.request('workspace/symbol', {'query': ''})
+        state = settled_index(client, work, expected['indexState'])
         response = client.request('workspace/symbol', {'query': ''})
+        checks = {'honestInitialCandidates': 'error' not in initial and all(item in expected['result'] for item in initial.get('result', [])),
+                  'exactCurrentSymbols': 'error' not in response and normalize(response.get('result', [])) == normalize(expected['result']),
+                  'correctIndexCompleteness': state['state'] == expected['indexState']}
         if refused:
-            checks = {'requestFailed': response.get('error', {}).get('code') == -32803,
-                      'noPartialResult': 'result' not in response,
-                      'explicitBudgetReason': all(term in response.get('error', {}).get('message', '').lower() for term in ['alias', '100000'])}
+            path = work / 'a-graph.yaml'
+            text = path.read_text()
+            diagnostics = client.open(path, text)
+            checks.update({'refusedFileSuppliesNoSymbols': all(item['location']['uri'] != path.as_uri() for item in response.get('result', [])),
+                           'explicitBudgetReason': any(d.get('code') == 'WF_ANALYSIS_INCOMPLETE' and all(term in d.get('message', '').lower() for term in ['alias', '100000']) for d in diagnostics)})
         else:
-            checks = {'exactCurrentSymbols': 'error' not in response and normalize(response.get('result', [])) == normalize(expected['result']),
-                      'all101Declarations': len(response.get('result', [])) == (1 if name == 'foreign-admitted' else 101)}
+            checks['all101Declarations'] = len(response.get('result', [])) == (1 if name == 'foreign-admitted' else 101)
         checks.update(cli_checks)
         if refused:
             recovered = graph('alias', 880)
             (work / 'a-graph.yaml').write_text(recovered)
+            marker = len(index_states(client, work))
+            clean = client.change(work / 'a-graph.yaml', recovered, 2)
+            recovered_state = settled_index(client, work, 'Ready', marker)
             want = symbols(work / 'a-graph.yaml', recovered, r'name: (t[0-9]{3})\n') + symbols(work / 'z-plain.yaml', SIBLING, r'name: (exact)\n')
             m.save(dest / 'recovery.expected.json', want)
             reply = client.request('workspace/symbol', {'query': ''})
-            m.result('refusal-recovery', {'exactCurrentSymbols': 'error' not in reply and normalize(reply.get('result', [])) == normalize(want)}, {'response': reply})
+            m.result('refusal-recovery', {'exactCurrentSymbols': 'error' not in reply and normalize(reply.get('result', [])) == normalize(want),
+                                        'explicitReadyRecovery': recovered_state['state'] == 'Ready',
+                                        'budgetDiagnosticCleared': not any('100000' in d.get('message', '') for d in clean)}, {'response': reply, 'state': recovered_state, 'diagnostics': clean})
     except Exception:
         (dest / 'error.txt').write_text(traceback.format_exc())
         checks['completed'] = False
@@ -130,5 +159,5 @@ for name, refused, dest, work, expected in cases:
         if client:
             client.close()
             checks['cleanServerExit'] = client.p.returncode == 0
-        m.result(name, checks, {'response': response})
+        m.result(name, checks, {'response': response, 'initial': initial if client else None, 'state': state if client else None})
 sys.exit(0 if len(m.RESULTS) == 5 and all(row['pass'] for row in m.RESULTS) else 1)

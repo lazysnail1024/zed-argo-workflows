@@ -155,6 +155,16 @@ func ReadText(ctx context.Context, filename string) (string, error) {
 	if before.Size() > limit {
 		return "", fmt.Errorf("input exceeds 5 MiB")
 	}
+	// A request reserves every open buffer once. Disk reads add to that same
+	// allowance across dependency closures; background discovery has only this
+	// bounded single-file lifetime and does not retain closed source text.
+	budget, _ := ctx.Value(snapshotBudgetKey{}).(*snapshotBudget)
+	if budget == nil {
+		budget = &snapshotBudget{}
+	}
+	if err := budget.check(int(before.Size())); err != nil {
+		return "", err
+	}
 	f, err := openConfig(filename)
 	if err != nil {
 		return "", err
@@ -190,5 +200,9 @@ func ReadText(ctx context.Context, filename string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	if err := budget.check(len(raw)); err != nil {
+		return "", err
+	}
+	budget.bytes += len(raw)
 	return string(raw), nil
 }

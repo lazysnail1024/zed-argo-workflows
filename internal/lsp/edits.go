@@ -26,6 +26,15 @@ type pendingAction struct {
 	plan                                    edit.Plan
 }
 
+func detachedPlan(plan edit.Plan) edit.Plan {
+	plan.Replacements = append([]edit.Replacement(nil), plan.Replacements...)
+	for i := range plan.Replacements {
+		plan.Replacements[i].ExpectedText = strings.Clone(plan.Replacements[i].ExpectedText)
+		plan.Replacements[i].NewText = strings.Clone(plan.Replacements[i].NewText)
+	}
+	return plan
+}
+
 func editMethod(method string) bool {
 	return method == "textDocument/codeAction" || method == "codeAction/resolve" || method == "textDocument/prepareRename" || method == "textDocument/rename"
 }
@@ -164,7 +173,7 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		}
 		s.actionSequence++
 		token := fmt.Sprintf("%d:%d", s.epoch, s.actionSequence)
-		s.actions[token] = pendingAction{uri: uri, title: fix.Title, fingerprint: s.actionFingerprint(w), epoch: s.epoch, revision: b.snapshot.Revision(), plan: fix.Plan}
+		s.actions[token] = pendingAction{uri: uri, title: fix.Title, fingerprint: s.actionFingerprint(w), epoch: s.epoch, revision: b.snapshot.Revision(), plan: detachedPlan(fix.Plan)}
 		result = append(result, map[string]any{"title": fix.Title, "kind": "quickfix", "data": map[string]any{"token": token}})
 		return false, 0, s.reply(m.ID, result)
 	}
@@ -212,6 +221,9 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 			return false, 0, s.failure(m.ID, -32803, err.Error())
 		}
 		result := []map[string]any{}
+		if w.IncompleteScopes[d.Target.ID] {
+			return false, 0, s.reply(m.ID, result)
+		}
 		fixes := analysis.FieldFixes(ctx, b.snapshot, d.Target.Version, p.Range)
 		fixes = append(fixes, analysis.ValueFixes(ctx, w, d, p.Range)...)
 		scoped := scopeWorkspace(w, d.Target.ID)
@@ -222,7 +234,7 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 			}
 			s.actionSequence++
 			token := fmt.Sprintf("%d:%d", s.epoch, s.actionSequence)
-			s.actions[token] = pendingAction{uri: uri, title: fix.Title, version: d.Target.Version, scope: d.Target.Scope, fingerprint: requestFingerprint, epoch: s.epoch, revision: b.snapshot.Revision(), plan: fix.Plan}
+			s.actions[token] = pendingAction{uri: uri, title: fix.Title, version: d.Target.Version, scope: d.Target.Scope, fingerprint: requestFingerprint, epoch: s.epoch, revision: b.snapshot.Revision(), plan: detachedPlan(fix.Plan)}
 			result = append(result, map[string]any{"title": fix.Title, "kind": "quickfix", "data": map[string]any{"token": token}})
 		}
 		return false, 0, s.reply(m.ID, result)

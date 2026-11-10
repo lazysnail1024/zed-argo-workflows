@@ -46,6 +46,12 @@ directories receive priority while discovery continues. Foreign YAML and foreign
 Argo resources retain the existing diagnostic-ownership behavior; Helm source
 boundaries and mixed YAML streams remain governed by the existing product rules.
 
+A direct request for a closed document waits only for its root configuration and
+target metadata to be described, within the request context. It does not wait
+for directory discovery. The resulting local query carries the root epoch and
+known input stamp to response delivery; pending metadata is not treated as an
+invalid target version.
+
 Known positive external definitions and resource-name completion candidates can
 be used during discovery. Missing-target diagnostics, unique reference binding,
 Rename and safe Quick Fix proofs require complete inputs for the selected scope.
@@ -128,7 +134,9 @@ results from the shared index alone.
 | Previous-facts container copies during replacement | 32 MiB |
 | Scheduled jobs / active file workers | 512 / 2 |
 | Current-directory hints per root | 64 |
-| One materialized dependency input | 128 MiB |
+| Request source allowance, including all open buffers and acquired closed dependencies | 128 MiB |
+| Concurrent cold schema compilations | 1 |
+| Go runtime soft memory target during an LSP session | 288 MiB, preserving any lower caller limit |
 
 Closed raw source has no catalog LRU. The previous cache read the file before
 looking up its cached snapshot, so it retained raw text without avoiding the I/O.
@@ -137,6 +145,35 @@ from remaining alive through snapshots. File summaries clone retained names and
 containers rather than keeping substrings backed by whole source strings.
 The existing bounded optional analysis-facts handoff remains separate; no worker
 `Workspace.Documents` or syntax tree is installed as permanent catalog state.
+Completed workers drop their parsing context and borrowed workspace/buffer maps
+before handing results to the owner. Stored code-action plans copy their edit
+strings, so a short replacement does not retain a superseded multi-megabyte
+document through a substring.
+
+The existing request snapshot budget reserves every open buffer, including those
+outside the selected dependency closure. Closed-file reads check that same
+allowance before allocation and charge successful stable input. Open snapshots
+are already reserved and are not charged again. Summary-only workspace symbol
+search does not materialize those closed source files and can still succeed when
+the raw-input allowance is full. Background discovery releases each bounded file
+input instead of accumulating an entire workspace of source text.
+
+Warm schema queries use the existing immutable compiled cache directly. A cold
+miss takes one cancellable compilation permit and checks the cache again before
+constructing a schema. This prevents foreground and background workers from
+building duplicate compiler graphs at the same time. Cancelled waiters return
+without waiting for the active compiler; failures are not cached. A completed
+successful compile is reusable even when its initiating document changes,
+because it depends only on immutable embedded schema bytes. That caller still
+receives cancellation.
+
+The LSP applies a 288 MiB Go runtime soft target and restores the caller's prior
+setting when the session ends. A lower existing limit, including one established
+by `GOMEMLIMIT`, is preserved. This target bounds Go's collection headroom; it
+does not include C parser allocations or embedded/file mappings, and it is not a
+hard RSS promise. The CLI keeps its separate one-shot policy. A known incomplete
+selected scope returns no code actions before starting schema work that the edit
+safety check would necessarily reject.
 
 These logical budgets are not interchangeable with process RSS. The server still
 needs temporary parsing/semantic objects and Go heap headroom. The independent
