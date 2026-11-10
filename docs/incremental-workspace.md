@@ -3,21 +3,23 @@
 The stdio server keeps one catalog for the session. Request and diagnostic workers
 may still be cancelled or reach their five-second deadline; that does not discard
 discovery progress or the file index. The CLI retains its one-shot `workspace.Load`
-contract and existing analysis deadline.
+contract and existing analysis deadline. It shares configuration/target selection,
+file membership and the stable bounded single-file reader with the editor; only
+its collection and selected-scope behavior remain separate.
 
 The implementation consumes `k8s-crd-toolkit` source commit
-`79c46c0625b94d61156e40994ac603db69e2438f` through the pinned Go pseudo-version and
+`b1e411d4b3abe5c1ad70518be161c1daff717d61` through the pinned Go pseudo-version and
 reproducible vendor tree. It does not require a sibling checkout, local `replace`,
 or a new toolkit release. See [the source dependency lock](../contracts/toolkit.lock.json),
-[the shared contract](../contracts/toolkit-design-2.md), and
+[the shared contract](../contracts/toolkit-design-3.md), and
 [measured validation](incremental-index-validation.md).
 
 ## Responsibilities
 
 | Component | Persistent state and purpose |
 | --- | --- |
-| Toolkit `Documents` | Authoritative open buffers, monotonic revisions and read tickets; old reads cannot overwrite an opened or changed buffer. |
-| Toolkit `Scanner` and `Queue` | Bounded, resumable discovery plus current/related/background work. Cancelling one step does not restart the directory walk. |
+| Toolkit `Documents` | The single authoritative open-buffer store, monotonic revisions, global open-text accounting and read tickets. The LSP adapter retains editor versions and borrows the accepted immutable snapshots. |
+| Toolkit `Scanner`, `Membership` and `WorkQueue` | Resumable discovery, pass-scoped observations, and bounded current/related/background work. The queue owns overflow, running reservations and coalesced follow-up notifications; workers wait for its wake signal. |
 | Toolkit `Index` | Atomic per-URI detached symbols, references, missing-key dependencies and semantic digests. Pending inputs hide old locations. The index does not assert workspace completeness. |
 | `analysis/index.go` | Workflow resource identity and detached summaries. Namespace, resource kind, reference policy, template signatures and semantic origins remain product decisions. |
 | `lsp/catalog*.go` | Registered-root ownership, configuration metadata, file admission, scope completeness, dependency traversal and publication scheduling. |
@@ -114,6 +116,22 @@ it still needs external diagnostics and republishes after its scope completes.
 An unchanged Ready-to-Ready reconciliation does not republish every open file.
 This preserves both missed-watcher recovery and stable idle Quick Fix tokens.
 
+Input events update `Documents` and invalidate index facts in the same catalog
+critical section. The adapter does not replay accepted text into a second document
+store or maintain a second open-text counter. Configuration buffers and documents
+outside registered roots still count toward the shared 128 MiB allowance; removing
+a root removes its index membership while keeping editor buffers authoritative.
+A refused buffer remains unavailable until full replacement or close/reopen, and
+revokes file proofs even if a worker has not yet obtained an index ticket.
+
+Every accepted open, close and watcher input records an observation in the current
+scan pass. Sweep permission requires the same registered root, its current
+configuration epoch, and a successful complete scanner result. Scanner batches
+are admitted before `Done` becomes visible. The queue's bounded overflow replaces
+the catalog's second batch backlog and dirty/running refill ledger; there is no
+10 ms scan of all files to refill worker slots. Discovery still advances in
+bounded timed steps and performs the existing 30-second reconciliation.
+
 The server writes bounded per-root progress records to stderr with `phase: index`
 and Discovering, Indexing, Ready, Limited or Failed state. Terminal records include
 the pass, file count, reads, bytes, parses and retained-input counters. These logs
@@ -131,8 +149,8 @@ results from the shared index alone.
 | Shared-index logical strings | 128 MiB |
 | Domain-symbol summaries | 64 MiB and 1,000,000 symbols |
 | Domain-symbol construction in one file | 8 MiB, checked before expensive concatenation |
-| Previous-facts container copies during replacement | 32 MiB |
-| Scheduled jobs / active file workers | 512 / 2 |
+| Ready jobs / active file workers | 512 / 2 |
+| Outstanding work URI reservations, including overflow and running work | 100,000 file entries plus 2 retiring worker reservations |
 | Current-directory hints per root | 64 |
 | Request source allowance, including all open buffers and acquired closed dependencies | 128 MiB |
 | Concurrent cold schema compilations | 1 |
@@ -143,6 +161,10 @@ looking up its cached snapshot, so it retained raw text without avoiding the I/O
 Removing it both simplifies ownership and prevents cumulative workspace input
 from remaining alive through snapshots. File summaries clone retained names and
 containers rather than keeping substrings backed by whole source strings.
+For unchanged content and effective configuration, `Index.Reuse` restores the
+already retained pending facts through the current ticket. The catalog keeps no
+second previous-facts copy or separate copy-byte estimate. Pending navigation
+remains hidden until that ticket is successfully reused or replaced.
 The existing bounded optional analysis-facts handoff remains separate; no worker
 `Workspace.Documents` or syntax tree is installed as permanent catalog state.
 Completed workers drop their parsing context and borrowed workspace/buffer maps

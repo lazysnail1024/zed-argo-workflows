@@ -35,16 +35,6 @@ func (c *catalog) discover() {
 		for _, root := range c.roots {
 			current[root] = true
 		}
-		for uri, file := range c.files {
-			root := c.roots[file.root]
-			if root != nil && root.problem == "" && file.dirty && !file.running && !file.blocked && c.queue.Len() < 512 {
-				priority := shared.Background
-				if file.opened {
-					priority = shared.Current
-				}
-				_ = c.queue.Put(shared.Job{URI: uri, Priority: priority})
-			}
-		}
 		c.mu.Unlock()
 		for root := range active {
 			if !current[root] && root.scanner != nil {
@@ -157,7 +147,8 @@ func (c *catalog) discoverRoot(root *catalogRoot) {
 		root.reported = false
 		root.complete = false
 		root.pass++
-		root.backlog, root.scanProblem = nil, ""
+		root.scanPass = root.membership.Start()
+		root.scanProblem = ""
 		if err != nil {
 			root.scanProblem = err.Error()
 			root.done = true
@@ -170,9 +161,8 @@ func (c *catalog) discoverRoot(root *catalogRoot) {
 	for path := range priority {
 		_ = root.scanner.Prioritize(path)
 	}
-	c.drainDiscovery(root)
 	c.mu.Lock()
-	if c.roots[name] != root || root.epoch != epoch || root.done || len(root.backlog) != 0 || c.queue.Len() > 448 {
+	if c.roots[name] != root || root.epoch != epoch || root.done || c.queue.Len() > 448 {
 		c.finishPass(root)
 		c.mu.Unlock()
 		return
@@ -186,31 +176,35 @@ func (c *catalog) discoverRoot(root *catalogRoot) {
 		c.mu.Unlock()
 		return
 	}
-	root.backlog = append(root.backlog, batch.Files...)
 	for _, issue := range batch.Issues {
 		root.scanProblem = fmt.Sprintf("%s: %v", issue.Path, issue.Err)
 	}
 	if err != nil && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 		root.scanProblem = err.Error()
 	}
-	root.done = batch.Done
+	if batch.Done && !batch.Complete && root.scanProblem == "" {
+		root.scanProblem = "workspace discovery is incomplete"
+	}
 	c.mu.Unlock()
-	c.drainDiscovery(root)
+	c.admitDiscovery(root, epoch, batch.Files)
 	c.mu.Lock()
-	c.finishPass(root)
+	if c.roots[name] == root && root.epoch == epoch {
+		// Scanner completion is visible only after every member of this batch
+		// has been accepted or recorded as an explicit discovery failure.
+		root.done = batch.Done
+		c.finishPass(root)
+	}
 	c.mu.Unlock()
 }
 
-func (c *catalog) drainDiscovery(root *catalogRoot) {
-	for {
+func (c *catalog) admitDiscovery(root *catalogRoot, epoch uint64, paths []string) {
+	for _, path := range paths {
 		c.mu.Lock()
-		if len(root.backlog) == 0 || c.queue.Len() >= 512 {
+		if c.roots[root.header.Root] != root || root.epoch != epoch {
 			c.mu.Unlock()
 			return
 		}
-		path := root.backlog[0]
-		root.backlog = root.backlog[1:]
-		header, roots, epoch := root.header, c.rootNames(), root.epoch
+		header, roots := root.header, c.rootNames()
 		c.mu.Unlock()
 		ok, err := workspace.Candidate(header, path, roots)
 		address, uriErr := fileuri.FromPath(path)
@@ -241,20 +235,22 @@ func (c *catalog) drainDiscovery(root *catalogRoot) {
 			c.files[uri] = file
 			root.complete = false
 		}
-		file.seen = root.pass
-		if !file.opened && !file.dirty && !file.running {
+		observed := root.membership.Seen(file.seen)
+		file.seen = root.membership.Observe()
+		if !file.opened && !observed && !c.queue.Pending(uri) {
 			c.mark(uri, shared.Background, false)
 		}
 		c.mu.Unlock()
 	}
 }
 
-// A pass finishes only after its bounded backlog and file jobs finish. Partial
+// A pass finishes only after its bounded batches and file jobs finish. Partial
 // enumeration and per-file failures never establish absence or uniqueness.
 func (c *catalog) finishPass(root *catalogRoot) {
-	if !root.done || len(root.backlog) != 0 || root.reported {
+	if c.roots[root.header.Root] != root || root.scanEpoch != root.epoch || !root.done || root.reported {
 		return
 	}
+	root.membership.Finish(root.scanPass, root.problem == "" && root.scanProblem == "")
 	failed, known := root.problem != "" || root.scanProblem != "", 0
 	globalFailure := failed
 	incomplete := map[string]bool{}
@@ -262,11 +258,11 @@ func (c *catalog) finishPass(root *catalogRoot) {
 		if file.root != root.header.Root {
 			continue
 		}
-		if !file.opened && file.seen != root.pass && root.scanProblem == "" {
+		if !file.opened && root.scanPass.Missing(file.seen) {
 			c.remove(uri)
 			continue
 		}
-		if file.dirty || file.running {
+		if c.queue.Pending(uri) {
 			return
 		}
 		known++
@@ -287,7 +283,7 @@ func (c *catalog) finishPass(root *catalogRoot) {
 	if failed {
 		state = "Limited"
 	}
-	data, _ := json.Marshal(map[string]any{"phase": "index", "state": state, "root": root.header.Root, "generation": root.epoch, "pass": root.pass, "files": known, "queue": c.queue.Len(), "reads": root.reads, "readBytes": root.bytes, "parses": root.parses, "retainedTextBytes": c.openBytes, "symbolBytes": c.symbolBytes, "previousBytes": c.previousBytes})
+	data, _ := json.Marshal(map[string]any{"phase": "index", "state": state, "root": root.header.Root, "generation": root.epoch, "pass": root.pass, "files": known, "queue": c.queue.Len(), "reads": root.reads, "readBytes": root.bytes, "parses": root.parses, "retainedTextBytes": c.documents.OpenBytes(), "symbolBytes": c.symbolBytes})
 	c.logs[root.header.Root] = string(data)
 	root.reportedAt = time.Now()
 	for uri, file := range c.files {

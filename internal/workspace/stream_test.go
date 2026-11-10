@@ -238,3 +238,20 @@ func TestReadTextBoundsAndFreshBytes(t *testing.T) {
 		}
 	})
 }
+
+func TestCLISelectionDefersUnassignedTarget(t *testing.T) {
+	root := t.TempDir()
+	configuration := "schemaVersion: 1\ntargetVersion: '9.9.9'\nscopes:\n- name: selected\n  include: ['selected.yaml']\n  targetVersion: '3.6.0'\n"
+	for name, text := range map[string]string{".argo-workflows-ls.yaml": configuration, "selected.yaml": "selected: true\n", "unassigned.yaml": "outside: true\n"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(text), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	selected, err := LoadContext(context.Background(), root, "selected", "")
+	if err != nil || len(selected.Documents) != 1 || len(selected.Targets) != 1 || selected.Targets[0].Version != "3.6.0" {
+		t.Fatalf("unselected file activated an invalid default: targets=%+v, error=%v", selected.Targets, err)
+	}
+	if _, err := LoadContext(context.Background(), root, "", ""); err == nil {
+		t.Fatal("an acquired unassigned document bypassed target validation")
+	}
+}

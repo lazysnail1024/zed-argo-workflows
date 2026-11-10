@@ -16,8 +16,6 @@ import (
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
 )
 
-func isMissing(err error) bool { return os.IsNotExist(err) }
-
 func (c *catalog) readSnapshot(ctx context.Context, uri source.URI) (source.Snapshot, error) {
 	c.mu.Lock()
 	file := c.files[uri]
@@ -89,17 +87,17 @@ func (c *catalog) header(root string) (workspace.Workspace, bool, error) {
 }
 
 func (c *catalog) scopeReadyLocked(root *catalogRoot, target string) bool {
-	if root == nil || root.problem != "" || root.scanProblem != "" || !root.done || len(root.backlog) != 0 {
+	if root == nil || root.problem != "" || root.scanProblem != "" || !root.done {
 		return false
 	}
-	for _, file := range c.files {
+	for uri, file := range c.files {
 		if file.root != root.header.Root {
 			continue
 		}
 		if file.target.ID == "" {
 			return false
 		}
-		if file.target.ID == target && (file.dirty || file.running || file.blocked || file.problem != "" || file.invalidated) {
+		if file.target.ID == target && (c.queue.Pending(uri) || file.blocked || file.problem != "" || file.invalidated) {
 			return false
 		}
 	}
@@ -339,7 +337,7 @@ func (c *catalog) candidateProof(root string, candidates []index.Definition) (ca
 	proof.epoch = r.epoch
 	for _, candidate := range candidates {
 		file := c.files[candidate.URI]
-		if file == nil || file.invalidated || file.revision != candidate.Revision {
+		if file == nil || file.blocked || file.problem != "" || file.invalidated || file.revision != candidate.Revision {
 			return proof, false
 		}
 		proof.files[candidate.URI] = catalogInput{file.stamp, file.hash}
@@ -384,7 +382,7 @@ func (c *catalog) workspace(ctx context.Context, root, selected, focus string, r
 	for _, uri := range uris {
 		document, _, err := c.document(ctx, string(uri))
 		if err != nil {
-			if isMissing(err) {
+			if os.IsNotExist(err) {
 				c.mu.Lock()
 				c.remove(uri)
 				c.mu.Unlock()
@@ -401,7 +399,7 @@ func (c *catalog) workspace(ctx context.Context, root, selected, focus string, r
 		}
 		c.mu.Lock()
 		file := c.files[uri]
-		if file != nil && file.hash != sha256.Sum256([]byte(document.Snapshot.Text())) && !file.running && !file.dirty {
+		if file != nil && file.hash != sha256.Sum256([]byte(document.Snapshot.Text())) && !c.queue.Pending(uri) {
 			c.mark(uri, shared.Related, true)
 			delete(proof.states, index.Scope(document.Target.ID))
 			w.IncompleteScopes[document.Target.ID] = true

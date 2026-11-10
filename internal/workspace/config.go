@@ -185,135 +185,43 @@ func loadConfig(root string, overlay *string) (Config, []byte, error) {
 	return c, raw, nil
 }
 func LoadContext(ctx context.Context, root, selected, override string) (Workspace, error) {
-	return load(ctx, root, selected, override, nil, nil, nil)
-}
-func Load(root, selected, override string) (Workspace, error) {
-	return load(context.Background(), root, selected, override, nil, nil, nil)
-}
-func LoadEditor(ctx context.Context, root, selected, override string, overlay *string, roots []string, buffers map[string]source.Snapshot) (Workspace, error) {
-	return load(ctx, root, selected, override, overlay, roots, buffers)
-}
-func load(ctx context.Context, root, selected, override string, overlay *string, roots []string, buffers map[string]source.Snapshot) (Workspace, error) {
-	var w Workspace
-	if err := ctx.Err(); err != nil {
-		return w, err
-	}
-	absolute, err := filepath.Abs(root)
+	header, err := Describe(ctx, root, override, nil)
 	if err != nil {
-		return w, err
+		return header, err
 	}
-	w.Root = absolute
-	config, raw, err := loadConfig(absolute, overlay)
-	if err != nil {
-		return w, err
-	}
-	w.Config = config
 	if selected != "" {
-		found := selected == "unassigned" || (selected == "root" && len(config.Scopes) == 0)
-		for _, scope := range config.Scopes {
-			if scope.Name == selected {
-				found = true
-			}
+		found := selected == "unassigned" || selected == "root" && len(header.Config.Scopes) == 0
+		for _, scope := range header.Config.Scopes {
+			found = found || scope.Name == selected
 		}
 		if !found {
-			return w, fmt.Errorf("unknown scope %q", selected)
+			return header, fmt.Errorf("unknown scope %q", selected)
 		}
 	}
-	// Resolve every configured target before reading files; an invalid scope cannot hide behind a filter.
-	for _, s := range config.Scopes {
-		if err := ctx.Err(); err != nil {
-			return w, err
-		}
-		v := s.TargetVersion
-		if v == "" {
-			v = config.TargetVersion
-		}
-		if override != "" {
-			v = override
-		}
-		if err := compat.Resolve(v); err != nil {
-			return w, err
-		}
-	}
+	return readDocuments(ctx, header, selected, override)
+}
+
+func Load(root, selected, override string) (Workspace, error) {
+	return LoadContext(context.Background(), root, selected, override)
+}
+
+// scopeName selects membership before resource I/O or target-version resolution.
+// This keeps an unselected unassigned file from activating an invalid root default.
+func scopeName(config Config, relative string) (string, error) {
 	if len(config.Scopes) == 0 {
-		v := config.TargetVersion
-		if override != "" {
-			v = override
-		}
-		if err := compat.Resolve(v); err != nil {
-			return w, err
+		return "root", nil
+	}
+	name, count := "unassigned", 0
+	for _, scope := range config.Scopes {
+		if matches(scope.Include, relative) {
+			name = scope.Name
+			count++
 		}
 	}
-	input, err := readInput(ctx, absolute, roots, buffers, config, selected)
-	if err != nil {
-		return w, err
+	if count > 1 {
+		return "", fmt.Errorf("file %s matches multiple scopes", relative)
 	}
-	w.NotEvaluated = input.NotEvaluated
-	w.IncompleteScopes = map[string]bool{}
-	for _, file := range input.IncompleteFiles {
-		rel, _ := filepath.Rel(absolute, file)
-		rel = filepath.ToSlash(rel)
-		if matches(config.Exclude, rel) {
-			continue
-		}
-		name := "root"
-		if len(config.Scopes) > 0 {
-			name = "unassigned"
-			for _, scope := range config.Scopes {
-				if matches(scope.Include, rel) {
-					name = scope.Name
-				}
-			}
-		}
-		w.IncompleteScopes[absolute+"#"+name] = true
-	}
-	byScope := map[string]Target{}
-	for _, snapshot := range input.Snapshots {
-		if err := ctx.Err(); err != nil {
-			return w, err
-		}
-		filename, err := fileuri.Path(string(snapshot.URI()))
-		if err != nil {
-			return w, err
-		}
-		relative, err := filepath.Rel(absolute, filename)
-		if err != nil {
-			return w, err
-		}
-		relative = filepath.ToSlash(relative)
-		if matches(config.Exclude, relative) {
-			continue
-		}
-		name := input.ScopeNames[snapshot.URI()]
-		version := config.TargetVersion
-		from := config.targetSource
-		for _, scope := range config.Scopes {
-			if scope.Name == name && scope.TargetVersion != "" {
-				version = scope.TargetVersion
-				from = "scope"
-				break
-			}
-		}
-		if override != "" {
-			version = override
-			from = "cli"
-		}
-		if err := compat.Resolve(version); err != nil {
-			return w, err
-		}
-		if selected != "" && name != selected {
-			continue
-		}
-		target, ok := byScope[name]
-		if !ok {
-			sum := sha256.Sum256(append(append([]byte{}, raw...), []byte("\n"+absolute+"\n"+name+"\n"+version)...))
-			target = Target{ID: absolute + "#" + name, Root: absolute, Scope: name, Version: version, Source: from, SchemaHash: compat.SchemaHash(version), Experimental: !compat.Accepted(version), ConfigHash: hex.EncodeToString(sum[:])}
-			byScope[name] = target
-			w.Targets = append(w.Targets, target)
-		}
-		w.Documents = append(w.Documents, Document{Snapshot: snapshot, Target: target})
-	}
-	return w, nil
+	return name, nil
 }
 
 // OpenDocument assigns an explicit editor buffer without broadening the disk index.
@@ -322,32 +230,27 @@ func OpenDocument(w Workspace, snapshot source.Snapshot, override string) (Docum
 	if err != nil {
 		return Document{}, err
 	}
+	target, err := documentTarget(w, filename, override)
+	return Document{Snapshot: snapshot, Target: target}, err
+}
+
+func documentTarget(w Workspace, filename, override string) (Target, error) {
 	rel, err := filepath.Rel(w.Root, filename)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return Document{}, fmt.Errorf("buffer is outside root")
+		return Target{}, fmt.Errorf("buffer is outside root")
 	}
 	relative := filepath.ToSlash(rel)
 	if HelmTemplate(w.Root, filename) {
-		return Document{}, fmt.Errorf("Helm template source is excluded")
+		return Target{}, fmt.Errorf("Helm template source is excluded")
 	}
-	name := "root"
-	version := w.Config.TargetVersion
-	from := w.Config.targetSource
-	if len(w.Config.Scopes) > 0 {
-		name = "unassigned"
-		count := 0
-		for _, s := range w.Config.Scopes {
-			if matches(s.Include, relative) {
-				count++
-				name = s.Name
-				if s.TargetVersion != "" {
-					version = s.TargetVersion
-					from = "scope"
-				}
-			}
-		}
-		if count > 1 {
-			return Document{}, fmt.Errorf("buffer matches multiple scopes")
+	name, err := scopeName(w.Config, relative)
+	if err != nil {
+		return Target{}, err
+	}
+	version, from := w.Config.TargetVersion, w.Config.targetSource
+	for _, scope := range w.Config.Scopes {
+		if scope.Name == name && scope.TargetVersion != "" {
+			version, from = scope.TargetVersion, "scope"
 		}
 	}
 	if override != "" {
@@ -355,7 +258,7 @@ func OpenDocument(w Workspace, snapshot source.Snapshot, override string) (Docum
 		from = "cli"
 	}
 	if err := compat.Resolve(version); err != nil {
-		return Document{}, err
+		return Target{}, err
 	}
 	excluded := matches(w.Config.Exclude, relative)
 	for _, part := range strings.Split(relative, "/") {
@@ -364,14 +267,18 @@ func OpenDocument(w Workspace, snapshot source.Snapshot, override string) (Docum
 		}
 	}
 	if excluded {
-		name = "opened:" + string(snapshot.URI())
+		address, err := fileuri.FromPath(filename)
+		if err != nil {
+			return Target{}, err
+		}
+		name = "opened:" + address
 	}
 	// A streamed metadata header already carries the exact configuration
 	// identity. Reuse it rather than replacing it with an identity that omits
 	// namespace and reference policy changes.
 	for _, target := range w.Targets {
 		if target.Root == w.Root && target.Scope == name && target.Version == version && target.Source == from {
-			return Document{Snapshot: snapshot, Target: target}, nil
+			return target, nil
 		}
 	}
 	identity, _ := json.Marshal(struct {
@@ -380,48 +287,16 @@ func OpenDocument(w Workspace, snapshot source.Snapshot, override string) (Docum
 	}{w.Config, w.Root, name, version, from})
 	sum := sha256.Sum256(identity)
 	target := Target{ID: w.Root + "#" + name, Root: w.Root, Scope: name, Version: version, Source: from, SchemaHash: compat.SchemaHash(version), Experimental: !compat.Accepted(version), ConfigHash: hex.EncodeToString(sum[:])}
-	return Document{Snapshot: snapshot, Target: target}, nil
+	return target, nil
 }
 
 // OpenBuffer resolves the current configuration and target without scanning disk
 // inputs that cannot affect a document-local query. Scope-wide callers still load
 // the complete workspace separately.
 func OpenBuffer(ctx context.Context, root, override string, overlay *string, snapshot source.Snapshot) (Document, error) {
-	if err := ctx.Err(); err != nil {
-		return Document{}, err
-	}
-	absolute, err := filepath.Abs(root)
+	header, err := Describe(ctx, root, override, overlay)
 	if err != nil {
 		return Document{}, err
 	}
-	config, _, err := loadConfig(absolute, overlay)
-	if err != nil {
-		return Document{}, err
-	}
-	if len(config.Scopes) == 0 {
-		version := config.TargetVersion
-		if override != "" {
-			version = override
-		}
-		if err := compat.Resolve(version); err != nil {
-			return Document{}, err
-		}
-	} else {
-		for _, scope := range config.Scopes {
-			if err := ctx.Err(); err != nil {
-				return Document{}, err
-			}
-			version := scope.TargetVersion
-			if version == "" {
-				version = config.TargetVersion
-			}
-			if override != "" {
-				version = override
-			}
-			if err := compat.Resolve(version); err != nil {
-				return Document{}, err
-			}
-		}
-	}
-	return OpenDocument(Workspace{Root: absolute, Config: config}, snapshot, override)
+	return OpenDocument(header, snapshot, override)
 }

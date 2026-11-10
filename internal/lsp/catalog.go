@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -23,9 +25,10 @@ const catalogTextLimit = 128 * 1024 * 1024
 type catalogRoot struct {
 	header                                                workspace.Workspace
 	override, identity, problem, scanProblem, unavailable string
+	membership                                            shared.Membership
+	scanPass                                              shared.ScanPass
 	epoch, pass, scanEpoch                                uint64
 	scanner                                               *shared.Scanner // Used only by discover, including Close/Prioritize.
-	backlog                                               []string
 	priority                                              map[string]bool
 	done, complete, reported                              bool
 	lastState                                             string
@@ -37,35 +40,34 @@ type catalogRoot struct {
 }
 
 type catalogFile struct {
-	root                                                          string
-	target                                                        workspace.Target
-	stamp, seen, observed                                         uint64
-	revision                                                      source.Revision
-	hash                                                          [32]byte
-	config, problem                                               string
-	opened, blocked, dirty, running, invalidated, owned, awaiting bool
-	previous                                                      *index.Facts
-	symbols                                                       []analysis.DomainSymbol
-	symbolBytes, factsCost, previousBytes                         int
+	root                                          string
+	target                                        workspace.Target
+	seen                                          shared.Observation
+	stamp                                         uint64
+	revision                                      source.Revision
+	hash                                          [32]byte
+	config, problem                               string
+	opened, blocked, invalidated, owned, awaiting bool
+	symbols                                       []analysis.DomainSymbol
+	symbolBytes                                   int
 }
 
 // catalog survives every request/publication worker. Its maps retain identities,
 // summaries and authoritative buffers, never closed-file text, a Workspace, or
 // an analysis invocation. Existing optional parse facts have their own budget.
 type catalog struct {
-	mu                                      sync.Mutex
-	ctx                                     context.Context
-	cancel                                  context.CancelFunc
-	documents                               *shared.Documents
-	index                                   *index.Index
-	queue                                   *shared.Queue
-	roots                                   map[string]*catalogRoot
-	files                                   map[source.URI]*catalogFile
-	events                                  chan struct{}
-	publications                            map[string]bool
-	logs                                    map[string]string
-	openBytes                               int
-	symbolBytes, symbolCount, previousBytes int
+	mu                       sync.Mutex
+	ctx                      context.Context
+	cancel                   context.CancelFunc
+	documents                *shared.Documents
+	index                    *index.Index
+	queue                    *shared.WorkQueue
+	roots                    map[string]*catalogRoot
+	files                    map[source.URI]*catalogFile
+	events                   chan struct{}
+	publications             map[string]bool
+	logs                     map[string]string
+	symbolBytes, symbolCount int
 }
 
 func newCatalog() (*catalog, error) {
@@ -77,7 +79,7 @@ func newCatalog() (*catalog, error) {
 	if err != nil {
 		return nil, err
 	}
-	queue, err := shared.NewQueue(512)
+	queue, err := shared.NewWorkQueue(512, 100002)
 	if err != nil {
 		return nil, err
 	}
@@ -145,12 +147,26 @@ func catalogIdentity(header workspace.Workspace, override string) string {
 	return string(data)
 }
 
+// accept serializes input authority and index invalidation. Requests run on
+// immutable session snapshots and never enter this transport mutation boundary.
+func (s *session) accept(m message) (bool, int, error) {
+	switch m.Method {
+	case "initialize", "textDocument/didOpen", "textDocument/didChange", "textDocument/didClose", "textDocument/didSave", "workspace/didChangeWorkspaceFolders", "workspace/didChangeConfiguration", "workspace/didChangeWatchedFiles":
+		s.catalog.mu.Lock()
+		defer s.catalog.mu.Unlock()
+		done, code, err := s.handle(m)
+		if err == nil && !done && s.initialized && !s.shutdown {
+			s.catalog.syncInputs(s, m)
+		}
+		return done, code, err
+	default:
+		return s.handle(m)
+	}
+}
+
 // syncInputs runs after the transport owner accepts an event. Input authority
 // and immediate index invalidation are serialized before workers can accept it.
 func (c *catalog) syncInputs(s *session, m message) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.openBytes = s.bufferBytes
 	current := map[string]bool{}
 	rootsChanged := false
 	for _, root := range s.roots {
@@ -212,15 +228,15 @@ func (c *catalog) syncInputs(s *session, m message) {
 			c.remove(uri)
 			continue
 		}
-		if file.root != root {
+		if rootsChanged || file.root != root {
 			file.root = root
-			file.seen = c.roots[root].pass
+			file.seen = c.roots[root].membership.Observe()
 			file.target = workspace.Target{}
 			c.mark(uri, shared.Related, true)
 		}
 		if _, ok := s.buffers[string(uri)]; !ok && file.opened {
 			file.opened, file.blocked = false, false
-			c.documents.Close(uri)
+			file.seen = c.roots[root].membership.Observe()
 			c.mark(uri, shared.Related, true)
 		}
 	}
@@ -240,29 +256,18 @@ func (c *catalog) syncInputs(s *session, m message) {
 			file = &catalogFile{root: root}
 			c.files[uri] = file
 		}
-		if file.opened && file.observed == uint64(b.snapshot.Revision()) && file.blocked == (b.unavailable != "") {
+		if file.opened && file.revision == b.snapshot.Revision() && file.blocked == (b.unavailable != "") {
 			continue
 		}
-		file.opened, file.observed, file.blocked = true, uint64(b.snapshot.Revision()), b.unavailable != ""
+		file.opened, file.revision, file.blocked = true, b.snapshot.Revision(), b.unavailable != ""
+		file.seen = c.roots[root].membership.Observe()
 		if file.blocked {
-			c.documents.Close(uri)
+			file.stamp++ // Revoke work that has not obtained an index ticket yet.
+			c.queue.Remove(uri)
 			c.removeFacts(uri)
 			file.problem = b.unavailable
 			continue
 		}
-		var snapshot source.Snapshot
-		var err error
-		if previous, exists := c.documents.Snapshot(uri); exists {
-			snapshot, err = c.documents.Change(uri, previous.Revision(), []source.Change{{Range: source.Span{End: len(previous.Text())}, Text: b.snapshot.Text()}})
-		} else {
-			snapshot, err = c.documents.Open(uri, b.snapshot.Text())
-		}
-		if err != nil {
-			file.problem = err.Error()
-			c.removeFacts(uri)
-			continue
-		}
-		file.revision = snapshot.Revision()
 		c.mark(uri, shared.Current, true)
 		if len(c.roots[root].priority) < 64 {
 			c.roots[root].priority[filepath.Dir(path)] = true
@@ -324,7 +329,7 @@ func (c *catalog) diskEvent(uri source.URI, deleted bool) {
 		}
 		c.files[uri] = &catalogFile{root: root}
 	}
-	c.files[uri].seen = c.roots[root].pass
+	c.files[uri].seen = c.roots[root].membership.Observe()
 	c.documents.Invalidate(uri)
 	c.mark(uri, shared.Related, true)
 }
@@ -335,32 +340,24 @@ func (c *catalog) mark(uri source.URI, priority shared.Priority, invalidate bool
 		return
 	}
 	file.stamp++
-	file.dirty = true
 	if invalidate {
 		c.invalidate(uri, file)
 		if root := c.roots[file.root]; root != nil {
 			root.complete, root.reported = false, false
 		}
 	}
-	// A full queue leaves a dirty bit on bounded file metadata. Discovery pauses;
-	// workers refill freed slots, rather than dropping an accepted file event.
 	if root := c.roots[file.root]; root == nil || root.problem != "" {
 		return
 	}
-	if err := c.queue.Put(shared.Job{URI: uri, Priority: priority}); err != nil && err != shared.ErrLimit {
+	if file.opened {
+		priority = shared.Current
+	}
+	if err := c.queue.Put(shared.Job{URI: uri, Priority: priority}); err != nil {
 		file.problem = err.Error()
 	}
 }
 
 func (c *catalog) invalidate(uri source.URI, file *catalogFile) {
-	if file.previous == nil && file.factsCost <= 32*1024*1024-c.previousBytes {
-		if previous, found, _ := c.index.GetFile(uri); found && previous.Fresh {
-			facts := previous.Facts
-			file.previous = &facts
-			file.previousBytes = file.factsCost
-			c.previousBytes += file.previousBytes
-		}
-	}
 	scope := file.target.ID
 	if scope == "" {
 		scope = file.root + "#root"
@@ -380,19 +377,17 @@ func (c *catalog) removeFacts(uri source.URI) {
 		c.affected(change.Affected)
 	}
 	if file := c.files[uri]; file != nil {
-		c.releasePrevious(file)
 		file.invalidated = true
 	}
 }
 
 func (c *catalog) remove(uri source.URI) {
-	c.documents.Close(uri)
+	c.documents.Invalidate(uri)
 	c.queue.Remove(uri)
 	c.removeFacts(uri)
 	if file := c.files[uri]; file != nil {
 		c.symbolBytes -= file.symbolBytes
 		c.symbolCount -= len(file.symbols)
-		c.previousBytes -= file.previousBytes
 	}
 	delete(c.files, uri)
 }
@@ -446,29 +441,25 @@ func (c *catalog) affected(uris []source.URI) {
 }
 
 func (c *catalog) worker() {
-	timer := time.NewTicker(5 * time.Millisecond)
-	defer timer.Stop()
-	for {
-		if c.ctx.Err() != nil {
-			return
-		}
-		job, ok := c.queue.Pop()
-		if ok {
-			c.process(job.URI)
+	for c.ctx.Err() == nil {
+		if ticket, ok := c.queue.Pop(); ok {
+			c.process(ticket)
 			continue
 		}
 		select {
 		case <-c.ctx.Done():
 			return
-		case <-timer.C:
+		case <-c.queue.Wake():
 		}
 	}
 }
 
-func (c *catalog) process(uri source.URI) {
+func (c *catalog) process(job shared.WorkTicket) {
+	defer c.queue.Complete(job)
+	uri := job.URI
 	c.mu.Lock()
 	file := c.files[uri]
-	if file == nil || file.blocked || !file.dirty || file.running {
+	if file == nil || file.blocked {
 		c.mu.Unlock()
 		return
 	}
@@ -477,7 +468,6 @@ func (c *catalog) process(uri source.URI) {
 		c.mu.Unlock()
 		return
 	}
-	file.running, file.dirty = true, false
 	stamp, epoch, header, override, opened := file.stamp, r.epoch, r.header, r.override, file.opened
 	roots := c.rootNames()
 	c.mu.Unlock()
@@ -498,7 +488,6 @@ func (c *catalog) process(uri source.URI) {
 			if c.files[uri] == file && file.stamp == stamp && r.epoch == epoch {
 				c.remove(uri)
 			}
-			file.running = false
 			c.mu.Unlock()
 			return
 		}
@@ -531,13 +520,11 @@ func (c *catalog) process(uri source.URI) {
 	hash := sha256.Sum256([]byte(snapshot.Text()))
 	c.mu.Lock()
 	if c.files[uri] != file || file.stamp != stamp || c.roots[file.root] != r || r.epoch != epoch {
-		file.running = false
 		c.mu.Unlock()
 		return
 	}
 	unchanged := file.hash == hash && file.config == r.identity && file.target.ID == document.Target.ID && file.problem == ""
 	if unchanged && !file.invalidated {
-		file.running = false
 		c.mu.Unlock()
 		return
 	}
@@ -548,26 +535,30 @@ func (c *catalog) process(uri source.URI) {
 		stamp = file.stamp
 	}
 	ticket, err := c.index.Begin(uri, index.Scope(document.Target.ID), snapshot.Revision())
+	var change index.Change
+	reused := false
 	if err == nil {
 		file.invalidated = true
+		if unchanged {
+			change, err = c.index.Reuse(ticket)
+			reused = err == nil
+			if errors.Is(err, index.ErrNoPrevious) {
+				err = nil // This valid ticket can still commit a newly parsed summary.
+			}
+		}
 	}
-	previous := file.previous
 	c.mu.Unlock()
 	if err != nil {
 		c.finishFile(uri, file, stamp, epoch, err)
 		return
 	}
 	var summary analysis.FileSummary
-	reused := unchanged && previous != nil
-	if reused {
-		summary.Facts = *previous
-	} else {
+	if !reused {
 		ctx = analysis.WithInvocation(ctx)
 		summary, err = analysis.Summarize(ctx, header, document)
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	file.running = false
 	if c.files[uri] != file || file.stamp != stamp || c.roots[file.root] != r || r.epoch != epoch {
 		return
 	}
@@ -576,7 +567,6 @@ func (c *catalog) process(uri source.URI) {
 	}
 	if err != nil {
 		file.problem = err.Error()
-		c.releasePrevious(file)
 		r.complete = false
 		c.signal()
 		return
@@ -589,24 +579,20 @@ func (c *catalog) process(uri source.URI) {
 		}
 		if symbolBytes > 64*1024*1024-(c.symbolBytes-file.symbolBytes) || len(summary.Symbols) > 1000000-(c.symbolCount-len(file.symbols)) {
 			file.problem = "document symbol summaries exceed the bounded index budget"
-			c.releasePrevious(file)
+			r.complete = false
+			c.signal()
+			return
+		}
+		change, err = c.index.Commit(ticket, summary.Facts)
+		if err != nil {
+			file.problem = err.Error()
 			r.complete = false
 			c.signal()
 			return
 		}
 	}
-	change, err := c.index.Commit(ticket, summary.Facts)
-	if err != nil {
-		file.problem = err.Error()
-		c.releasePrevious(file)
-		r.complete = false
-		c.signal()
-		return
-	}
 	file.hash, file.target, file.config, file.revision = hash, document.Target, r.identity, snapshot.Revision()
 	file.problem, file.invalidated = "", false
-	c.releasePrevious(file)
-	file.factsCost = len(summary.Facts.Symbols)*112 + len(summary.Facts.References)*32 + len(summary.Facts.Dependencies)*16
 	if !reused {
 		c.symbolBytes += symbolBytes - file.symbolBytes
 		c.symbolCount += len(summary.Symbols) - len(file.symbols)
@@ -618,12 +604,11 @@ func (c *catalog) process(uri source.URI) {
 func (c *catalog) finishFile(uri source.URI, file *catalogFile, stamp, epoch uint64, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	file.running = false
 	r := c.roots[file.root]
 	if c.files[uri] != file || file.stamp != stamp || r == nil || r.epoch != epoch {
 		return
 	}
-	if isMissing(err) && !file.opened {
+	if os.IsNotExist(err) && !file.opened {
 		c.remove(uri)
 		return
 	}
@@ -632,14 +617,8 @@ func (c *catalog) finishFile(uri source.URI, file *catalogFile, stamp, epoch uin
 		return
 	}
 	file.problem = err.Error()
-	c.releasePrevious(file)
 	r.complete = false
 	c.signal()
-}
-
-func (c *catalog) releasePrevious(file *catalogFile) {
-	c.previousBytes -= file.previousBytes
-	file.previous, file.previousBytes = nil, 0
 }
 
 func sameOverlay(a, b *string) bool {

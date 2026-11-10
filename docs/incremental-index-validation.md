@@ -224,3 +224,168 @@ The focused Go catalog/index tests, mixed-parent consumer, persistent consumer a
 existing scope, edit, delivery and query consumers exercise those boundaries.
 Timeouts, build failures and missing result files are failures, not successful
 negative controls.
+
+
+## Shared lifecycle contraction — 2026-11-10
+
+This follow-up starts from consumer commit `0b18cd72edb5ced85ab794ec800d9b0e00cf409a` and uses the real
+`k8s-crd-toolkit` source commit `b1e411d4b3abe5c1ad70518be161c1daff717d61`,
+Go module version `v0.0.0-20261110114800-b1e411d4b3ab`, and
+[contract 3](../contracts/toolkit-design-3.md). The earlier PR12 measurements and
+source identities above remain historical evidence for that earlier change.
+
+### Removed mechanisms and remaining policy
+
+- `Documents` now owns accepted source snapshots and open-text accounting.
+  The transport keeps LSP versions, refusal state and borrowed immutable
+  snapshots. The catalog no longer copies accepted buffers through a second
+  full-text update or tracks `observed`, `session.bufferBytes` or `catalog.openBytes`.
+  Configuration and root-external buffers remain part of the same allowance.
+- `WorkQueue` owns ready jobs, overflow, running URI reservations and coalesced
+  follow-up work. The catalog has no `dirty`/`running` flags, periodic full-file
+  refill loop or second discovery-batch backlog. The ready limit is still 512;
+  100,000 file entries plus the two fixed retiring worker reservations bound
+  distinct outstanding work. Capacity failure remains explicit incomplete state.
+- `Membership` supplies pass/observation tokens without a second file registry.
+  Open/change/close and watcher observations protect current inputs. Sweep
+  admission also checks the registered root identity, configuration epoch and
+  the scanner's `Complete` result; `Done` alone is insufficient.
+- `Index.Reuse` restores retained facts through a current ticket only after the
+  consumer confirms identical bytes and effective configuration, under the same
+  catalog lock as `Begin`. The `previous`, `factsCost`, `previousBytes` and
+  `releasePrevious` copy ledger is gone.
+- The CLI and editor share target/configuration selection, disk membership and
+  stable bounded single-file reading. `LoadEditor`, its editor-only collection
+  parameters and the duplicate reader/target construction path are removed.
+  CLI selection still precedes validation of an unassigned file's default target;
+  the one-shot collection, 50,000-file cap and diagnostic semantics remain.
+
+For tracked non-vendor production Go under `internal/`, the change is
+`+310/-517`: **207 net lines removed**. This figure excludes tests,
+documentation, dependency locks and generated vendor sources. The three catalog
+files are 1,422 lines combined, down from 1,449; the larger reduction comes from
+removing duplicated workspace acquisition. This is not a claim that all remaining
+catalog logic is Workflow semantics: root/configuration policy, completeness,
+dependency materialization and LSP publication proofs still live there.
+
+### Verification and source identities
+
+The production package race command passed after the real module pin and vendor
+regeneration:
+
+```sh
+go test -race -mod=vendor ./cmd/... ./internal/... ./compat/...
+go build -mod=vendor -o /workspace/scratch/c09d266a9205/workflows-lifecycle-validation/argo-workflows-ls-pinned ./cmd/argo-workflows-ls
+```
+
+An initial literal `go test -race ./...` also traversed pre-existing ignored
+`artifacts/` directories containing mixed-package diagnostic overlays, and failed
+on those overlay packages. Those evidence files were preserved. The explicit
+production package roots above cover all application packages without treating
+saved fault-injection sources as standalone packages.
+
+Two runtime stages are distinguished:
+
+| Stage | Binary SHA-256 | Observed result |
+| --- | --- | --- |
+| Integrated mechanism candidate, before the final module pin and explicit document-entry refusal recovery | `250f2a101f0ef18dae4f99b0fe741fcc30836c007564fd5312184ee8ac453cf4` | 19 existing CLI/stdio runs; 84 cases and 454 explicit assertions passed. |
+| Final pinned source, including document-capacity refusal/recovery | `4cf4db0c70449e3b64148be9343b7d03cd8cbe142d67abbe0761e606d13e2cd7` | Six targeted CLI/stdio reruns; 29 cases and 109 explicit assertions passed, plus production-package race tests. |
+
+The 19-run stage covered `wf3-lsp`, `wf-default-target-provenance`,
+`wf-remediation-targets`, `wf-remediation-lifecycle`, `wf-lifecycle-gaps`,
+`wf-index-boundaries`, `wf-mixed-parent-index`, `wf-query-fact-handoff`,
+`wf5-edits`, `wf-reaudit-query-io`, `wf-bounded-input-files`,
+`wf-preflight-budget`, `wf-bounded-config`, both snapshot-budget modes,
+`wf-persistent-workspace`, `wf-persistent-slowio`, `wf-index-publication` and
+`wf-reaudit-reconciliation`. The final pinned reruns were `wf3-workspace`,
+`wf-lifecycle-gaps`, `wf-index-boundaries`, `wf-remediation-lifecycle`, the
+snapshot-budget refusal/recovery mode and `wf-persistent-workspace`.
+
+Each runtime invocation used `python tests/e2e/<consumer>.py <binary> <output>`.
+The snapshot refusal invocation additionally used `WF_BUDGET_CASES=refusal` and
+`--semantic-only`; the exact-budget invocation used `WF_BUDGET_CASES=exact` with
+the same option. The commands, exit codes and environments are retained in
+`/workspace/scratch/c09d266a9205/workflows-lifecycle-validation/final/commands.json`
+and `pinned/commands.json` under the same evidence directory. Per-run result JSON,
+stdout and stderr remain alongside those manifests. The Go toolchain was 1.27.3;
+module resolution used `-mod=vendor`, `GOTOOLCHAIN=local` and `GOWORK=off`.
+
+For the final pinned persistent fixture, all 4,098 files reached Ready; first
+current-document publication was 0.626 seconds and readiness was 0.673 seconds.
+Repeated unchanged file notifications added four reads and zero parses. The
+separate 15 ms-per-read control reached Ready in 8.102 seconds, while its first
+current-document publication took 0.489 seconds. It retained the five-second
+request deadline and proved discovery continues beyond one request lifetime.
+These are individual development observations, not percentile measurements.
+The 10,001-file natural reconciliation publication gate also passed without a
+watcher shortcut or shortened 30-second timer.
+
+Snapshot-budget runs used their existing `--semantic-only` mode because this
+workspace does not expose the required cgroup memory files. Both exact 128 MiB
+acceptance and refusal/recovery passed their unchanged process guards; these runs
+do not claim whole-cgroup resource acceptance. No production limit, deadline or
+semantic assertion was relaxed.
+
+The historical `wf3-workspace` consumer expected exit 2 for its mixed 3.5.0/3.6.0
+scope fixture. The unchanged base binary and the refactored binary both returned
+exit 1 with complete analysis and supported targets. The consumer now expects
+exit 1 only for that diagnostic-producing supported-target case and explicitly
+checks `analysisComplete` and non-experimental targets. Invalid configuration
+cases retain exit 2. The same revised consumer passed all ten cases against both
+the base-source control and the pinned candidate.
+
+### Regression controls
+
+The added integration tests exercise sequential UTF-16 changes, atomic rejection
+of partially invalid notifications, stale LSP versions, global source accounting,
+configuration's 1 MiB limit, refused-buffer recovery, root removal while buffers
+stay open, monotonic reopen revisions, entry-capacity recovery, obsolete root and
+configuration scans, post-scan save/close observations, and canceled exhausted
+scanner results.
+
+One-mechanism source overlays were compiled separately; each had to fail its
+specific behavioral assertion, not merely fail to build:
+
+| Removed protection in the control | Required failure |
+| --- | --- |
+| Preserve editor authority when an index root is removed | Root removal closed an accepted editor snapshot. |
+| Configuration's 1 MiB preflight | Oversized configuration became available. |
+| Registered-root/configuration-epoch sweep fence | An obsolete scan deleted current-root membership. |
+| Refusal advances the file input stamp | A captured file proof survived refused replacement. |
+| Close observes the current scan pass | Sweep deleted a saved file before its fresh disk read. |
+| Failed enumeration cannot authorize sweep | Incomplete enumeration deleted known membership. |
+| Canceled `Done` does not imply `Complete` | A canceled exhausted scan established deletion/readiness. |
+
+The fixed recipes are committed in
+[`tests/e2e/ablate-shared-lifecycle.py`](../tests/e2e/ablate-shared-lifecycle.py).
+It first compiles and runs the unmodified existing Go tests, requiring each
+selected test to pass. Each overlay must then compile successfully and fail the
+named original test at its specified `catalog_test.go` assertion. Compilation
+errors, missing tests, timeouts, panics and unrelated failures are not detections.
+The script only writes overlays and evidence outside the production source files;
+it neither changes the CI matrix nor requires the earlier local artifacts.
+
+```sh
+# All seven controls; prints and preserves a new temporary evidence directory.
+python tests/e2e/ablate-shared-lifecycle.py
+
+# Optional empty output directory and a single control (repeat --variant to select more).
+python tests/e2e/ablate-shared-lifecycle.py /tmp/wf-shared-lifecycle-controls --variant obsolete-root-sweep
+```
+
+The compiler comes from `GO`, then `GOROOT/bin/go`, then `PATH`; the existing
+environment is inherited. No machine-specific toolchain or cache is hardcoded.
+This round reran the positive tests and all seven controls with Go 1.27.3 using:
+
+```sh
+python tests/e2e/ablate-shared-lifecycle.py /workspace/scratch/c09d266a9205/workflows-lifecycle-validation/reproducible-controls
+```
+
+That directory retains `results.json`, every exact build/run command and exit
+code, stdout/stderr, and each generated overlay. The script exits unsuccessfully
+if the positive run fails or any selected control is not detected.
+
+All seven controls were detected by the targeted tests. Production source was
+never replaced in place by these controls. Runtime commands, results, stdout and
+stderr were recorded separately for the integrated, pinned, base-control and
+negative-control stages.

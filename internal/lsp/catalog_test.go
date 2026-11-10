@@ -3,7 +3,9 @@ package lsp
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -134,8 +136,11 @@ func TestCatalogIncompleteScanDoesNotProveDeletion(t *testing.T) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	root := &catalogRoot{header: workspace.Workspace{Root: "/test"}, done: true, pass: 2, scanProblem: "directory permission denied"}
+	c.roots[root.header.Root] = root
 	uri := source.URI("file:///test/template.yaml")
-	c.files[uri] = &catalogFile{root: "/test", seen: 1, target: workspace.Target{ID: "scope"}}
+	seen := root.membership.Observe()
+	root.scanPass = root.membership.Start()
+	c.files[uri] = &catalogFile{root: "/test", seen: seen, target: workspace.Target{ID: "scope"}}
 	c.finishPass(root)
 	if c.files[uri] == nil || root.complete {
 		t.Fatal("partial enumeration deleted a known member or established completeness")
@@ -173,5 +178,227 @@ func TestCatalogRejectsOutdatedProof(t *testing.T) {
 	c.mu.Unlock()
 	if c.valid([]catalogProof{{root: "/test", epoch: 1}}) {
 		t.Fatal("old configuration proof survived refresh")
+	}
+}
+
+func TestAcceptedDocumentsShareAuthorityAcrossRootsAndRefusal(t *testing.T) {
+	c, err := newCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.cancel() // Exercise accepted input authority independently of discovery.
+	root := t.TempDir()
+	address := func(name string) string {
+		uri, err := fileuri.FromPath(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return uri
+	}
+	inside, outside := address(filepath.Join(root, "inside.yaml")), address(filepath.Join(t.TempDir(), "outside.yaml"))
+	config := address(filepath.Join(root, ".argo-workflows-ls.yaml"))
+	s := session{catalog: c, roots: []string{root}, initialized: true, buffers: map[string]buffer{}, pending: map[string]bool{}, log: io.Discard, out: io.Discard}
+	accept := func(method string, params any) {
+		raw, err := json.Marshal(params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := s.accept(message{Method: method, Params: raw}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	open := func(uri, text string) {
+		accept("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "version": 1, "text": text}})
+	}
+	check := func(uri, text string) source.Snapshot {
+		t.Helper()
+		snapshot, ok := c.documents.Snapshot(source.URI(uri))
+		if !ok || snapshot.Text() != text || snapshot.Revision() != s.buffers[uri].snapshot.Revision() {
+			t.Fatalf("accepted input must borrow one authoritative snapshot: %s, open=%v, text=%q", uri, ok, snapshot.Text())
+		}
+		return snapshot
+	}
+	configuration := "schemaVersion: 1\ntargetVersion: '3.6.0'\n"
+	open(outside, "outside")
+	open(config, configuration)
+	open(inside, "ab😀\r\ncd\n")
+	first := check(inside, "ab😀\r\ncd\n")
+	change := func(version int, changes []map[string]any) {
+		accept("textDocument/didChange", map[string]any{"textDocument": map[string]any{"uri": inside, "version": version}, "contentChanges": changes})
+	}
+	span := func(line, start, end int) map[string]any {
+		return map[string]any{"start": map[string]int{"line": line, "character": start}, "end": map[string]int{"line": line, "character": end}}
+	}
+	change(2, []map[string]any{{"range": span(0, 2, 4), "text": "Z"}, {"range": span(1, 1, 2), "text": "!"}})
+	changed := check(inside, "abZ\r\nc!\n")
+	if changed.Revision() <= first.Revision() || c.documents.OpenBytes() != len("outside")+len(configuration)+len(changed.Text()) {
+		t.Fatal("sequential UTF-16 edits did not update the shared revision and global allowance")
+	}
+	change(2, []map[string]any{{"text": "stale"}})
+	change(3, []map[string]any{{"range": span(0, 0, 1), "text": "temporary"}, {"range": span(99, 0, 1), "text": "invalid"}})
+	if check(inside, changed.Text()).Revision() != changed.Revision() {
+		t.Fatal("stale or partially invalid notification changed input authority")
+	}
+	file := c.files[source.URI(inside)]
+	proof := catalogProof{root: root, epoch: c.roots[root].epoch, files: map[source.URI]catalogInput{source.URI(inside): {file.stamp, file.hash}}}
+	change(4, []map[string]any{{"text": strings.Repeat("x", 5*1024*1024+1)}})
+	if s.buffers[inside].unavailable == "" || c.valid([]catalogProof{proof}) {
+		t.Fatal("refused input did not revoke a captured file proof")
+	}
+	check(inside, changed.Text())
+	change(5, []map[string]any{{"text": changed.Text()}})
+	if s.buffers[inside].unavailable != "" {
+		t.Fatal("full replacement did not recover the refused input")
+	}
+	accept("textDocument/didChange", map[string]any{"textDocument": map[string]any{"uri": config, "version": 2}, "contentChanges": []map[string]any{{"text": strings.Repeat("x", 1024*1024+1)}}})
+	if s.buffers[config].unavailable == "" {
+		t.Fatal("configuration's 1 MiB limit was lost")
+	}
+	check(config, configuration)
+	accept("textDocument/didChange", map[string]any{"textDocument": map[string]any{"uri": config, "version": 3}, "contentChanges": []any{}})
+	if s.buffers[config].unavailable == "" {
+		t.Fatal("empty notification recovered an unavailable buffer without replacement")
+	}
+	beforeRemoval := c.documents.OpenBytes()
+	accept("workspace/didChangeWorkspaceFolders", map[string]any{"event": map[string]any{"removed": []map[string]string{{"uri": address(root)}}}})
+	check(inside, changed.Text())
+	check(outside, "outside")
+	if len(c.files) != 0 || c.documents.OpenBytes() != beforeRemoval {
+		t.Fatal("removing an index root closed authoritative editor buffers")
+	}
+	accept("textDocument/didClose", map[string]any{"textDocument": map[string]string{"uri": inside}})
+	open(inside, "reopened")
+	if check(inside, "reopened").Revision() <= changed.Revision() {
+		t.Fatal("close/reopen reused a source revision despite reset editor version")
+	}
+}
+
+func TestCatalogObsoletePassCannotSweepCurrentRoot(t *testing.T) {
+	c, err := newCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.cancel()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	old := &catalogRoot{header: workspace.Workspace{Root: "/test"}, done: true, epoch: 1, scanEpoch: 1}
+	old.scanPass = old.membership.Start()
+	current := &catalogRoot{header: old.header, epoch: 2, scanEpoch: 2}
+	current.scanPass = current.membership.Start()
+	uri := source.URI("file:///test/current.yaml")
+	file := &catalogFile{root: "/test", target: workspace.Target{ID: "/test#root"}, seen: current.membership.Observe()}
+	c.roots["/test"], c.files[uri] = current, file
+	c.finishPass(old)
+	if c.files[uri] != file || old.reported {
+		t.Fatal("superseded root completion deleted current-root input or published readiness")
+	}
+	// A configuration event invalidates a scan before the replacement scan starts.
+	// Its older membership token is still current inside Membership at this point.
+	current.done = true
+	current.epoch++
+	file.seen = shared.Observation{}
+	c.finishPass(current)
+	if c.files[uri] != file || current.reported {
+		t.Fatal("superseded configuration scan established deletion or readiness")
+	}
+}
+
+func TestCatalogObservesSavedBufferAfterScannedDirectory(t *testing.T) {
+	c, err := newCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.cancel()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	root := t.TempDir()
+	header, err := workspace.Describe(context.Background(), root, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &catalogRoot{header: header, identity: catalogIdentity(header, ""), epoch: 1, scanEpoch: 1, done: true, priority: map[string]bool{}}
+	r.scanPass = r.membership.Start()
+	c.roots[root] = r
+	uri, _ := fileuri.FromPath(filepath.Join(root, "created.yaml"))
+	snapshot, err := c.documents.Open(source.URI(uri), "created: true\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := session{catalog: c, roots: []string{root}, buffers: map[string]buffer{uri: {snapshot: snapshot, version: 1}}}
+	c.syncInputs(&s, message{Method: "textDocument/didOpen"})
+	file := c.files[source.URI(uri)]
+	if file == nil || !r.membership.Seen(file.seen) {
+		t.Fatal("new buffer was not observed in the in-flight discovery pass")
+	}
+	// A new scan can pass this directory while the file is still an overlay.
+	// Save then close must preserve membership until the fresh disk read resolves.
+	r.scanPass = r.membership.Start()
+	if err := os.WriteFile(filepath.Join(root, "created.yaml"), []byte(snapshot.Text()), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c.documents.Close(source.URI(uri))
+	delete(s.buffers, uri)
+	c.syncInputs(&s, message{Method: "textDocument/didClose"})
+	c.finishPass(r)
+	if c.files[source.URI(uri)] != file || !c.queue.Pending(source.URI(uri)) || r.complete {
+		t.Fatal("scan completion deleted a closed authoritative input before its disk read")
+	}
+}
+
+func TestDocumentCapacityRefusalRecoversAfterClose(t *testing.T) {
+	c, err := newCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.cancel()
+	c.documents, err = shared.NewDocuments(shared.DocumentLimits{Entries: 1, FileBytes: 4, OpenBytes: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := session{catalog: c, initialized: true, buffers: map[string]buffer{}, pending: map[string]bool{}, log: io.Discard, out: io.Discard}
+	accept := func(method, params string) {
+		if _, _, err := s.accept(message{Method: method, Params: json.RawMessage(params)}); err != nil {
+			t.Fatalf("capacity refusal terminated the session: %v", err)
+		}
+	}
+	accept("textDocument/didOpen", `{"textDocument":{"uri":"file:///a.yaml","version":1,"text":"one"}}`)
+	accept("textDocument/didOpen", `{"textDocument":{"uri":"file:///b.yaml","version":1,"text":"two"}}`)
+	if s.buffers["file:///b.yaml"].unavailable == "" || c.documents.OpenBytes() != 3 {
+		t.Fatal("entry capacity did not preserve an explicit, uncharged refusal")
+	}
+	accept("textDocument/didClose", `{"textDocument":{"uri":"file:///a.yaml"}}`)
+	accept("textDocument/didChange", `{"textDocument":{"uri":"file:///b.yaml","version":2},"contentChanges":[{"text":"two"}]}`)
+	accepted, opened := c.documents.Snapshot("file:///b.yaml")
+	if !opened || accepted.Text() != "two" || s.buffers["file:///b.yaml"].unavailable != "" || c.documents.OpenBytes() != 3 {
+		t.Fatal("full replacement did not claim the slot released by close")
+	}
+	accept("textDocument/didOpen", `{"textDocument":{"uri":"file:///b.yaml","version":3,"text":"oversized"}}`)
+	current, opened := c.documents.Snapshot("file:///b.yaml")
+	if !opened || current.Revision() != accepted.Revision() || s.buffers["file:///b.yaml"].unavailable == "" || c.documents.OpenBytes() != 3 {
+		t.Fatal("refused replacement lost the authoritative snapshot or its budget")
+	}
+}
+
+func TestCatalogCanceledExhaustedScanDoesNotProveDeletion(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	documents, _ := shared.NewDocuments(shared.DocumentLimits{Entries: 2, FileBytes: 1024, OpenBytes: 1024})
+	queue, _ := shared.NewWorkQueue(1, 2)
+	idx, _ := index.New(index.Limits{Files: 2, Symbols: 2, References: 2, Bytes: 1024})
+	scanner, err := shared.NewScanner(nil, shared.ScanOptions{MaxDirectories: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer scanner.Close()
+	root := &catalogRoot{header: workspace.Workspace{Root: "/test"}, epoch: 1, scanEpoch: 1, scanner: scanner, checked: time.Now()}
+	root.scanPass = root.membership.Start()
+	uri := source.URI("file:///test/known.yaml")
+	file := &catalogFile{root: "/test", target: workspace.Target{ID: "/test#root"}}
+	c := &catalog{ctx: ctx, documents: documents, queue: queue, index: idx, roots: map[string]*catalogRoot{"/test": root}, files: map[source.URI]*catalogFile{uri: file}, events: make(chan struct{}, 1), logs: map[string]string{}}
+	// An exhausted scanner reports Done even when cancellation makes Complete
+	// false. The consumer must carry that distinction through to sweep admission.
+	c.discoverRoot(root)
+	if !root.done || root.scanProblem == "" || root.complete || c.files[uri] != file {
+		t.Fatal("canceled exhausted scan established deletion or readiness")
 	}
 }

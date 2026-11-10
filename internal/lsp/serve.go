@@ -129,7 +129,7 @@ func Serve(in io.Reader, out, log io.Writer) int {
 	}()
 	launch := func(request *queuedRequest, uris []string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		ctx = analysis.WithInvocation(workspace.WithSnapshotBudget(ctx, s.bufferBytes))
+		ctx = analysis.WithInvocation(workspace.WithSnapshotBudget(ctx, s.catalog.documents.OpenBytes()))
 		state := snapshot(ctx)
 		background := request == nil
 		if background {
@@ -305,7 +305,7 @@ func Serve(in io.Reader, out, log io.Writer) int {
 				s.pending = map[string]bool{}
 			}
 			epoch := s.epoch
-			done, code, err := s.handle(m)
+			done, code, err := s.accept(m)
 			if err != nil {
 				fmt.Fprintln(log, "LSP:", err)
 				return 2
@@ -313,9 +313,6 @@ func Serve(in io.Reader, out, log io.Writer) int {
 			if done {
 				abort(-32800, "server exiting")
 				return code
-			}
-			if s.initialized && !s.shutdown {
-				s.catalog.syncInputs(&s, m)
 			}
 			if epoch != s.epoch {
 				abort(-32801, "input changed during request")
