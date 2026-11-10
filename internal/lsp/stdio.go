@@ -4,8 +4,6 @@ package lsp
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
@@ -33,37 +31,35 @@ type buffer struct {
 	version     int32
 	unavailable string
 }
-type externalResult struct {
-	diagnostics []analysis.Diagnostic
-	completion  map[source.URI]analysis.ExternalCompletion
-}
 type session struct {
-	acquiredInputs  map[workspaceKey]string
-	usedInputs      map[workspaceKey]bool
-	queryResults    map[string]json.RawMessage
-	queryBytes      int
-	queryKey        string
-	externalFacts   *analysis.ExternalFacts
-	externalResults map[string]externalResult
-	facts           *analysis.Facts
-	factInput       *workspace.Workspace
-	factBoundary    string
-	factMixed       bool
-	workspaces      map[workspaceKey]workspace.Workspace
-	ctx             context.Context
-	pending         map[string]bool
-	out             io.Writer
-	log             io.Writer
-	roots           []string
-	override        string
-	buffers         map[string]buffer
-	bufferBytes     int
-	initialized     bool
-	shutdown        bool
-	epoch           uint64
-	versionedEdits  bool
-	actions         map[string]pendingAction
-	actionSequence  uint64
+	catalog           *catalog
+	focus, method     string
+	callerDefinitions bool
+	proofs            []catalogProof
+	localPublication  bool
+	queryResults      map[string]json.RawMessage
+	queryBytes        int
+	queryKey          string
+	externalFacts     *analysis.ExternalFacts
+	facts             *analysis.Facts
+	factInput         *workspace.Workspace
+	factBoundary      string
+	factMixed         bool
+	workspaces        map[workspaceKey]workspace.Workspace
+	ctx               context.Context
+	pending           map[string]bool
+	out               io.Writer
+	log               io.Writer
+	roots             []string
+	override          string
+	buffers           map[string]buffer
+	bufferBytes       int
+	initialized       bool
+	shutdown          bool
+	epoch             uint64
+	versionedEdits    bool
+	actions           map[string]pendingAction
+	actionSequence    uint64
 }
 
 func read(r *bufio.Reader) (message, error) {
@@ -164,143 +160,82 @@ func (s *session) root(uri string) string {
 
 type workspaceKey struct{ root, scope string }
 
+// workspace materializes only the dependency inputs needed by this request.
+// Catalog summaries and discovery outlive workers; this cache lasts one query.
 func (s *session) workspace(root, selected string) (workspace.Workspace, error) {
-	if s.usedInputs != nil {
-		// Each publication records its own dependencies, including cache hits.
-		s.usedInputs[workspaceKey{root, selected}] = true
-	}
 	if w, ok := s.workspaces[workspaceKey{root, selected}]; ok && s.context().Err() == nil {
 		return w, nil
 	}
-	uri, err := fileuri.FromPath(filepath.Join(root, ".argo-workflows-ls.yaml"))
-	if err != nil {
-		return workspace.Workspace{}, err
+	reverse := s.method == "textDocument/references" || editMethod(s.method) || s.callerDefinitions
+	focus := s.focus
+	if path, err := filePath(focus); err == nil && filepath.Base(path) == ".argo-workflows-ls.yaml" {
+		focus = ""
 	}
-	var overlay *string
-	if b, ok := s.buffers[uri]; ok {
-		if b.unavailable != "" {
-			return workspace.Workspace{}, fmt.Errorf("%s", b.unavailable)
-		}
-		text := b.snapshot.Text()
-		overlay = &text
-	}
-	w, err := s.workspaceWithConfig(root, selected, overlay)
-	if s.acquiredInputs != nil {
-		if err != nil {
-			s.acquiredInputs[workspaceKey{root, selected}] = "error:" + err.Error()
-		} else {
-			encoded, _ := json.Marshal(struct {
-				Content    string
-				Config     workspace.Config
-				Targets    []workspace.Target
-				Incomplete map[string]bool
-				Notes      []string
-			}{fingerprint(w), w.Config, w.Targets, w.IncompleteScopes, w.NotEvaluated})
-			sum := sha256.Sum256(encoded)
-			s.acquiredInputs[workspaceKey{root, selected}] = hex.EncodeToString(sum[:])
-		}
-	}
-	if err == nil && s.context().Err() == nil && s.workspaces != nil {
-		s.workspaces[workspaceKey{root, selected}] = w
-		boundary := analysis.FactBoundary(w)
-		if boundary == "" || s.factBoundary != "" && s.factBoundary != boundary {
-			s.factMixed = true
-			s.factInput = nil
-		}
-		if !s.factMixed && s.factInput == nil {
-			analysis.RestoreFacts(s.context(), s.facts, w)
-			s.factBoundary = boundary
-			s.factInput = &w
-		}
-	}
-	return w, err
-}
-
-func (s *session) workspaceWithConfig(root, selected string, overlay *string) (workspace.Workspace, error) {
-	uri, err := fileuri.FromPath(filepath.Join(root, ".argo-workflows-ls.yaml"))
-	if err != nil {
-		return workspace.Workspace{}, err
-	}
-	buffers := map[string]source.Snapshot{}
-	for key, b := range s.buffers {
-		if s.root(key) == root {
-			if b.unavailable != "" {
-				empty, _ := source.New(source.URI(key), source.Revision(b.version), "")
-				buffers[key] = empty
-			} else {
-				buffers[key] = b.snapshot
-			}
-		}
-	}
-	w, err := workspace.LoadEditor(s.context(), root, selected, s.override, overlay, s.roots, buffers)
+	all := focus == ""
+	w, proof, err := s.catalog.workspace(s.context(), root, selected, focus, reverse, all, s.method == "textDocument/codeAction" || s.method == "codeAction/resolve")
 	if err != nil {
 		return w, err
 	}
-	seen := map[string]bool{}
-	for i, d := range w.Documents {
-		uri := string(d.Snapshot.URI())
-		seen[uri] = true
-		if b, ok := s.buffers[uri]; ok && b.unavailable == "" {
-			w.Documents[i].Snapshot = b.snapshot
+	s.proofs = append(s.proofs, proof)
+	for n, d := range w.Documents {
+		if b, opened := s.buffers[string(d.Snapshot.URI())]; opened && b.unavailable == "" {
+			w.Documents[n].Snapshot = b.snapshot
 		}
 	}
-	for other, b := range s.buffers {
-		if other != uri && !seen[other] && s.root(other) == root {
-			name, _ := filePath(other)
-			if workspace.HelmTemplate(root, name) {
-				continue
-			}
-			snapshot := b.snapshot
-			if b.unavailable != "" {
-				snapshot, _ = source.New(source.URI(other), source.Revision(b.version), "")
-			}
-			d, err := workspace.OpenDocument(w, snapshot, s.override)
-			if err != nil {
-				return w, err
-			}
-			if selected == "" || d.Target.Scope == selected {
-				w.Documents = append(w.Documents, d)
-			}
+	if s.context().Err() == nil && s.workspaces != nil {
+		s.workspaces[workspaceKey{root, selected}] = w
+		boundary := analysis.FactBoundary(w)
+		if boundary == "" || s.factBoundary != "" && s.factBoundary != boundary {
+			s.factMixed, s.factInput = true, nil
 		}
-	}
-	for uri, b := range s.buffers {
-		if b.unavailable != "" && s.root(uri) == root {
-			if d, err := s.bufferDocument(uri); err == nil && (selected == "" || d.Target.Scope == selected) {
-				w.IncompleteScopes[d.Target.ID] = true
-				w.NotEvaluated = append(w.NotEvaluated, uri+": "+b.unavailable)
-			}
+		if !s.factMixed && s.factInput == nil {
+			analysis.RestoreFacts(s.context(), s.facts, w)
+			s.factBoundary, s.factInput = boundary, &w
 		}
 	}
 	return w, nil
 }
+
+// Configuration quick fixes retarget the already proven current input. They do
+// not start an independent directory walk or overwrite the live catalog header.
+func (s *session) workspaceWithConfig(root, selected string, overlay *string) (workspace.Workspace, error) {
+	before, err := s.workspace(root, selected)
+	if err != nil {
+		return before, err
+	}
+	after, err := workspace.Describe(s.context(), root, s.override, overlay)
+	if err != nil {
+		return after, err
+	}
+	for _, d := range before.Documents {
+		address := string(d.Snapshot.URI())
+		if _, opened := s.buffers[address]; !opened {
+			path, pathErr := filePath(address)
+			if pathErr != nil {
+				return after, pathErr
+			}
+			candidate, candidateErr := workspace.Candidate(after, path, s.roots)
+			if candidateErr != nil {
+				return after, candidateErr
+			}
+			if !candidate {
+				continue
+			}
+		}
+		next, err := workspace.OpenDocument(after, d.Snapshot, s.override)
+		if err != nil {
+			return after, err
+		}
+		if selected == "" || next.Target.Scope == selected {
+			after.Documents = append(after.Documents, next)
+		}
+	}
+	after.IncompleteScopes = before.IncompleteScopes
+	after.NotEvaluated = before.NotEvaluated
+	return after, nil
+}
 func (s *session) publishAffected(uri string) error {
-	root := s.root(uri)
-	name, _ := filePath(uri)
-	isConfig := filepath.Base(name) == ".argo-workflows-ls.yaml"
-	if isConfig {
-		if err := s.publish(uri); err != nil {
-			return err
-		}
-	}
-	changed, changedErr := s.bufferDocument(uri)
-	for other := range s.buffers {
-		otherName, _ := filePath(other)
-		if s.root(other) == root && filepath.Base(otherName) != ".argo-workflows-ls.yaml" {
-			if !isConfig && changedErr == nil {
-				otherDocument, err := s.bufferDocument(other)
-				if err == nil && otherDocument.Target.ID != changed.Target.ID {
-					continue
-				}
-			}
-			if err := s.publish(other); err != nil {
-				return err
-			}
-		}
-	}
-	if _, opened := s.buffers[uri]; !opened && !isConfig {
-		return s.publish(uri)
-	}
-	return nil
+	return s.publish(uri)
 }
 func (s *session) publish(uri string) error {
 	if s.pending != nil {
@@ -334,84 +269,7 @@ func (s *session) publish(uri string) error {
 		}
 		return s.write(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": params})
 	}
-	selected := ""
-	if target, err := s.bufferDocument(uri); err == nil && !strings.HasPrefix(target.Target.Scope, "opened:") {
-		selected = target.Target.Scope
-	}
-	input, err := s.workspace(root, selected)
-	if err != nil {
-		fmt.Fprintln(s.log, "workspace incomplete:", err)
-		params["diagnostics"] = []map[string]any{analysisStatus("WF_ANALYSIS_UNAVAILABLE", err.Error())}
-		return s.write(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": params})
-	}
-	var document *workspace.Document
-	for _, d := range input.Documents {
-		if string(d.Snapshot.URI()) == uri {
-			copy := d
-			document = &copy
-			break
-		}
-	}
-	if opened {
-		if document == nil {
-			d, err := workspace.OpenDocument(input, b.snapshot, s.override)
-			if err != nil {
-				fmt.Fprintln(s.log, "buffer target unresolved:", err)
-			} else {
-				document = &d
-			}
-		} else {
-			document.Snapshot = b.snapshot
-		}
-	}
-	if document != nil {
-		if !compat.Accepted(document.Target.Version) {
-			diagnostics = append(diagnostics, map[string]any{"range": analysis.Range{}, "code": "WF_EXPERIMENTAL_TARGET", "source": "argo-workflows", "severity": 2, "message": compat.ExperimentalReason(document.Target.Version)})
-		}
-		ctx, cancel := context.WithTimeout(analysis.WithLogicalResult(s.context()), 5*time.Second)
-		result := analysis.AnalyzeSchema(ctx, document.Snapshot, document.Target.Version)
-		external, cached := s.externalResults[document.Target.ID]
-		if !cached {
-			external.diagnostics, external.completion = analysis.ExternalDiagnostics(ctx, scopeWorkspace(input, document.Target.ID))
-			if ctx.Err() == nil && s.externalResults != nil {
-				s.externalResults[document.Target.ID] = external
-			}
-		}
-		externalDiagnostics, completion := external.diagnostics, external.completion
-		if !completion[document.Snapshot.URI()].Completed {
-			result.NotEvaluated = append(result.NotEvaluated, "external reference analysis incomplete")
-		}
-		if input.IncompleteScopes[document.Target.ID] {
-			result.NotEvaluated = append(result.NotEvaluated, "scope input is incomplete")
-		}
-		result.NotEvaluated = append(result.NotEvaluated, input.NotEvaluated...)
-		for _, d := range externalDiagnostics {
-			if d.URI == uri {
-				result.Diagnostics = append(result.Diagnostics, d)
-			}
-		}
-		cancel()
-		for _, d := range result.Diagnostics {
-			severity := 1
-			switch d.Severity {
-			case "Warning":
-				severity = 2
-			case "Information":
-				severity = 3
-			case "Hint":
-				severity = 4
-			}
-			diagnostics = append(diagnostics, map[string]any{"range": d.Range, "code": d.Code, "source": d.Source, "severity": severity, "message": d.Message})
-		}
-		if len(result.NotEvaluated) > 0 {
-			diagnostics = append(diagnostics, analysisStatus("WF_ANALYSIS_INCOMPLETE", strings.Join(result.NotEvaluated, "; ")))
-		}
-		for _, note := range result.NotEvaluated {
-			fmt.Fprintln(s.log, "analysis incomplete:", note)
-		}
-	}
-	params["diagnostics"] = diagnostics
-	return s.write(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": params})
+	return s.publishIndexed(uri, params)
 }
 func (s *session) bufferDocument(uri string) (workspace.Document, error) {
 	root := s.root(uri)
@@ -424,6 +282,11 @@ func (s *session) bufferDocument(uri string) (workspace.Document, error) {
 	}
 	if b, ok := s.buffers[uri]; ok {
 		snapshot = b.snapshot
+	}
+	if s.catalog != nil {
+		if header, _, err := s.catalog.header(root); err == nil {
+			return workspace.OpenDocument(header, snapshot, s.override)
+		}
 	}
 	configURI, err := fileuri.FromPath(filepath.Join(root, ".argo-workflows-ls.yaml"))
 	if err != nil {
@@ -448,16 +311,7 @@ func (s *session) queryDocument(uri string) (workspace.Document, error) {
 	if _, ok := s.buffers[uri]; ok {
 		return s.bufferDocument(uri)
 	}
-	w, err := s.workspace(root, "")
-	if err != nil {
-		return workspace.Document{}, err
-	}
-	for _, d := range w.Documents {
-		if string(d.Snapshot.URI()) == uri {
-			return d, nil
-		}
-	}
-	return workspace.Document{}, fmt.Errorf("document not available")
+	return s.catalog.document(s.context(), uri)
 }
 
 // Check retained text before constructing a snapshot. Refused updates retain
@@ -487,20 +341,6 @@ func (s *session) refuseBuffer(uri string, version int32, reason string) error {
 	s.buffers[uri] = b
 	fmt.Fprintln(s.log, reason)
 	return s.publishAffected(uri)
-}
-
-// appendWorkspaceSymbols reuses the CLI's bounded immutable CST preparse.
-// Domain evaluation, expansion admission and result ordering remain sequential
-// in this request's invocation; workers never share mutable analysis state.
-func appendWorkspaceSymbols(ctx context.Context, result []map[string]any, documents []workspace.Document, query string) []map[string]any {
-	analysis.VisitPreparsedDocuments(ctx, documents, func(d workspace.Document) {
-		for _, symbol := range analysis.DomainSymbols(ctx, d.Snapshot, d.Target.Version) {
-			if strings.Contains(symbol.Name, query) {
-				result = append(result, map[string]any{"name": symbol.Name, "kind": symbol.Kind, "containerName": symbol.Container, "location": symbol.Location})
-			}
-		}
-	})
-	return result
 }
 
 func (s *session) handle(m message) (bool, int, error) {
@@ -588,10 +428,14 @@ func (s *session) handle(m message) (bool, int, error) {
 	if m.Method == "textDocument/definition" || m.Method == "textDocument/references" {
 		var p struct {
 			TextDocument protocol.TextDocumentIdentifier `json:"textDocument"`
+			Position     protocol.Position               `json:"position"`
 		}
 		if json.Unmarshal(m.Params, &p) == nil {
 			uri := string(p.TextDocument.URI)
 			if d, err := s.queryDocument(uri); err == nil {
+				if m.Method == "textDocument/definition" {
+					s.callerDefinitions = analysis.DefinitionNeedsCallers(s.context(), d.Snapshot, d.Target.Version, source.Position{Line: p.Position.Line, UTF16Column: p.Position.Character})
+				}
 				if w, err := s.workspace(s.root(uri), d.Target.Scope); err == nil {
 					if raw, ok := s.cachedScopeQuery(m, w); ok {
 						return false, 0, s.reply(m.ID, raw)
@@ -630,6 +474,8 @@ func (s *session) handle(m message) (bool, int, error) {
 			result = analysis.References(ctx, d.Snapshot, d.Target.Version, pos, p.Context.IncludeDeclaration)
 			if w, e := s.workspace(s.root(string(d.Snapshot.URI())), d.Target.Scope); e == nil {
 				result = analysis.ScopeReferences(ctx, scopeWorkspace(w, d.Target.ID), string(d.Snapshot.URI()), pos, p.Context.IncludeDeclaration)
+			} else {
+				return false, 0, s.failure(m.ID, -32803, e.Error())
 			}
 		}
 		return false, 0, s.reply(m.ID, result)
@@ -652,21 +498,9 @@ func (s *session) handle(m message) (bool, int, error) {
 		if err := json.Unmarshal(m.Params, &p); err != nil {
 			return false, 0, s.failure(m.ID, -32602, err.Error())
 		}
-		result := []map[string]any{}
-		for _, root := range s.roots {
-			w, err := s.workspace(root, "")
-			if err != nil {
-				return false, 0, s.failure(m.ID, -32803, err.Error())
-			}
-			result = appendWorkspaceSymbols(s.context(), result, w.Documents, p.Query)
-		}
-		if s.context().Err() != nil {
-			return false, 0, s.failure(m.ID, -32800, "request timed out or cancelled")
-		}
-		if err := analysis.ExpansionError(s.context()); err != nil {
-			return false, 0, s.failure(m.ID, -32803, err.Error())
-		}
-		return false, 0, s.reply(m.ID, result)
+		items, proofs := s.catalog.workspaceSymbols(p.Query)
+		s.proofs = append(s.proofs, proofs...)
+		return false, 0, s.reply(m.ID, items)
 	case "textDocument/completion", "textDocument/hover":
 		var p protocol.TextDocumentPositionParams
 		if err := json.Unmarshal(m.Params, &p); err != nil {
@@ -697,9 +531,16 @@ func (s *session) handle(m message) (bool, int, error) {
 				if raw, ok := s.cachedScopeQuery(m, w); ok {
 					return false, 0, s.reply(m.ID, raw)
 				}
-				external, externalErr := analysis.CompleteExternalNames(ctx, scopeWorkspace(w, document.Target.ID), uri, pos)
+				external, candidates, externalErr := analysis.CompleteExternalNames(ctx, scopeWorkspace(w, document.Target.ID), uri, pos, s.catalog.index)
 				if externalErr != nil {
 					err = externalErr
+				}
+				if len(candidates) > 0 {
+					proof, current := s.catalog.candidateProof(s.root(uri), candidates)
+					if !current {
+						return false, 0, s.failure(m.ID, -32801, "resource candidates changed during completion")
+					}
+					s.proofs = append(s.proofs, proof)
 				}
 				items = append(items, external...)
 			}
@@ -830,11 +671,6 @@ func (s *session) handle(m message) (bool, int, error) {
 					delete(s.actions, token)
 				}
 			}
-			for key := range s.acquiredInputs {
-				if key.root == path {
-					delete(s.acquiredInputs, key)
-				}
-			}
 			s.queryResults = map[string]json.RawMessage{}
 			s.queryBytes = 0
 			s.facts = nil
@@ -881,9 +717,21 @@ func (s *session) handle(m message) (bool, int, error) {
 			s.override = p.Settings.TargetVersion
 		}
 		s.epoch++
-		for uri := range s.buffers {
-			if err := s.publish(uri); err != nil {
-				return false, 0, err
+		if m.Method == "textDocument/didSave" {
+			var p struct {
+				TextDocument struct {
+					URI string `json:"uri"`
+				} `json:"textDocument"`
+			}
+			if json.Unmarshal(m.Params, &p) == nil {
+				return false, 0, s.publish(p.TextDocument.URI)
+			}
+		}
+		if m.Method == "workspace/didChangeConfiguration" {
+			for uri := range s.buffers {
+				if err := s.publish(uri); err != nil {
+					return false, 0, err
+				}
 			}
 		}
 		return false, 0, nil

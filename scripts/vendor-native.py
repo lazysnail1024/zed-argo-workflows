@@ -20,12 +20,27 @@ for module,dirs in {'github.com/tree-sitter/go-tree-sitter':['include','src'],'g
 number=root/'vendor/golang.org/x/text/internal/number'
 p=number/'number.go';p.write_text(p.read_text().replace("could return '\u4e09'", 'could return U+4E09 (CJK digit three)'))
 p=number/'tables.go';p.write_text(p.read_text().replace('\u975e\u6578\u503c\u975e\u6570\u503c', r'\u975e\u6578\u503c\u975e\u6570\u503c'))
-# Apply the single recorded local Expr formatter patch after a fresh vendor.
+# Apply the recorded local Expr formatter patch after a fresh vendor.
 expr_patch=json.loads((root/'contracts/expr-patch.json').read_text())
 p=root/expr_patch['file'];original=p.read_bytes()
 if hashlib.sha256(original).hexdigest()!=expr_patch['upstreamSha256']:raise SystemExit('Expr source does not match the pinned patch input')
 patched=original.decode().replace('var indLine = "\\n | "','var indLine strings.Builder\n\t\tindLine.WriteString("\\n | ")').replace('indLine += "."', "indLine.WriteByte('.')").replace('indLine += "^"', "indLine.WriteByte('^')").replace('srcLine += indLine','srcLine += indLine.String()').encode()
 if hashlib.sha256(patched).hexdigest()!=expr_patch['patchedSha256']:raise SystemExit('Expr patch output hash differs')
+p.write_bytes(patched)
+# Preserve the already-vendored schema compiler optimization as well. Its
+# ordered queue and indexed lookup must survive regenerating dependencies.
+schema_patch=json.loads((root/'contracts/jsonschema-patch.json').read_text())
+p=root/schema_patch['file'];original=p.read_bytes()
+if hashlib.sha256(original).hexdigest()!=schema_patch['upstreamSha256']:raise SystemExit('JSON Schema source does not match the pinned patch input')
+patched=(original.decode()
+ .replace('for _, sch := range *q {', 'for _, sch := range q.ordered {')
+ .replace('type queue []*Schema', 'type queue struct {\n\tordered []*Schema\n\tindexed map[urlPtr]*Schema\n}')
+ .replace('\t*q = append(*q, sch)', '\tif q.indexed == nil {\n\t\tq.indexed = make(map[urlPtr]*Schema)\n\t}\n\tq.ordered = append(q.ordered, sch)\n\tq.indexed[sch.up] = sch')
+ .replace('\ti := slices.IndexFunc(*q, func(sch *Schema) bool { return sch.up == up })\n\tif i != -1 {\n\t\treturn (*q)[i]\n\t}\n\treturn nil', '\treturn q.indexed[up]')
+ .replace('return (*q)[i]', 'return q.ordered[i]')
+ .replace('return len(*q)', 'return len(q.ordered)')
+).encode()
+if hashlib.sha256(patched).hexdigest()!=schema_patch['patchedSha256']:raise SystemExit('JSON Schema patch output hash differs')
 p.write_bytes(patched)
 (root/'artifacts').mkdir(exist_ok=True)
 (root/'artifacts/vendor-native.json').write_text(json.dumps({'command':'python3 scripts/vendor-native.py','reason':'go mod vendor omits C include/source subdirectories required by cgo','files':records},indent=2)+'\n')

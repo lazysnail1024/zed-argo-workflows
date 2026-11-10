@@ -68,6 +68,12 @@ class LSP:
         self.raw, self.sent, self.received, self.q = bytearray(), [], [], queue.Queue()
         self.next_id = 0
         self.p = subprocess.Popen([str(BINARY), 'serve', '--stdio'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.stderr_raw = bytearray()
+        def read_stderr():
+            while data := self.p.stderr.read1(4096):
+                self.stderr_raw.extend(data)
+        self.stderr_reader = threading.Thread(target=read_stderr, daemon=True)
+        self.stderr_reader.start()
         def read():
             try:
                 while True:
@@ -125,7 +131,8 @@ class LSP:
             if self.p.poll() is None: self.p.kill(); self.p.wait()
             self.reader.join(timeout=1)
             (self.dest / 'lsp.stdout.raw').write_bytes(self.raw)
-            (self.dest / 'lsp.stderr.raw').write_bytes(self.p.stderr.read())
+            self.stderr_reader.join(timeout=1)
+            (self.dest / 'lsp.stderr.raw').write_bytes(self.stderr_raw)
             save(self.dest / 'traffic.json', {'sent': self.sent, 'received': self.received})
             save(self.dest / 'lsp.command.json', {'argv': [str(BINARY), 'serve', '--stdio'], 'exitCode': self.p.returncode})
 
@@ -199,7 +206,21 @@ def pin_case(name,config,needle,expected,override='',change=False,closed=False,e
         resource=work/'dev/case.yaml'; client.open(resource,resource.read_text())
         path=work/'.argo-workflows-ls.yaml'
         if not closed:
+            marker = len(client.stderr_raw)
             client.send('textDocument/didOpen',{'textDocument':{'uri':path.as_uri(),'version':7,'languageId':'yaml','text':config}})
+            # Metadata refresh is asynchronous. Both offered and refused pins
+            # are judged only after the current small fixture finishes discovery.
+            deadline = time.monotonic() + 5
+            ready = False
+            while time.monotonic() < deadline and not ready:
+                for line in bytes(client.stderr_raw)[marker:].splitlines():
+                    try:
+                        state = json.loads(line)
+                        ready = ready or state.get('phase') == 'index' and state.get('state') in ('Ready', 'Limited')
+                    except (ValueError, UnicodeError):
+                        pass
+                if not ready: time.sleep(.01)
+            assert ready, 'configuration refresh did not finish'
         response=actions(client,path,config,needle)
         got=edits(client,response,config,path,7) if not closed else []
         assertions={'request_succeeded':closed or isinstance(response.get('result'),list),'exact_pin_bytes':got==expected,'disk_unchanged':{p.relative_to(work):p.read_bytes() for p in work.rglob('*') if p.is_file()}==disk_before}

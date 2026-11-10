@@ -7,14 +7,20 @@ spec=importlib.util.spec_from_file_location('consumer',root/'tests/e2e/wf-audit-
 def notify_change(lsp,file,text,version):lsp.send('textDocument/didChange',{'textDocument':{'uri':file.as_uri(),'version':version},'contentChanges':[{'text':text}]})
 base='apiVersion: argoproj.io/v1alpha1\nkind: Workflow\nmetadata: {name: main}\nspec: {parallelism: wrong}\n'
 try:
- dest,work=a.setup('roots-buffers',{'case.yaml':base,'nested/other.yaml':a.BASE,'nested/.argo-workflows-ls.yaml':a.CONFIG,'chart/Chart.yaml':'apiVersion: v2\nname: example\nversion: 0.1.0\n','chart/templates/raw.yaml':base,'vendor/open.yaml':base})
+ dest,work=a.setup('roots-buffers',{'case.yaml':base,'nested/other.yaml':a.BASE,'caller.yaml':a.CALLER,'nested/.argo-workflows-ls.yaml':a.CONFIG,'chart/Chart.yaml':'apiVersion: v2\nname: example\nversion: 0.1.0\n','chart/templates/raw.yaml':base,'vendor/open.yaml':base})
  lsp=a.LSP(dest,work)
  try:
   file=work/'case.yaml';ds=lsp.open(file,base);assert any(x['code']=='SCHEMA_TYPE' for x in ds)
   # A workspace-folder change must move the nested resource out of the parent's index.
   lsp.send('workspace/didChangeWorkspaceFolders',{'event':{'added':[{'uri':(work/'nested').as_uri(),'name':'nested'}],'removed':[]}})
+  deadline=time.monotonic()+5
   response=lsp.request('workspace/symbol',{'query':'work'})
-  a.result('nested-root-single-owner',{'one_nested_symbol':len(response.get('result',[]))==1},response)
+  while not response.get('result') and time.monotonic()<deadline:
+   time.sleep(.02);response=lsp.request('workspace/symbol',{'query':'work'})
+  caller=work/'caller.yaml';lsp.open(caller,a.CALLER)
+  response=lsp.request('workspace/symbol',{'query':'work'})
+  definition=lsp.request('textDocument/definition',{'textDocument':{'uri':caller.as_uri()},'position':a.pos(a.CALLER,'template: work',offset=11)})
+  a.result('nested-root-single-owner',{'one_nested_symbol':len(response.get('result',[]))==1,'registered_root_prevents_cross_scope_binding':definition.get('result')==[]}, {'symbols':response,'definition':definition})
   raw=work/'chart/templates/raw.yaml';ds=lsp.open(raw,base)
   a.result('helm-open-skipped',{'no_raw_template_diagnostics':ds==[]},ds)
   ds=lsp.open(work/'vendor/open.yaml',base)

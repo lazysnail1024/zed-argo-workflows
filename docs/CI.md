@@ -18,13 +18,14 @@ smaller packaging convenience, not the complete acceptance check.
 
 | Job | Hosts | Evidence and acceptance |
 | --- | --- | --- |
-| Native | Linux amd64/arm64, macOS amd64/arm64, Windows amd64 | Build the real CGO executable from vendor; `go vet`; CLI and stdio LSP consumers; test installer lifecycle; compile source and developer-package Rust adapters to `wasm32-wasip2`; generate and verify each native development ZIP |
+| Native | Linux amd64/arm64, macOS amd64/arm64, Windows amd64 | Build the real CGO executable from vendor; focused Go tests and `go vet`; Linux race check; CLI and stdio LSP consumers; test installer lifecycle; compile source and developer-package Rust adapters to `wasm32-wasip2`; generate and verify each native development ZIP |
 | Extended semantic | Linux amd64, three independent shards | Existing workflow/reference/inheritance/DAG/query/edit/lifecycle consumers, source asset integrity, snippets, pinned offline Argo and Helm integration |
 | Schema contracts | Linux amd64, semantic shard 0 | Actual CRD boundaries and separately built synthetic schema query/branch/projection fixtures |
 | Resource adversarial | Linux amd64 | Actual cgroup memory limits, oversized aggregate input, expression depth/width, buffer/snapshot limits, alias/merge budgets, subprocess output floods, timeout/cancellation and descendant reclamation |
 | Resource load | Linux amd64 | Existing 10,000-file/50 MiB workload, cold and active diagnostics, query semantics/latency, 600 edits over 60 seconds, 10,000 open/edit/close operations, memory retention, explicit CLI cancellation |
-| Mutation core | Linux amd64 | Passing baseline plus detection of eight specific semantic mutations |
-| Mutation audit | Linux amd64 | Passing baseline plus ten targeted mutations for metadata Rename, missed-watcher recovery, configuration diagnostics, isolated-scope actions, completion acquisition and cache freshness |
+| Resource index | Linux amd64 | Five fresh samples each of 10,000 and 50,000 WorkflowTemplates with 4 KiB padding; four CPUs/8 GiB/no swap, complete first and second discovery passes, current-file latency, missed-event convergence and 512 MiB server RSS |
+| Mutation core | Linux amd64 | Passing baseline plus detection of nine specific semantic mutations |
+| Mutation audit | Linux amd64 | Passing baseline plus nine targeted mutations for metadata Rename, missed-watcher recovery, configuration diagnostics, isolated-scope actions, completion acquisition and cache freshness |
 | Mutation resources | Linux amd64 | Passing baseline plus output-limit and descendant-reclamation mutations under a 512 MiB cgroup |
 
 The native matrix uses the same runner families and pinned toolchain/action
@@ -106,7 +107,7 @@ also requires tampering and the old path layout to fail verification.
 `wf-reaudit-query-io.py` runs in the Linux extended suite and counts actual file
 open events on its private fixtures with inotify. Local completion and isolated
 configuration validation must open zero resource files. Each external completion
-must acquire its selected dependency once and never read the unrelated scope.
+must acquire its selected dependency once and never read the unrelated scope. Measurement starts after the initial bounded discovery pass, so independent discovery I/O cannot masquerade as foreground acquisition.
 Every request must still return the correct nonempty candidates. Elapsed times
 are descriptive evidence, not the acceptance predicate; the existing constrained
 load and latency gates remain in place.
@@ -128,15 +129,14 @@ snapshot as the mutants; it cannot silently test a stale prebuilt executable.
 | Request cancellation | Explicit cancellation response |
 | YAML scalar edit encoding | Exact completion/edit bytes for five cases |
 | Metadata raw binding | Literal annotations remain untouched and plain prose cannot block Rename |
-| Foreground reconciliation baseline | New correct diagnostics after both creating and deleting a dependency, even after a foreground query |
+| Incomplete publication acknowledgement | A local-only publication cannot hide the required external publication after a complete reconciliation pass |
 | Obsolete publication scope | Rebinding a configured scope does not cause periodic invalidation of unchanged input |
 | Editor-only scope acquisition | Exact immediate Quick Fix edits for excluded and internal-directory buffers |
 | Isolated action configuration identity | Policy and default-namespace changes invalidate a previously offered edit |
 | Configuration diagnostic path | A valid configuration buffer has an empty diagnostic inventory |
 | Local completion acquisition | Correct local candidates with no scope resource reads |
 | External completion acquisition | Correct selected-scope candidates with no unrelated scope reads |
-| Query cache input identity | A disk change without a watcher cannot reuse stale completion candidates |
-| Query cache effective configuration | Changing the default namespace changes isolated-document completion candidates |
+| Detached candidate generation | A new indexed resource invalidates a warm resource-name completion even though the materialized caller bytes are unchanged |
 | Tool output budget | Bounded combined stdout/stderr |
 | Process tree cleanup | No surviving descendants after tool exit |
 
@@ -171,8 +171,8 @@ path before launch; the tests' own resource guards remain unchanged.
 The fixed workload intentionally alternates 50 accepted 3.6 scopes and 50
 experimental 3.5 scopes. Its CLI result must therefore be exit 2 with exactly
 the documented experimental reasons, all 10,000 file/resource counts, correct
-scope identities and no unrelated errors. The existing five-second analysis
-bound is still required. An unexpected deadline is not accepted as an
+scope identities and no unrelated errors. The existing five-second CLI analysis
+bound is still required. The cold LSP symbol consumer separately requires a responsive partial query, complete Ready discovery within 60 seconds, then all 20,000 expected declarations in a query within five seconds. An unexpected deadline is not accepted as an
 experimental-target result. Load tests run sequentially on their dedicated job;
 they are not multiplied concurrently inside the same runner.
 
@@ -293,3 +293,41 @@ Quick Fix plus undo, settings forwarding, error visibility/recovery, cache repai
 and coexistence with YAML/Helm servers. Record Zed version, OS/architecture,
 extension/native hashes, settings, logs and observed outcomes. Use the explicit per-platform checklist in [Distribution and store readiness](distribution.md). A previous local
 Zed result must not be attributed to a different CI artifact or another platform.
+
+## Persistent editor index gates
+
+[The architecture and freshness contract](incremental-workspace.md) describe the
+production integration. The native suite now includes `wf-index-boundaries`,
+`wf-mixed-parent-index`, `wf-persistent-workspace` and `wf-persistent-slowio`.
+The two consumers that emit a single `checks` object are independently validated
+for a nonempty all-boolean assertion inventory; an exit-zero or `pass: true` alone
+is insufficient. The build tests `internal/analysis`, `internal/lsp` and
+`internal/workspace` inside the exact disposable source snapshot used for release
+builds. Linux also runs those packages with `-race`.
+
+Known file changes are observable immediately; an unknown URI created without a
+watcher is required to converge through the natural reconciliation pass. Tests
+that exercise explicit creation, configuration and close transitions retain every
+intermediate response and forbid obsolete external locations while waiting for
+the final exact candidate. Unrelated files no longer cause a diagnostic publication
+barrier: consumers observe their actual indexed symbols before testing scope edit
+proofs. None of these tests weaken missing-target, unique-binding or exact-edit
+requirements while the selected scope is complete.
+
+The curated mutations target current catalog ownership, publication acknowledgement
+and scope generations. The removed publication-input map and full-directory
+foreground acquisition are not retained as dead code for historical selectors.
+Warm-query disk/configuration scenarios remain in the positive suite; the current
+cache mutation specifically removes the generation of detached candidates, whose
+source is outside the materialized closure.
+
+Run the bounded dense-resource samples with:
+
+```sh
+python tests/ci/resources.py --suite index --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/index
+```
+
+Recorded local evidence and its limits are in
+[the validation record](incremental-index-validation.md). CI wiring is not evidence
+that its five native platforms, the constrained five-sample matrix, or real Zed
+interaction have already run for an uncommitted candidate.

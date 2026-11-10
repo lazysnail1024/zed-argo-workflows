@@ -47,7 +47,7 @@ func runContext(parent context.Context, args []string) int {
 			fmt.Fprintln(os.Stderr, "usage: version --json")
 			return 2
 		}
-		emit(map[string]any{"product": "argo-workflows", "serverVersion": buildinfo.ServerVersion, "adapterContractVersion": 1, "analysisReady": true, "defaultTargetVersion": compat.DefaultVersion, "acceptedTargetVersions": compat.SupportedVersions(), "supportedTargetVersions": compat.SupportedVersions(), "supportedMajors": compat.SupportedMajors(), "supportedVersionRange": compat.SupportedRange(), "automaticVersionSupport": true, "configSchemaVersions": []int{1}, "reportSchemaVersions": []int{1}, "toolkitVersion": "v0.0.0-20261103033718-ae52b82ec6c9", "catalogHash": compat.Hash(), "sourceCommit": buildinfo.Commit(), "dirty": buildinfo.IsDirty(), "buildMode": buildinfo.BuildMode})
+		emit(map[string]any{"product": "argo-workflows", "serverVersion": buildinfo.ServerVersion, "adapterContractVersion": 1, "analysisReady": true, "defaultTargetVersion": compat.DefaultVersion, "acceptedTargetVersions": compat.SupportedVersions(), "supportedTargetVersions": compat.SupportedVersions(), "supportedMajors": compat.SupportedMajors(), "supportedVersionRange": compat.SupportedRange(), "automaticVersionSupport": true, "configSchemaVersions": []int{1}, "reportSchemaVersions": []int{1}, "toolkitVersion": buildinfo.ToolkitVersion(), "catalogHash": compat.Hash(), "sourceCommit": buildinfo.Commit(), "dirty": buildinfo.IsDirty(), "buildMode": buildinfo.BuildMode})
 		return 0
 	case "check":
 		flags := flag.NewFlagSet("check", flag.ContinueOnError)

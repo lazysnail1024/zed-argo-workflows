@@ -197,7 +197,15 @@ def completion():
         alpha.unlink()
         deleted = ask("disk-delete")
         alpha.write_text(library("work-restored"))
+        # A removed URI is no longer a known candidate. New membership is
+        # event driven; the separate reconciliation suite omits this watcher
+        # and requires natural discovery to converge within its real period.
+        client.send('workspace/didChangeWatchedFiles', {'changes': [{'uri': alpha.as_uri(), 'type': 1}]})
+        until = time.monotonic() + 5
         restored = ask("disk-restore")
+        while labels(restored) != ["work-restored"] and time.monotonic() < until:
+            time.sleep(.02)
+            restored = ask("disk-restore")
         switched = SCOPES.replace('"alpha/**"', '"SWAP/**"').replace('"beta/**"', '"alpha/**"').replace('"SWAP/**"', '"beta/**"')
         client.open(cfg, switched)
         scope = ask("configuration-scope-change")
@@ -206,6 +214,11 @@ def completion():
         overlay = ask("unsaved-callee")
         client.send("textDocument/didClose", {"textDocument": {"uri": beta.as_uri()}})
         closed = ask("callee-close")
+        immediate_close = closed
+        until = time.monotonic() + 5
+        while labels(closed) != ["work-beta"] and time.monotonic() < until:
+            time.sleep(.02)
+            closed = ask("callee-close")
         m.result("external-completion-cache", {
             "initial_scope_isolated": labels(initial) == ["work-alpha"],
             "repeat_exact_candidates": labels(cached) == ["work-alpha"],
@@ -215,6 +228,7 @@ def completion():
             "configuration_scope_invalidates_query": labels(scope) == ["work-beta"],
             "unsaved_callee_is_authoritative": labels(overlay) == ["work-overlay"],
             "callee_close_restores_disk": labels(closed) == ["work-beta"],
+            "close_does_not_reuse_overlay_candidate": "work-overlay" not in labels(immediate_close),
             "no_protocol_errors": all("error" not in r for r in responses.values()),
         }, {"responses": responses, "changedConfiguration": switched})
     finally:

@@ -34,6 +34,8 @@ NATIVE = (
     "wf-reaudit-rename", "wf-reaudit-actions", "wf-reaudit-queries",
     "wf-reaudit-reconciliation", "wf-report-deadline",
     "wf-diagnostic-ownership", "wf-diagnostic-deadline",
+    "wf-index-boundaries", "wf-mixed-parent-index", "wf-persistent-workspace",
+    "wf-persistent-slowio",
 )
 EXTENDED = (
     "wf-audit-gaps", "wf-lifecycle", "wf-lifecycle-gaps",
@@ -155,6 +157,8 @@ def validate_results(path, *, pass_key="pass", assertion_key="assertions", requi
 
 
 def consumer_results(name, destination):
+    if name in ("wf-mixed-parent-index", "wf-persistent-workspace"):
+        return validate_results(destination / "results.json", assertion_key="checks", require_assertions=True)
     if name not in AGGREGATED:
         return validate_results(destination / "results.json")
     key = AGGREGATED[name]
@@ -388,12 +392,14 @@ def build(args):
             try:
                 checked(compile_command, output / "compile", timeout=600, env=env, cwd=snapshot)
                 retain_windows_runtime(snapshot)
+                checked(["go", "test", "-mod=vendor", "-count=1", "./internal/analysis", "./internal/lsp", "./internal/workspace"], output / "go-tests", timeout=300, env=env, cwd=snapshot)
                 checked(["go", "vet", "-mod=vendor", "./..."], output / "vet", timeout=300, env=env, cwd=snapshot)
             finally:
                 checked(["git", "worktree", "remove", "--force", snapshot], output / "source-worktree-cleanup")
     else:
         checked(compile_command, output / "compile", timeout=600, env=env)
         retain_windows_runtime(ROOT)
+        checked(["go", "test", "-mod=vendor", "-count=1", "./internal/analysis", "./internal/lsp", "./internal/workspace"], output / "go-tests", timeout=300, env=env)
         checked(["go", "vet", "-mod=vendor", "./..."], output / "vet", timeout=300, env=env)
     checked(["go", "version", "-m", binary], output / "native-build", env=env)
     identity = json.loads(checked([binary, "version", "--json"], output / "identity"))

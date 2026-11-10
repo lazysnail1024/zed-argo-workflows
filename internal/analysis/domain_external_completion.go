@@ -2,10 +2,12 @@ package analysis
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/lazysnail1024/k8s-crd-toolkit/index"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
 )
@@ -85,7 +87,7 @@ func completeExternalMembers(ctx context.Context, w workspace.Workspace, uri str
 	return result, ctx.Err()
 }
 
-func CompleteExternalNames(ctx context.Context, w workspace.Workspace, uri string, pos source.Position) ([]map[string]any, error) {
+func CompleteExternalNames(ctx context.Context, w workspace.Workspace, uri string, pos source.Position, known *index.Index) ([]map[string]any, []index.Definition, error) {
 	result := []map[string]any{}
 	resources, _, _, _ := externalResources(ctx, w, true)
 	for _, caller := range resources {
@@ -95,14 +97,14 @@ func CompleteExternalNames(ctx context.Context, w workspace.Workspace, uri strin
 		}
 		offset, err := snapshot.Offset(pos)
 		if err != nil {
-			return result, err
+			return result, nil, err
 		}
 		if offset < caller.root.Span().Start || offset > caller.root.Span().End {
 			continue
 		}
 		field, err := queryField(ctx, snapshot, caller.document.Target.Version, pos)
 		if err != nil {
-			return result, err
+			return result, nil, err
 		}
 		n := len(field.path)
 		if field.key || n < 2 || field.path[n-2] != "templateRef" && field.path[n-2] != "workflowTemplateRef" {
@@ -141,6 +143,9 @@ func CompleteExternalNames(ctx context.Context, w workspace.Workspace, uri strin
 		prefix := strings.Trim(snapshot.Text()[field.span.Start:end], "\"'")
 		if strings.Contains(prefix, "{{") {
 			continue
+		}
+		if leaf == "name" && known != nil {
+			return completeIndexedResourceNames(ctx, known, caller, field, prefix, wanted, cluster)
 		}
 		counts := map[string]int{}
 		inexact := map[string]bool{}
@@ -196,7 +201,51 @@ func CompleteExternalNames(ctx context.Context, w workspace.Workspace, uri strin
 		}
 	}
 	if len(result) == 0 {
-		return completeExternalMembers(ctx, w, uri, pos)
+		items, err := completeExternalMembers(ctx, w, uri, pos)
+		return items, nil, err
 	}
-	return result, ctx.Err()
+	return result, nil, ctx.Err()
+}
+
+// Resource-name suggestions need only detached identities. Template members
+// continue through the existing domain engine on the dependency closure above.
+func completeIndexedResourceNames(ctx context.Context, known *index.Index, caller resource, field fieldContext, prefix, wanted string, cluster bool) ([]map[string]any, []index.Definition, error) {
+	result := []map[string]any{}
+	used := []index.Definition{}
+	scope := index.Scope(caller.document.Target.ID)
+	rows, err := known.Symbols(scope, prefix, 1000)
+	if err != nil {
+		return result, used, err
+	}
+	seen := map[index.Key]bool{}
+	for _, row := range rows.Items {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, err
+		}
+		if seen[row.Symbol.Key] {
+			continue
+		}
+		seen[row.Symbol.Key] = true
+		var identity [3]string
+		if json.Unmarshal([]byte(row.Symbol.Key), &identity) != nil {
+			continue
+		}
+		kind, namespace, name := identity[0], identity[1], identity[2]
+		if kind != wanted || name == "" || !strings.HasPrefix(name, prefix) || !cluster && (caller.namespace == "" || namespace != caller.namespace) {
+			continue
+		}
+		definitions, _ := known.Definitions(scope, row.Symbol.Key)
+		if len(definitions) != 1 {
+			continue
+		}
+		row = definitions[0]
+		if cluster {
+			namespace = "cluster"
+		}
+		origin := kind + " · namespace: " + namespace + " · source: " + string(row.URI)
+		result = append(result, map[string]any{"label": name, "kind": 6, "detail": origin + " · Argo Workflows " + caller.document.Target.Version, "insertTextFormat": 1, "textEdit": map[string]any{"range": queryRange(caller.document.Snapshot, field.span), "newText": field.before + strconv.Quote(name) + field.after}})
+		used = append(used, row)
+	}
+	sort.Slice(result, func(a, b int) bool { return result[a]["label"].(string) < result[b]["label"].(string) })
+	return result, used, nil
 }

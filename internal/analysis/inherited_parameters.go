@@ -54,6 +54,31 @@ type inheritedParameterQuery struct {
 	localDefinitions map[Location]bool
 }
 
+// A WorkflowTemplate body can inherit a workflow parameter from any caller.
+// Its definition query therefore needs the reverse dependency closure too;
+// ordinary template/name navigation only needs outgoing resource identities.
+func DefinitionNeedsCallers(ctx context.Context, snapshot source.Snapshot, version string, position source.Position) bool {
+	offset, err := snapshot.Offset(position)
+	if err != nil {
+		return false
+	}
+	bindings, _ := collectLocalBindings(ctx, snapshot, version, offset, true)
+	if bindings == nil {
+		return false
+	}
+	for span, keys := range bindings.queryPositions {
+		if offset < span.Start || offset > span.End {
+			continue
+		}
+		for key := range keys {
+			if key.kind == "workflow.parameters" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (p *inheritedParameterQuery) add(loc Location, sources []workflowParameterSource, incomplete bool) {
 	use := p.uses[loc]
 	if use == nil {

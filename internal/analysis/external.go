@@ -701,6 +701,11 @@ func ExternalDefinitions(ctx context.Context, w workspace.Workspace, uri string,
 // ambiguous resource or local symbol.
 func ScopeReferences(ctx context.Context, w workspace.Workspace, uri string, pos source.Position, includeDeclaration bool) []Location {
 	result := []Location{}
+	for _, document := range w.Documents {
+		if string(document.Snapshot.URI()) == uri && w.IncompleteScopes[document.Target.ID] {
+			return result
+		}
+	}
 	query := &externalQuery{offset: -1, references: true, uri: uri, position: pos}
 	_, bindings, _, _ := external(ctx, w, query)
 	for _, selection := range query.blocked {

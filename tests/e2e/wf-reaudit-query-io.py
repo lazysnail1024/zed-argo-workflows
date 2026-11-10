@@ -171,11 +171,21 @@ def configuration():
     dest, work = setup("configuration-io")
     client = m.LSP(dest, work)
     try:
+        path = work / ".argo-workflows-ls.yaml"
+        initial = client.open(path, SCOPES)
+        # The independent discovery worker may read resources after initialize.
+        # Measure unchanged config validation after that first pass, so the
+        # assertion concerns this input event rather than background indexing.
+        deadline = time.monotonic() + 10
+        while b'"state":"Ready"' not in client.stderr_raw:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("initial discovery did not become Ready")
+            time.sleep(.01)
         with reads(work) as counter:
-            diagnostics = client.open(work / ".argo-workflows-ls.yaml", SCOPES)
+            diagnostics = client.change(path, SCOPES, 2)
             opened = counter.take()
         m.result("configuration-io", {
-            "valid_config_clean": diagnostics == [],
+            "valid_config_clean": initial == [] and diagnostics == [],
             "no_resource_reads": sum(opened.values()) == 0,
         }, {"diagnostics": diagnostics, "fileOpens": opened})
     finally:

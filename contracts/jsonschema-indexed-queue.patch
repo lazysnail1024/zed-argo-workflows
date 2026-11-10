@@ -1,0 +1,50 @@
+--- a/vendor/github.com/santhosh-tekuri/jsonschema/v6/compiler.go
++++ b/vendor/github.com/santhosh-tekuri/jsonschema/v6/compiler.go
+@@ -207,7 +207,7 @@
+ 		}
+ 		compiled++
+ 	}
+-	for _, sch := range *q {
++	for _, sch := range q.ordered {
+ 		c.schemas[sch.up] = sch
+ 	}
+ 	return c.schemas[up], nil
+@@ -280,26 +280,29 @@
+ 
+ // queue --
+ 
+-type queue []*Schema
++type queue struct {
++	ordered []*Schema
++	indexed map[urlPtr]*Schema
++}
+ 
+ func (q *queue) append(sch *Schema) {
+-	*q = append(*q, sch)
++	if q.indexed == nil {
++		q.indexed = make(map[urlPtr]*Schema)
++	}
++	q.ordered = append(q.ordered, sch)
++	q.indexed[sch.up] = sch
+ }
+ 
+ func (q *queue) at(i int) *Schema {
+-	return (*q)[i]
++	return q.ordered[i]
+ }
+ 
+ func (q *queue) len() int {
+-	return len(*q)
++	return len(q.ordered)
+ }
+ 
+ func (q *queue) get(up urlPtr) *Schema {
+-	i := slices.IndexFunc(*q, func(sch *Schema) bool { return sch.up == up })
+-	if i != -1 {
+-		return (*q)[i]
+-	}
+-	return nil
++	return q.indexed[up]
+ }
+ 
+ // regexp --
