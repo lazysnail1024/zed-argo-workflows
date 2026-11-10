@@ -42,6 +42,14 @@ class Mutation:
 
 MUTATIONS = (
     Mutation(
+        "diagnostic-ownership", "core", "unrelated YAML diagnostic isolation", "internal/lsp/serve.go",
+        (("if state.ownsPublication(uri) {", "if true {"),),
+        "wf-diagnostic-ownership.py",
+        tuple((name, "no_workflows_diagnostics") for name in (
+            "deployment", "application", "applicationset", "values", "mixed-foreign",
+        )),
+    ),
+    Mutation(
         "report-deadline-exit", "core", "completed report / slow stdout", "cmd/argo-workflows-ls/main.go",
         (("\t\tif analysisErr != nil {\n\t\t\treturn 3\n\t\t}",
           "\t\tif ctx.Err() != nil {\n\t\t\treturn 3\n\t\t}"),),

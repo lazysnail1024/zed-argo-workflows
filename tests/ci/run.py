@@ -33,6 +33,7 @@ NATIVE = (
     "wf-toolkit-budget", "wf-remediation-helm-boundary",
     "wf-reaudit-rename", "wf-reaudit-actions", "wf-reaudit-queries",
     "wf-reaudit-reconciliation", "wf-report-deadline",
+    "wf-diagnostic-ownership", "wf-diagnostic-deadline",
 )
 EXTENDED = (
     "wf-audit-gaps", "wf-lifecycle", "wf-lifecycle-gaps",

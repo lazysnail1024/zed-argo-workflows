@@ -910,5 +910,9 @@ func scopeWorkspace(w workspace.Workspace, target string) workspace.Workspace {
 }
 
 func analysisStatus(code, reason string) map[string]any {
-	return map[string]any{"range": analysis.Range{}, "code": code, "source": "argo-workflows", "severity": 2, "message": "Analysis did not complete: " + reason + ". Correct the input or configuration to retry."}
+	message := "Analysis did not complete: " + reason + ". Correct the input or configuration to retry."
+	if strings.Contains(reason, "deadline exceeded") {
+		message = "Analysis timed out: " + reason + ". Save the document to retry; check the language server log if this persists."
+	}
+	return map[string]any{"range": analysis.Range{}, "code": code, "source": "argo-workflows", "severity": 2, "message": message}
 }
