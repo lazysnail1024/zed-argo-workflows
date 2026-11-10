@@ -76,4 +76,4 @@ argo-workflows-ls serve --stdio
 Analysis is local: it does not access a cluster, execute controllers or render Helm
 implicitly. The alpha includes automated CLI/LSP and package checks; real Zed GUI
 acceptance is recorded separately. [Development and tests](DEVELOPMENT.md) ·
-[Architecture](docs/architecture.md) · [MIT license](LICENSE)
+[Documentation](docs/README.md) · [Architecture](docs/architecture.md) · [MIT license](LICENSE)

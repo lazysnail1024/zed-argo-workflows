@@ -1,138 +1,87 @@
-# Distribution and installation
+# 分发与安装
 
-## Two independent releases
+## 两个独立版本
 
-| Component | Tag | Download |
+| 组件 | 当前源码中的版本入口 | 交付形式 |
 | --- | --- | --- |
-| Native LSP / CLI | `v0.0.1-alpha.1` | Platform executable and archive, source/build records, `SHA256SUMS` |
-| Zed adapter | `zed-v0.0.1-alpha.1` | `zed-argo-workflows-0.0.1-alpha.1.zip`, adapter record, `SHA256SUMS` |
+| 原生 Go LSP/CLI | 根 [VERSION](../VERSION)，当前 `0.0.1-alpha.2` | `v<VERSION>` 下的平台可执行文件、独立 archive、来源记录、`SHA256SUMS` |
+| Zed adapter | [extension.toml](../editors/zed/extension.toml) 与 [Cargo.toml](../editors/zed/Cargo.toml)，当前 `0.0.1-alpha.3` | `zed-v<VERSION>` 下预编译 adapter ZIP、身份记录、`SHA256SUMS` |
+| adapter 选择的原生服务 | [native-server-version](../editors/zed/native-server-version)，当前 `0.0.1-alpha.2` | 固定 native release，独立于 adapter 自身版本 |
 
-Both are GitHub **prereleases** before the first `0.0.1`. The adapter uses its
-explicit `native-server-version` pin and direct release URL; it never relies on
-GitHub's latest-stable-release endpoint. Published versions are not overwritten.
-Corrections receive a new alpha number.
+这里列出源码配置，不据此宣称对应 release 已发布或包含 main 的后续改动。
+安装前以 [Releases](https://github.com/lazysnail1024/zed-argo-workflows/releases) 的资产为准，
+运行后用 `version --json` 核对 `sourceCommit`/`toolkitVersion`/`catalogHash`。
+固定 tag 的产物不会随源码更新；已安装 alpha.2 不因此获得后续索引重构。
+下载使用明确版本和直达 URL，不依赖 latest-stable endpoint。修正已发布产物需新版本。
 
-The Windows native-cache activation repair is prepared for adapter
-`0.0.1-alpha.2`, retaining native LSP `0.0.1-alpha.1`. A source change or passing
-PR check is not a published upgrade: the new `zed-v` release must contain its
-verified ZIP and `SHA256SUMS` before installation. The published `alpha.1`
-adapter retains the older cache activation behavior described in
-[the incident lessons](lessons-learned.md).
+## 发布自动化
 
-## Release automation
+根 `VERSION` 变更合并到 main 触发 [release.yml](../.github/workflows/release.yml)；
+`editors/zed/extension.toml` 变更触发独立 [zed-release.yml](../.github/workflows/zed-release.yml)，
+adapter 的 Cargo 版本必须一致。匹配版本的 tag push 和 main/对应 tag 的手动运行也受支持。
+各自完整验收后在精确 commit 建 tag 并发布已验证资产；已有 tag 不移动，已有 release 或 draft 会停止发布。
+main 上 release workflow 自身变化可重试原生发布，但同样不覆盖现有产物。
 
-Merging a change to root `VERSION` into `main` starts the native release workflow.
-Merging a change to `editors/zed/extension.toml` starts the independent Zed release
-workflow; its version must also match `editors/zed/Cargo.toml`. Each workflow runs
-its complete acceptance gate, then creates its version tag at the exact verified
-commit and publishes the checked artifacts. Matching version-tag pushes and
-manual runs on `main` or that exact tag are also supported. Existing tags are
-never moved, and an existing release or draft stops publication.
+adapter 发布前核对 native pin：原生 release 必须包含 `SHA256SUMS` 及 Linux amd64/arm64、
+macOS amd64/arm64、Windows amd64 五个原始可执行文件。若 release 为 404 或 draft，
+每 30 秒等待一次、最多 45 分钟；权限/其他 HTTP 错误、tag 不匹配或已发布但资产不完整直接失败。
+等待超时后，可在原生 release 就绪后重跑发布 job。adapter 不重建 Go，native 可以来自不同 commit。
+原生发布说明固定读取 [native-release-notes.md](native-release-notes.md)。
 
-A change to `.github/workflows/release.yml` on `main` also retries the native
-pipeline, so a publication-workflow repair can complete an unpublished version.
-It still runs every gate and refuses an existing release, draft, or tag pointing
-at another commit; this retry path never replaces already published artifacts.
+## 预编译安装、升级与回滚
 
-The Zed publication step checks its committed `native-server-version` pin before
-creating a tag or publishing a ZIP. The native release must already be published
-and contain `SHA256SUMS` plus raw executables for Linux amd64/arm64, macOS
-amd64/arm64 and Windows amd64. Initial native and adapter releases can start
-together: a missing native release (HTTP 404) or a draft is polled every 30 seconds
-for at most 45 minutes. Permission errors, other HTTP errors, a mismatched tag or
-a published release with missing or incomplete required assets fail immediately.
-The adapter does not rebuild the server or require it to come from the adapter's
-own source commit. If the wait expires, retry the failed publication job after
-the pinned native release becomes available.
+普通安装入口见 [README](../README.md)。先关闭 Zed，运行对应平台安装器，再启动 Zed；
+重复执行用于升级。使用预编译 ZIP 不需要本地 Go/Rust 工具链。
 
-## Precompiled Zed installation
+安装器下载所选 `zed-v<version>` 的 ZIP 与 `SHA256SUMS`，检查 hash 和扩展身份，在当前用户
+`extensions/installed` 的相邻位置暂存后替换。相同文件重复安装不变；
+只保留一个旧版本于 `extensions/.alpha-installer/argo-workflows-lsp.previous`，
+失败恢复原状态，且不触碰 adapter 下载的原生服务缓存。
 
-The quickest route is the one-command Linux/macOS or Windows installer in the
-root README. Close Zed first and restart it afterwards. Re-running the installer
-upgrades the adapter without touching Zed's downloaded native LSP cache.
-
-The installer selects Zed's documented `extensions/installed` directory for the
-current user, downloads the exact `zed-v<version>` release's ZIP and
-`SHA256SUMS`, verifies SHA-256, checks the ZIP's extension identity and stages
-the files beside the active directory before renaming. Reinstalling identical
-files does nothing. The previous version is retained once under
-`extensions/.alpha-installer/argo-workflows-lsp.previous` (outside the
-`installed` scan directory); a failed replacement restores the previous state,
-including an older backup when present.
-
-To undo the most recent install or upgrade, close Zed and use:
+关闭 Zed 后，Linux/macOS 回滚命令为：
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/lazysnail1024/zed-argo-workflows/main/editors/zed/install.sh | sh -s -- --rollback
 ```
 
-On Windows, download `editors/zed/install.ps1` and run
-`powershell -ExecutionPolicy Bypass -File ./install.ps1 -Rollback` from its
-download directory. A second rollback swaps the two versions back.
+Windows 下载 `editors/zed/install.ps1` 后，在下载目录执行
+`powershell -ExecutionPolicy Bypass -File ./install.ps1 -Rollback`。
+再次 rollback 交换两个保留版本；若中断导致活动目录缺失而 backup 存在，下次安装先恢复它。
 
-For an offline install, download the exact release ZIP and `SHA256SUMS` into
-one directory, then run `sh install.sh --assets-dir /path/to/assets` on
-Linux/macOS or `./install.ps1 -AssetsDir C:/path/to/assets` in Windows
-PowerShell. `--version VERSION` / `-Version VERSION` selects an older published
-adapter Release; defaults follow the current alpha release in the script.
-If an interrupted upgrade left no active directory but a previous backup exists,
-the next run restores it first.
+离线安装先把同一 release 的 ZIP 与 `SHA256SUMS` 放到一个目录，再运行
+`sh install.sh --assets-dir /path/to/assets` 或 PowerShell 的
+`./install.ps1 -AssetsDir C:/path/to/assets`。
+`--version VERSION` / `-Version VERSION` 选择已发布 adapter，默认版本由安装脚本固定。
+也可关闭 Zed 后将 ZIP 内 `argo-workflows-lsp/` 放入 `extensions/installed`；
+保留原目录用于恢复，关闭 Zed 后删除该目录即卸载。
 
-The automated E2E uses isolated HOME/XDG/LOCALAPPDATA and actual public Release
-bytes on Linux, macOS and Windows. It tests installation, idempotence, replacement,
-checksum/ZIP rejection, rollback and injected activation failure, **not** a real
-Zed GUI session. GUI activation remains a separate manual acceptance step.
-CI explicitly selects a published fixture with `--version` and records
-`sourceAdapterVersion` separately from `exercisedReleaseVersion`; `zed.yml`
-independently verifies the new candidate's WASM and package before publication.
+源码开发则用 Zed 的 **Install Dev Extension** 选择 `editors/zed`，需要 Rust。
+若要运行当前重构源码，还需自行构建 native 并用 `serverPath` 指向它；只重建 adapter 仍使用其 native pin。
+这里的手动 alpha 安装与 extension store 是不同交付路径。
 
-The portable ZIP contains `argo-workflows-lsp/extension.toml`, `extension.wasm`, snippets and
-licenses. With Zed closed, place that folder below its `extensions/installed`
-directory as shown in the root README. This matches Zed's installed extension
-layout. Preserve an older folder before replacement; remove this folder while
-Zed is closed to uninstall the manual alpha.
+## 下载验证
 
-The downloaded component is already compiled. A source developer can instead
-select `editors/zed` with Zed's **Install Dev Extension** command, which requires
-Rust. The extension store is a separate distribution channel and has not been
-published by this release.
+从同一 release 获取 `SHA256SUMS`。Linux 把资产放在它旁边，执行
+`sha256sum --check --ignore-missing SHA256SUMS`，确保所需 archive 报 `OK`；
+macOS 用 `shasum -a 256 <archive>`，Windows 用 `Get-FileHash <archive> -Algorithm SHA256`，
+与清单中的完整 digest 比较。同一 HTTPS 来源的校验和用于发现损坏和版本不一致，不是独立发布者签名。
+保留 archive 自带的 dependency/schema/runtime 法律文本与来源记录。
 
-## Verify downloads
+## 服务选择和缓存
 
-Download `SHA256SUMS` from the same release. On Linux, place the requested assets
-alongside it and run `sha256sum --check --ignore-missing SHA256SUMS`. At least the
-chosen archive must report `OK`. On macOS, compute `shasum -a 256 <archive>` and
-compare the full digest with that archive's exact line in `SHA256SUMS`. On Windows,
-use `Get-FileHash <archive> -Algorithm SHA256` and compare the full digest.
+adapter 按顺序选择绝对 `lsp.argo-workflows-ls.settings.serverPath`、worktree shell PATH 中的
+`argo-workflows-ls`、固定 native release。无效显式选择会报错。
+托管下载先验证 SHA-256，再执行 identity probe，检查产品、合同、readiness 和 release 身份。
 
-A checksum supplied by the same HTTPS release detects corruption and version
-mismatch; it is not a separate publisher signature. Archives retain their
-original dependency, runtime and schema licenses and exact source identity.
+新缓存使用唯一 `servers/v<version>-<platform>.gen2-<nonce>/`，
+在不变路径验证 EXE 后原子创建空 `.complete/`。未标记的新 generation 不可使用。
+旧固定版本/`.gen-` 目录独立验证，不能把无标记的新目录冒充旧缓存。
+每次离线复用仍检查文件类型、大小、清单、hash 和 identity；
+已发布 generation 不移动或删除，并发安装可各自产生有效 generation。
+失败仅尽力清理本次未完成目录，清理失败保留最初错误。
+[安装器实现](../editors/zed/src/distribution.rs)
 
-## Server selection and offline use
-
-The adapter chooses:
-
-1. An explicit absolute `lsp.argo-workflows-ls.settings.serverPath`.
-2. `argo-workflows-ls` found through Zed's worktree shell PATH.
-3. The platform asset from the exact native release pin.
-
-An invalid explicit selection is reported. For managed downloads, SHA-256 is
-checked before execution, then the native product, contract, readiness and release
-identity are verified. The repaired installer reserves a unique
-`servers/v<version>-<platform>.gen2-<nonce>/` directory, verifies the EXE at that
-unchanging path, then atomically creates its `.complete/` directory. Unmarked
-new generations are ignored, including after interruption. Activation does not
-rename a directory after executing its EXE.
-
-Existing fixed-version and `.gen-` caches remain supported without fabricated
-markers. Every reused cache is rechecked without network access. Previously
-published generations are never moved or deleted during installation or repair;
-two installers may safely retain two complete generations. Cleanup of the
-current failed attempt is best effort and cannot replace its original error.
-
-For offline first use, extract the native platform archive and put its executable
-on PATH, or configure its absolute path in Zed settings:
+离线首次使用可解压 native archive，放入 PATH 或显式配置：
 
 ```json
 {
@@ -144,36 +93,28 @@ on PATH, or configure its absolute path in Zed settings:
 }
 ```
 
-Use a Windows absolute path and `.exe` suffix on Windows. Restore execute bits
-with `chmod +x argo-workflows-ls` after ZIP extraction on POSIX systems when necessary.
-Existing custom `serverPath` or PATH installations retain priority on upgrades.
+Windows 使用绝对 `.exe` 路径；POSIX 解压后若执行位丢失，恢复 `chmod +x argo-workflows-ls`。
+已有 `serverPath`/PATH 选择仍优先，所以升级 adapter 不会替换用户自行选择的原生服务。
 
-## Troubleshooting and acceptance boundary
+## 排障与真实 Zed 验收
 
-Use `zed: open log`, check the selected executable with `version --json`, confirm
-the exact pinned release and platform asset exist, and restart the language server
-after correcting permissions or network access. Keep the general YAML language
-server enabled. Ordinary Argo YAML receives semantic analysis; raw Helm template
-sources are not silently rendered. Use explicit `render-check` for rendered input.
+打开 `zed: open log`，用被选中二进制的 `version --json` 核对身份，检查固定 release 和平台资产，
+修复具体配置/网络/权限问题后重启语言服务。保留通用 YAML 服务；原始 Helm 模板不会自动渲染，
+需要渲染输入时使用显式 `render-check`。
 
-On Windows, the `alpha.1` pair `Cannot activate verified server` and
-`Cannot clean temporary cache servers/.download-*` points to native-cache
-activation, not Workflow validation. Its `os error 2` is reported through WASI;
-do not treat that number alone as Win32 "file not found". Use the adapter
-containing the repair once it is published, or temporarily select an
-independently verified EXE with `serverPath` as above. Do not run Zed as
-administrator, disable antivirus or purge all extension caches merely to work
-around this error. See [cause, evidence limits and prevention](lessons-learned.md).
+Windows 的“验证后激活失败、随后临时目录无法清理”曾来自执行 EXE 后移动目录。
+该问题与 YAML 校验无关；临时绕过可使用独立验证后的 EXE 和 `serverPath`，
+修复原因、运行时证据边界及回归见 [经验教训](lessons-learned.md)。
 
-Native CI executes five actual operating-system/architecture hosts. Rust tests
-exercise the cache protocol with injected transport and process boundaries.
-The separate WASI runtime acceptance executes the production installer with
-real native identity probes and controlled Windows file-sharing restrictions.
-Package tests inspect the compiled WASM and archive, and native tests execute
-extracted servers. These checks do not claim a full real Zed GUI session on
-every platform. Manual GUI acceptance remains separately tracked for this
-alpha; the release is not a Zed extension-store approval.
+自动化层次见 [CI](CI.md)。文件系统安装 workflow 明确使用 alpha.1 release fixture；
+它不证明当前 candidate 的 GUI 启动。WASI 安装器测试包含真实 native probe 和受控 Windows 句柄，
+也不等于完整 Zed GUI 会话。
 
-Upstream installation behavior is defined by Zed's
-[extension host](https://github.com/zed-industries/zed/blob/main/crates/extension_host/src/extension_host.rs)
-and [platform paths](https://github.com/zed-industries/zed/blob/main/crates/paths/src/paths.rs).
+真实编辑器验收记录 Zed/OS/架构、adapter/native hash、源码身份、设置和日志，观察：
+
+- 干净 profile 首次启动、固定 release 下载、已有缓存的断网重启。
+- 诊断、补全应用、跨文件跳转、允许与拒绝的 Rename、Quick Fix 及 undo。
+- 目标版本设置、错误可见性和修复恢复，与 YAML/Helm 服务共存。
+- 中断/并发安装、损坏缓存后的恢复；原有有效路径仍可使用。
+
+不同版本、平台和产物的结果分别记录，不用本地一次通过替代其他平台或未发布候选的验证。
