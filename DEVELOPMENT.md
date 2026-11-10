@@ -27,6 +27,26 @@ commands and retained evidence. Merging a changed `VERSION` into `main` starts
 and publishes the native assets. An exact version-tag push or a manual run on
 `main` or that tag can also start the same workflow.
 
+## Shared toolkit source
+
+The toolkit dependency is pinned to source commit
+`79c46c0625b94d61156e40994ac603db69e2438f`, represented by Go pseudo-version
+`v0.0.0-20261110063134-79c46c0625b9`. It does not require a toolkit release tag.
+The vendored `source`, `yamlview`, `edit`, `index`, and `workspace` packages match
+that commit; builds need no sibling checkout or local `replace` directive.
+`contracts/toolkit-design-2.md` is the byte-identical API contract, with its
+implementation and content identities in `contracts/toolkit.lock.json`.
+The vendor script also restores the existing Expr formatter and JSON Schema
+compiler patches, verifying their input and output hashes against
+`contracts/expr-patch.json` and `contracts/jsonschema-patch.json`.
+
+When advancing the source pin, update the Go dependency, contract snapshot and
+lock identities together. Run `python3 scripts/vendor-native.py` to regenerate
+vendor, restore the native parser source trees and reapply the recorded Expr
+formatter and JSON Schema compiler patches. Keep `go.sum`, vendored sources and provenance records in the
+same change. The executable's `version --json` reports the linked toolkit
+dependency from Go build metadata.
+
 ## Zed adapter
 
 All adapter code, Rust configuration and assets are under `editors/zed`.

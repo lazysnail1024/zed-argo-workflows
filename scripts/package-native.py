@@ -17,7 +17,7 @@ import zipfile
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MAIN_PACKAGE = 'github.com/lazysnail1024/zed-argo-workflows/cmd/argo-workflows-ls'
 PROVENANCE_FILES = ('VERSION', 'go.mod', 'go.sum', 'contracts/toolkit.lock.json',
-                    'contracts/expr-patch.json', 'compat/catalog.lock.json',
+                    'contracts/expr-patch.json', 'contracts/jsonschema-patch.json', 'compat/catalog.lock.json',
                     'scripts/windows-runtime.json')
 
 

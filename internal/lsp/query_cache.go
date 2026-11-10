@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 
+	"github.com/lazysnail1024/k8s-crd-toolkit/index"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
 )
 
@@ -19,12 +20,21 @@ func (s *session) cachedScopeQuery(m message, w workspace.Workspace) (json.RawMe
 			return nil, false
 		}
 	}
-	// Editor-only documents do not include these effective options in their
-	// Target.ConfigHash. They can change reference resolution without changing
-	// any document text, URI or selected target version.
+	// Resource-name completion reads detached candidates beyond the materialized
+	// dependency closure. Their scope generation must also enter query identity.
+	generations := map[string]uint64{}
+	for _, document := range w.Documents {
+		scope := document.Target.ID
+		if _, seen := generations[scope]; seen {
+			continue
+		}
+		_, state := s.catalog.index.Definitions(index.Scope(scope), "")
+		generations[scope] = state.Generation
+	}
 	configuration, _ := json.Marshal(struct {
 		ReferencePolicy, DefaultNamespace string
-	}{w.Config.ReferencePolicy, w.Config.DefaultNamespace})
+		Generations                       map[string]uint64
+	}{w.Config.ReferencePolicy, w.Config.DefaultNamespace, generations})
 	sum := sha256.Sum256([]byte(m.Method + string(m.Params) + fingerprint(w) + string(configuration)))
 	s.queryKey = hex.EncodeToString(sum[:])
 	raw, ok := s.queryResults[s.queryKey]

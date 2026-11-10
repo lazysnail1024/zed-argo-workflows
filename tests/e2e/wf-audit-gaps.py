@@ -80,7 +80,7 @@ class LSP:
         self.stderr_raw = bytearray()
         def read_stderr():
             while True:
-                data = self.p.stderr.read(4096)
+                data = self.p.stderr.read1(4096)
                 if not data: return
                 self.stderr_raw.extend(data)
         self.stderr_reader = threading.Thread(target=read_stderr, daemon=True)

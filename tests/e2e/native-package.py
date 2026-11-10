@@ -221,7 +221,7 @@ try:
     source_checks = {}
     expected_source_paths = set()
     direct_files = {'LICENSE'}
-    provenance_files = {'VERSION', 'go.mod', 'go.sum', 'contracts/toolkit.lock.json', 'contracts/expr-patch.json',
+    provenance_files = {'VERSION', 'go.mod', 'go.sum', 'contracts/toolkit.lock.json', 'contracts/expr-patch.json', 'contracts/jsonschema-patch.json',
                         'compat/catalog.lock.json', 'scripts/windows-runtime.json'}
     with tarfile.open(source, 'r:*') as archive:
         source_commit = archive.pax_headers.get('comment')

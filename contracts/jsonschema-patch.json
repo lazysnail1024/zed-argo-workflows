@@ -1,0 +1,11 @@
+{
+  "module": "github.com/santhosh-tekuri/jsonschema/v6",
+  "version": "v6.0.3",
+  "file": "vendor/github.com/santhosh-tekuri/jsonschema/v6/compiler.go",
+  "upstreamSha256": "70866caca3a796301c74dfb2a963d53809c0b94c3dcbcc7f8ac5f8f480856b76",
+  "patchedSha256": "2807f6bfec85313914e2c7a73272522baee4441dd596bc4c5d4ae7745fc8fe3b",
+  "patch": "jsonschema-indexed-queue.patch",
+  "license": "Apache-2.0; upstream LICENSE retained unchanged",
+  "reason": "Preserve the existing indexed compilation queue: map lookup avoids repeatedly scanning the pending schemas while retaining insertion order. This records the already-vendored optimization without changing its bytes.",
+  "reproduction": "scripts/vendor-native.py applies and verifies this exact local patch after vendoring."
+}

@@ -78,7 +78,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--suite", choices=("adversarial", "load"), required=True)
+    parser.add_argument("--suite", choices=("adversarial", "load", "index"), required=True)
     args = parser.parse_args()
     binary, output = args.binary.resolve(), args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -107,6 +107,24 @@ def main():
                 print(f"FAIL semantic evidence {name}: {error}"[:2000], flush=True)
             rows.append(row)
             summary(output, rows, "Linux adversarial cgroup E2E")
+    elif args.suite == "index":
+        # Each sample has a fresh process and full on-disk fixture. The consumer
+        # measures server VmHWM separately from the 8 GiB process-group envelope.
+        for count, deadline in ((10000, 60), (50000, 300)):
+            for sample in range(5):
+                name = f"persistent-{count}-{sample}"
+                destination = output / name
+                argv = [sys.executable, E2E / "wf-persistent-workspace.py", binary, destination,
+                        "--count", str(count), "--padding", "4096", "--resource-every", "1",
+                        "--deadline", str(deadline)]
+                row = execute(name, argv, destination, 8192, timeout=2 * deadline + 90)
+                row["name"] = name
+                try:
+                    row["caseCount"] = validate_results(destination / "results.json", assertion_key="checks", require_assertions=True)
+                except (OSError, ValueError, TypeError) as error:
+                    row.update({"pass": False, "evidenceError": str(error)})
+                rows.append(row)
+                summary(output, rows, "Linux persistent index cgroup E2E")
     else:
         workload = output / "workload"
         row = command([sys.executable, E2E / "wf-bounded-workload.py", workload], output / "logs/workload")

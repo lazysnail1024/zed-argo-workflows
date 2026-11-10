@@ -79,14 +79,14 @@ MUTATIONS = (
     Mutation(
         "stale-action", "core", "ablate-edits.py", "internal/lsp/edits.go",
         ((
-            "if err != nil || !opened || b.snapshot.Revision() != action.revision || actionFingerprint(w) != action.fingerprint {",
-            "if false && (err != nil || !opened || b.snapshot.Revision() != action.revision || actionFingerprint(w) != action.fingerprint) {",
+            "if err != nil || !opened || b.snapshot.Revision() != action.revision || s.actionFingerprint(w) != action.fingerprint {",
+            "if false && (err != nil || !opened || b.snapshot.Revision() != action.revision || s.actionFingerprint(w) != action.fingerprint) {",
         ),),
         "wf-delivery.py", (("edits", "staleAction"),), ("--cases", "edits"),
     ),
     Mutation(
-        "nested-root", "core", "ablate-lifecycle.py", "internal/workspace/disk.go",
-        (("if path == child && path != absolute {", "if false && path == child && path != absolute {"),),
+        "nested-root", "core", "longest registered root owns indexed files", "internal/lsp/catalog.go",
+        (("&& len(root) > len(best)", "&& (best == \"\" || len(root) < len(best))"),),
         "wf-lifecycle.py", (("nested-root-single-owner", "one_nested_symbol"),),
     ),
     Mutation(
@@ -127,30 +127,15 @@ MUTATIONS = (
         ("--cases", "metadata-expression-literal,metadata-prose,metadata-tagged,input-parameter-raw,input-artifact-raw,output-parameter-raw,output-artifact-raw"),
     ),
     Mutation(
-        "foreground-reconciliation-baseline", "audit", "reaudit R-02", "internal/lsp/serve.go",
-        ((
-            "\t\t\t\tif result.state.externalFacts != nil {",
-            """\t\t\t\tif !result.background {
-\t\t\t\t\tfor _, identities := range publicationInputs {
-\t\t\t\t\t\tfor key, value := range result.state.acquiredInputs {
-\t\t\t\t\t\t\tif _, used := identities[key]; used { identities[key] = value }
-\t\t\t\t\t\t}
-\t\t\t\t\t}
-\t\t\t\t}
-\t\t\t\tif result.state.externalFacts != nil {""",
-        ),),
-        "wf-reaudit-reconciliation.py",
-        (("create-after-query", "current_diagnostic_inventory"),
-         ("delete-after-query", "current_diagnostic_inventory")),
+        "incomplete-publication-acknowledgement", "audit", "local publication must not acknowledge external work", "internal/lsp/catalog_inputs.go",
+        (("file.awaiting = local && !ready", "file.awaiting = false"),),
+        "wf-index-publication.py", (("reconciliation-publication", "ready_republishes_unacknowledged_external_diagnostic"),), timeout=180,
     ),
     Mutation(
-        "obsolete-publication-scope", "audit", "reaudit R-02", "internal/lsp/serve.go",
+        "obsolete-publication-scope", "audit", "unchanged completed scopes must stay idle", "internal/lsp/catalog_discovery.go",
         ((
-            "\t\t\t\t\tpublicationInputs[result.uri] = result.inputIdentities",
-            """\t\t\t\t\tfor key, value := range publicationInputs[result.uri] {
-\t\t\t\t\t\tif _, current := result.inputIdentities[key]; !current { result.inputIdentities[key] = value }
-\t\t\t\t\t}
-\t\t\t\t\tpublicationInputs[result.uri] = result.inputIdentities""",
+            "if state != root.lastState || file.awaiting && !globalFailure && !incomplete[file.target.ID] {",
+            "if true || state != root.lastState || file.awaiting && !globalFailure && !incomplete[file.target.ID] {",
         ),),
         "wf-reaudit-reconciliation.py", (("scope-rebinding", "obsolete_scope_not_reconciled"),),
     ),
@@ -158,7 +143,7 @@ MUTATIONS = (
         "opened-scope-action", "audit", "reaudit R-04", "internal/lsp/edits.go",
         ((
             "w, err := s.documentWorkspace(action.uri, action.scope)",
-            "w, err := s.workspace(s.root(action.uri), action.scope)",
+            'w, err := s.workspace(s.root(action.uri), "root")',
         ),),
         "wf-reaudit-actions.py", (("excluded", "immediateExactEdit"),
                                  ("internal-directory", "immediateExactEdit")),
@@ -166,8 +151,8 @@ MUTATIONS = (
     Mutation(
         "isolated-action-configuration", "audit", "reaudit R-04", "internal/lsp/edits.go",
         ((
-            "}{fingerprint(w), w.Config.ReferencePolicy, w.Config.DefaultNamespace})",
-            '}{fingerprint(w), "", ""})',
+            "}{fingerprint(w), w.Config.ReferencePolicy, w.Config.DefaultNamespace, generations, incomplete})",
+            '}{fingerprint(w), "", "", generations, incomplete})',
         ),),
         "wf-reaudit-actions.py", (("isolated-config-policy", "effectiveConfigChangeRefused"),
                                  ("isolated-config-namespace", "effectiveConfigChangeRefused")),
@@ -185,7 +170,7 @@ MUTATIONS = (
         "local-completion-scope-reads", "audit", "reaudit R-05", "internal/lsp/stdio.go",
         ((
             'if m.Method == "textDocument/definition" || m.Method == "textDocument/references" {',
-            'if m.Method == "textDocument/definition" || m.Method == "textDocument/references" || m.Method == "textDocument/completion" {',
+            'if m.Method == "textDocument/completion" { s.focus = "" }; if m.Method == "textDocument/definition" || m.Method == "textDocument/references" || m.Method == "textDocument/completion" {',
         ),),
         "wf-reaudit-query-io.py", (("local-completion-io", "no_scope_reads"),),
         ("--cases", "local"),
@@ -194,25 +179,15 @@ MUTATIONS = (
         "external-completion-scope-reads", "audit", "reaudit R-05", "internal/lsp/stdio.go",
         ((
             "w, workspaceErr := s.documentWorkspace(uri, document.Target.Scope)",
-            'w, workspaceErr := s.workspace(s.root(uri), "")',
+            's.focus = ""; w, workspaceErr := s.workspace(s.root(uri), "")',
         ),),
         "wf-reaudit-query-io.py", (("external-completion-io", "no_unrelated_scope_reads"),),
         ("--cases", "external"),
     ),
     Mutation(
-        "scope-query-fingerprint", "audit", "reaudit R-05", "internal/lsp/query_cache.go",
-        (("m.Method + string(m.Params) + fingerprint(w)", "m.Method + string(m.Params)"),),
-        "wf-reaudit-queries.py", (("external-completion-cache", "disk_change_invalidates_query"),),
-        ("--cases", "completion"),
-    ),
-    Mutation(
-        "scope-query-configuration", "audit", "reaudit R-05", "internal/lsp/query_cache.go",
-        ((
-            "}{w.Config.ReferencePolicy, w.Config.DefaultNamespace})",
-            '}{"", ""})',
-        ),),
-        "wf-reaudit-queries.py", (("isolated-completion-namespace", "default_namespace_invalidates_query"),),
-        ("--cases", "completion"),
+        "scope-summary-generation", "audit", "detached resource candidates enter query identity", "internal/lsp/query_cache.go",
+        (("generations[scope] = state.Generation", "generations[scope] = state.Generation * 0"),),
+        "wf-index-boundaries.py", (("summary-candidate-generation", "new_summary_invalidates_cached_candidates"),),
     ),
     Mutation(
         "process-output-budget", "resources", "ablate-bounded.py", "cmd/argo-workflows-ls/tools.go",

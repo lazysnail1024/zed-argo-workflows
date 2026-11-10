@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"runtime/debug"
 	"sort"
 	"time"
 
@@ -19,44 +20,37 @@ type queuedRequest struct {
 	epoch   uint64
 }
 type workerResult struct {
-	reconciliation  bool
-	inputIdentities map[workspaceKey]string
-	output, log     []byte
-	state           session
-	err             error
-	canceled        bool
-	epoch           uint64
-	background      bool
-	uri             string
-	final           bool
+	output, log []byte
+	state       session
+	err         error
+	canceled    bool
+	epoch       uint64
+	background  bool
+	uri         string
+	final       bool
+	proofs      []catalogProof
+	local       bool
 }
 
 // Serve owns mutable state and all transport writes. At most one foreground
 // request and one background publication worker run on immutable snapshots.
 // Publication is accepted per URI, so a later timeout cannot discard progress.
 func Serve(in io.Reader, out, log io.Writer) int {
-	s := session{out: out, log: log, buffers: map[string]buffer{}, actions: map[string]pendingAction{}, pending: map[string]bool{}}
-	publicationInputs := map[string]map[workspaceKey]string{}
-	refreshInputKeys := func() {
-		s.acquiredInputs = map[workspaceKey]string{}
-		for uri, identities := range publicationInputs {
-			root := s.root(uri)
-			if _, opened := s.buffers[uri]; !opened || root == "" {
-				delete(publicationInputs, uri)
-				continue
-			}
-			for key, value := range identities {
-				if key.root != root {
-					delete(identities, key)
-					continue
-				}
-				// Only the key set is used by the owner to schedule probes. The
-				// comparison below retains every URI's published identity, even
-				// when another URI has newer diagnostics for the same scope.
-				s.acquiredInputs[key] = value
-			}
-		}
+	// Leave room for native YAML parsing, embedded mappings and the client.
+	// This controls Go's heap headroom, not RSS or the explicit input limits.
+	previousLimit := debug.SetMemoryLimit(-1)
+	if previousLimit > 288*1024*1024 {
+		debug.SetMemoryLimit(288 * 1024 * 1024)
+		defer debug.SetMemoryLimit(previousLimit)
 	}
+	s := session{out: out, log: log, buffers: map[string]buffer{}, actions: map[string]pendingAction{}, pending: map[string]bool{}}
+	var err error
+	s.catalog, err = newCatalog()
+	if err != nil {
+		fmt.Fprintln(log, "LSP catalog:", err)
+		return 2
+	}
+	defer s.catalog.cancel()
 	type input struct {
 		message message
 		err     error
@@ -79,25 +73,21 @@ func Serve(in io.Reader, out, log io.Writer) int {
 		}
 	}()
 	finished := make(chan workerResult, 16)
-	var foregroundCancel, backgroundCancel, reconciliationCancel context.CancelFunc
-	reconciling := false
+	var foregroundCancel, backgroundCancel context.CancelFunc
 	var active *queuedRequest
 	foregroundRunning, backgroundRunning, canceled := false, false, false
 	queue := []queuedRequest{}
 	due := time.Time{}
 	timer := time.NewTicker(20 * time.Millisecond)
 	defer timer.Stop()
-	scan := time.NewTicker(30 * time.Second)
-	defer scan.Stop()
 	snapshot := func(ctx context.Context) session {
 		clone := s
 		clone.ctx = ctx
 		clone.factInput = nil
 		clone.factBoundary = ""
 		clone.factMixed = false
+		clone.proofs = nil
 
-		clone.acquiredInputs = map[workspaceKey]string{}
-		clone.usedInputs = nil
 		clone.queryKey = ""
 		clone.queryResults = map[string]json.RawMessage{}
 		for key, value := range s.queryResults {
@@ -106,7 +96,6 @@ func Serve(in io.Reader, out, log io.Writer) int {
 		clone.ctx = analysis.WithExternalFacts(clone.ctx, s.externalFacts)
 		clone.pending = nil
 		clone.workspaces = map[workspaceKey]workspace.Workspace{}
-		clone.externalResults = map[string]externalResult{}
 		clone.roots = append([]string(nil), s.roots...)
 		clone.buffers = map[string]buffer{}
 		for uri, b := range s.buffers {
@@ -119,9 +108,6 @@ func Serve(in io.Reader, out, log io.Writer) int {
 		return clone
 	}
 	abort := func(code int, reason string) {
-		if reconciling {
-			reconciliationCancel()
-		}
 		if foregroundRunning {
 			foregroundCancel()
 			if active != nil && !canceled {
@@ -134,9 +120,6 @@ func Serve(in io.Reader, out, log io.Writer) int {
 		}
 	}
 	defer func() {
-		if reconciliationCancel != nil {
-			reconciliationCancel()
-		}
 		if foregroundCancel != nil {
 			foregroundCancel()
 		}
@@ -171,7 +154,23 @@ func Serve(in io.Reader, out, log io.Writer) int {
 				}
 			}
 			var err error
+			var cacheProofs []catalogProof
 			if request != nil {
+				state.method = request.message.Method
+				var p struct {
+					TextDocument struct {
+						URI string `json:"uri"`
+					} `json:"textDocument"`
+					Data struct {
+						Token string `json:"token"`
+					} `json:"data"`
+				}
+				if json.Unmarshal(request.message.Params, &p) == nil {
+					state.focus = p.TextDocument.URI
+					if state.method == "codeAction/resolve" {
+						state.focus = state.actions[p.Data.Token].uri
+					}
+				}
 				_, _, err = state.handle(request.message)
 			} else {
 				// Clear unrelated YAML before a slow Workflow can consume the
@@ -197,24 +196,25 @@ func Serve(in io.Reader, out, log io.Writer) int {
 						break
 					}
 					output.Reset()
-					state.usedInputs = map[workspaceKey]bool{}
+					state.focus, state.method = uri, ""
+					state.workspaces = map[workspaceKey]workspace.Workspace{}
+					state.proofs = nil
+					state.localPublication = false
 					err = state.publish(uri)
 					if err != nil {
 						break
 					}
 					if ctx.Err() == nil {
-						identities := map[workspaceKey]string{}
-						for key := range state.usedInputs {
-							if value, ok := state.acquiredInputs[key]; ok {
-								identities[key] = value
-							}
-						}
-						if !send(workerResult{output: append([]byte(nil), output.Bytes()...), inputIdentities: identities, epoch: state.epoch, background: true, uri: uri}) {
+						cacheProofs = append(cacheProofs, state.proofs...)
+						if !send(workerResult{output: append([]byte(nil), output.Bytes()...), epoch: state.epoch, background: true, uri: uri, proofs: state.proofs, local: state.localPublication}) {
 							return
 						}
 					}
 				}
 				output.Reset()
+			}
+			if background {
+				state.proofs = cacheProofs
 			}
 			state.externalFacts = nil
 			if background {
@@ -224,7 +224,10 @@ func Serve(in io.Reader, out, log io.Writer) int {
 			if err == nil && state.factInput != nil && ctx.Err() == nil {
 				state.facts = analysis.CaptureFacts(ctx, *state.factInput)
 			}
-			send(workerResult{output: append([]byte(nil), output.Bytes()...), log: logs.Bytes(), state: state, err: err, canceled: ctx.Err() != nil, epoch: state.epoch, background: background, final: true})
+			// The owner accepts detached caches and actions only. Do not carry
+			// worker parsing contexts or borrowed input through the result queue.
+			state.ctx, state.factInput, state.workspaces, state.buffers = nil, nil, nil, nil
+			send(workerResult{output: append([]byte(nil), output.Bytes()...), log: logs.Bytes(), state: state, err: err, canceled: ctx.Err() != nil, epoch: state.epoch, background: background, final: true, proofs: state.proofs})
 		}()
 	}
 	for {
@@ -311,54 +314,27 @@ func Serve(in io.Reader, out, log io.Writer) int {
 				abort(-32800, "server exiting")
 				return code
 			}
-			if m.Method == "textDocument/didClose" || m.Method == "workspace/didChangeWorkspaceFolders" {
-				refreshInputKeys()
+			if s.initialized && !s.shutdown {
+				s.catalog.syncInputs(&s, m)
 			}
 			if epoch != s.epoch {
 				abort(-32801, "input changed during request")
 				due = time.Now().Add(120 * time.Millisecond)
 			}
 		case result := <-finished:
-			if result.reconciliation {
-				reconciling = false
-				reconciliationCancel()
-				if !s.shutdown && result.epoch == s.epoch && !result.canceled {
-					changedRoots := map[string]bool{}
-					for _, identities := range publicationInputs {
-						for key, published := range identities {
-							if current, ok := result.inputIdentities[key]; ok && current != published {
-								changedRoots[key.root] = true
-							}
-						}
-					}
-					if len(changedRoots) > 0 {
-						s.epoch++
-						abort(-32801, "workspace inputs changed during reconciliation")
-						for uri := range s.buffers {
-							if changedRoots[s.root(uri)] {
-								s.pending[uri] = true
-							}
-						}
-						due = time.Now().Add(120 * time.Millisecond)
-					}
-				}
-				continue
-			}
 			if len(result.log) > 0 {
 				_, _ = log.Write(result.log)
 			}
 			if result.background && !result.final {
-				if !s.shutdown && result.epoch == s.epoch {
+				if !s.shutdown && result.epoch == s.epoch && s.catalog.valid(result.proofs) {
 					if _, err := out.Write(result.output); err != nil {
 						return 2
 					}
-					// The reconciliation baseline belongs to accepted diagnostics.
-					// A foreground query can observe newer disk input without having
-					// published those diagnostics. Advancing the baseline there would
-					// hide a missed watcher event from every subsequent probe.
-					publicationInputs[result.uri] = result.inputIdentities
-					refreshInputKeys()
-					delete(s.pending, result.uri)
+					// Catalog observations schedule publications independently of query
+					// caches. Only an accepted result clears this URI's pending work.
+					if !s.catalog.acceptedPublication(result.uri, result.local) {
+						delete(s.pending, result.uri)
+					}
 				}
 				continue
 			}
@@ -370,7 +346,8 @@ func Serve(in io.Reader, out, log io.Writer) int {
 				foregroundRunning = false
 			}
 			current := result.epoch == s.epoch && !s.shutdown
-			if current && !result.canceled && (!canceled || result.background) {
+			valid := s.catalog.valid(result.proofs)
+			if current && valid && !result.canceled && (!canceled || result.background) {
 				if result.err != nil {
 					fmt.Fprintln(log, "LSP worker:", result.err)
 					return 2
@@ -391,7 +368,11 @@ func Serve(in io.Reader, out, log io.Writer) int {
 					s.facts = result.state.facts
 				}
 			} else if !result.background && active != nil && !canceled {
-				_ = s.failure(active.message.ID, -32800, "request timed out or cancelled")
+				code, reason := -32800, "request timed out or cancelled"
+				if current && !valid {
+					code, reason = -32801, "workspace input changed during request"
+				}
+				_ = s.failure(active.message.ID, code, reason)
 			}
 			if result.background && current && result.canceled {
 				// A stable input that exhausts its budget terminates visibly. New input,
@@ -413,36 +394,21 @@ func Serve(in io.Reader, out, log io.Writer) int {
 			if !s.shutdown && len(s.pending) > 0 && due.IsZero() {
 				due = time.Now().Add(120 * time.Millisecond)
 			}
-		case <-scan.C:
-			if !s.shutdown && !reconciling && len(s.acquiredInputs) > 0 {
-				// Reconciliation is one bounded I/O probe. It does not run analysis or
-				// invalidate a revision until freshly acquired input actually differs.
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				reconciliationCancel = cancel
-				reconciling = true
-				state := snapshot(workspace.WithSnapshotBudget(ctx, s.bufferBytes))
-				keys := []workspaceKey{}
-				for key := range s.acquiredInputs {
-					for _, root := range s.roots {
-						if root == key.root {
-							keys = append(keys, key)
-							break
-						}
+		case <-s.catalog.events:
+			uris, lines := s.catalog.notifications()
+			for _, line := range lines {
+				fmt.Fprintln(log, line)
+			}
+			if !s.shutdown && len(uris) > 0 {
+				s.externalFacts = nil
+				for _, uri := range uris {
+					if _, opened := s.buffers[uri]; opened {
+						s.pending[uri] = true
 					}
 				}
-				go func() {
-					for _, key := range keys {
-						if ctx.Err() != nil {
-							break
-						}
-						_, _ = state.workspace(key.root, key.scope)
-					}
-					result := workerResult{reconciliation: true, epoch: state.epoch, inputIdentities: state.acquiredInputs, canceled: ctx.Err() != nil}
-					select {
-					case finished <- result:
-					case <-stop:
-					}
-				}()
+				if due.IsZero() {
+					due = time.Now().Add(120 * time.Millisecond)
+				}
 			}
 		case <-timer.C:
 		}

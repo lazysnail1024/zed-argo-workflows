@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Automatic and strict release delivery policy through real CLI and LSP consumers."""
 from pathlib import Path
-import importlib.util, json, re, sys, threading, traceback
+import importlib.util, json, re, sys, threading, time, traceback
 HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('wire', HERE / 'wf-audit-gaps.py')
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
@@ -74,7 +74,10 @@ def lsp_case(name):
             cfg=work/'.argo-workflows-ls.yaml';original=cfg.read_text()
             client.send('textDocument/didOpen',{'textDocument':{'uri':cfg.as_uri(),'version':1,'languageId':'yaml','text':original}})
             start=m.pos(original,'name: stable')
-            offered=request('textDocument/codeAction',{'textDocument':{'uri':cfg.as_uri()},'range':{'start':start,'end':start}}).get('result',[])
+            deadline=time.monotonic()+5;offered=[]
+            while not offered and time.monotonic()<deadline:
+                offered=request('textDocument/codeAction',{'textDocument':{'uri':cfg.as_uri()},'range':{'start':start,'end':start}}).get('result',[])
+                if not offered:time.sleep(.02)
             checks['independentScopePin']=len(offered)==1
             if offered:
                 response=request('codeAction/resolve',offered[0]);wanted=original.replace('    include: ["stable/*.yaml"]\n','    include: ["stable/*.yaml"]\n    targetVersion: "3.6.0"\n')

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/lazysnail1024/k8s-crd-toolkit/edit"
+	"github.com/lazysnail1024/k8s-crd-toolkit/index"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/analysis"
@@ -14,6 +15,7 @@ import (
 	protocol "github.com/tliron/glsp/protocol_3_16"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -22,6 +24,19 @@ type pendingAction struct {
 	epoch                                   uint64
 	revision                                source.Revision
 	plan                                    edit.Plan
+}
+
+func detachedPlan(plan edit.Plan) edit.Plan {
+	plan.Replacements = append([]edit.Replacement(nil), plan.Replacements...)
+	for i := range plan.Replacements {
+		plan.Replacements[i].ExpectedText = strings.Clone(plan.Replacements[i].ExpectedText)
+		plan.Replacements[i].NewText = strings.Clone(plan.Replacements[i].NewText)
+	}
+	return plan
+}
+
+func editMethod(method string) bool {
+	return method == "textDocument/codeAction" || method == "codeAction/resolve" || method == "textDocument/prepareRename" || method == "textDocument/rename"
 }
 
 func fingerprint(w workspace.Workspace) string {
@@ -37,15 +52,30 @@ func fingerprint(w workspace.Workspace) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func actionFingerprint(w workspace.Workspace) string {
-	// Editor-only targets have no raw-config hash. Their safety proof still
-	// depends on effective reference policy and namespace, while changes to an
-	// unrelated configured scope must not invalidate an isolated action.
+func (s *session) actionFingerprint(w workspace.Workspace) string {
+	// Isolated documents depend on their effective target, policy and namespace.
+	// A configuration change to another scope cannot affect this safety proof.
+	w.Documents = append([]workspace.Document(nil), w.Documents...)
+	generations := map[string]uint64{}
+	incomplete := map[string]bool{}
+	for n, document := range w.Documents {
+		if w.IncompleteScopes[document.Target.ID] {
+			incomplete[document.Target.ID] = true
+		}
+		if strings.HasPrefix(document.Target.Scope, "opened:") {
+			w.Documents[n].Target.ConfigHash = document.Target.ID + "\n" + document.Target.Version
+			continue
+		}
+		_, state := s.catalog.index.Definitions(index.Scope(document.Target.ID), "")
+		generations[document.Target.ID] = state.Generation
+	}
 	input, _ := json.Marshal(struct {
 		Documents        string
 		ReferencePolicy  string
 		DefaultNamespace string
-	}{fingerprint(w), w.Config.ReferencePolicy, w.Config.DefaultNamespace})
+		Generations      map[string]uint64
+		Incomplete       map[string]bool
+	}{fingerprint(w), w.Config.ReferencePolicy, w.Config.DefaultNamespace, generations, incomplete})
 	sum := sha256.Sum256(input)
 	return hex.EncodeToString(sum[:])
 }
@@ -82,7 +112,7 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		}
 		b, opened := s.buffers[action.uri]
 		w, err := s.documentWorkspace(action.uri, action.scope)
-		if err != nil || !opened || b.snapshot.Revision() != action.revision || actionFingerprint(w) != action.fingerprint {
+		if err != nil || !opened || b.snapshot.Revision() != action.revision || s.actionFingerprint(w) != action.fingerprint {
 			return false, 0, s.failure(m.ID, -32801, "code action input changed")
 		}
 		if _, err := edit.Apply(b.snapshot, b.snapshot.Revision()+1, action.plan); err != nil {
@@ -111,6 +141,11 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		if err != nil {
 			return false, 0, s.reply(m.ID, result)
 		}
+		for _, incomplete := range w.IncompleteScopes {
+			if incomplete {
+				return false, 0, s.reply(m.ID, result)
+			}
+		}
 		fix, err := analysis.ConfigPin(ctx, b.snapshot, w, s.override, p.Range)
 		if err != nil {
 			return false, 0, s.reply(m.ID, result)
@@ -138,7 +173,7 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		}
 		s.actionSequence++
 		token := fmt.Sprintf("%d:%d", s.epoch, s.actionSequence)
-		s.actions[token] = pendingAction{uri: uri, title: fix.Title, fingerprint: actionFingerprint(w), epoch: s.epoch, revision: b.snapshot.Revision(), plan: fix.Plan}
+		s.actions[token] = pendingAction{uri: uri, title: fix.Title, fingerprint: s.actionFingerprint(w), epoch: s.epoch, revision: b.snapshot.Revision(), plan: detachedPlan(fix.Plan)}
 		result = append(result, map[string]any{"title": fix.Title, "kind": "quickfix", "data": map[string]any{"token": token}})
 		return false, 0, s.reply(m.ID, result)
 	}
@@ -186,17 +221,20 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 			return false, 0, s.failure(m.ID, -32803, err.Error())
 		}
 		result := []map[string]any{}
+		if w.IncompleteScopes[d.Target.ID] {
+			return false, 0, s.reply(m.ID, result)
+		}
 		fixes := analysis.FieldFixes(ctx, b.snapshot, d.Target.Version, p.Range)
 		fixes = append(fixes, analysis.ValueFixes(ctx, w, d, p.Range)...)
 		scoped := scopeWorkspace(w, d.Target.ID)
-		requestFingerprint := actionFingerprint(scoped)
+		requestFingerprint := s.actionFingerprint(scoped)
 		for _, fix := range fixes {
 			if fix.Code == "FIX_FIELD_NAME" && analysis.SafeScopePlan(ctx, w, d, fix.Plan) != nil {
 				continue
 			}
 			s.actionSequence++
 			token := fmt.Sprintf("%d:%d", s.epoch, s.actionSequence)
-			s.actions[token] = pendingAction{uri: uri, title: fix.Title, version: d.Target.Version, scope: d.Target.Scope, fingerprint: requestFingerprint, epoch: s.epoch, revision: b.snapshot.Revision(), plan: fix.Plan}
+			s.actions[token] = pendingAction{uri: uri, title: fix.Title, version: d.Target.Version, scope: d.Target.Scope, fingerprint: requestFingerprint, epoch: s.epoch, revision: b.snapshot.Revision(), plan: detachedPlan(fix.Plan)}
 			result = append(result, map[string]any{"title": fix.Title, "kind": "quickfix", "data": map[string]any{"token": token}})
 		}
 		return false, 0, s.reply(m.ID, result)

@@ -2,6 +2,8 @@
 // Unstamped contributor builds remain explicitly marked as development builds.
 package buildinfo
 
+import "runtime/debug"
+
 var (
 	ServerVersion = "0.0.1-alpha.1+dev"
 	SourceCommit  = ""
@@ -17,3 +19,18 @@ func Commit() any {
 }
 
 func IsDirty() bool { return Dirty != "false" }
+
+// ToolkitVersion reports the dependency linked into this executable.
+func ToolkitVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, dependency := range info.Deps {
+			if dependency.Path == "github.com/lazysnail1024/k8s-crd-toolkit" {
+				if dependency.Replace != nil {
+					return dependency.Replace.Version
+				}
+				return dependency.Version
+			}
+		}
+	}
+	return ""
+}

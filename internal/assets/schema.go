@@ -65,9 +65,11 @@ func WithDocumentReuse(ctx context.Context) context.Context {
 }
 
 // Compiled schemas contain only immutable embedded catalog data. The key set is
-// bounded by the embedded schema files, not caller input. Compilation runs
-// outside map locks; cancellation never waits for another request to compile.
+// bounded by the embedded schema files, not caller input. Warm queries bypass
+// the gate. Cold compilation is serialized to bound construction memory;
+// waiting requests can cancel independently of the active compiler.
 var compiledSchemas sync.Map // embedded filename -> *jsonschema.Schema
+var schemaCompilation = make(chan struct{}, 1)
 
 func Compile(ctx context.Context, version, apiVersion, kind string) (*jsonschema.Schema, error) {
 	file, err := compat.SchemaFile(version, apiVersion, kind)
@@ -75,6 +77,18 @@ func Compile(ctx context.Context, version, apiVersion, kind string) (*jsonschema
 		return nil, err
 	}
 	if err = ctx.Err(); err != nil {
+		return nil, err
+	}
+	if cached, ok := compiledSchemas.Load(file); ok {
+		return cached.(*jsonschema.Schema), nil
+	}
+	select {
+	case schemaCompilation <- struct{}{}:
+		defer func() { <-schemaCompilation }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if cached, ok := compiledSchemas.Load(file); ok {
@@ -96,9 +110,12 @@ func Compile(ctx context.Context, version, apiVersion, kind string) (*jsonschema
 	if err != nil {
 		return nil, err
 	}
+	// Successful compilation depends only on immutable embedded schema bytes.
+	// Preserve it even if the requesting document changed during compilation;
+	// that caller still receives cancellation below, and failures are never cached.
+	actual, _ := compiledSchemas.LoadOrStore(file, schema)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	actual, _ := compiledSchemas.LoadOrStore(file, schema)
 	return actual.(*jsonschema.Schema), nil
 }

@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -97,19 +98,37 @@ func selectedDomain(b *localRenameBindings, offset int) []renameKey {
 	return result
 }
 func DomainSymbols(ctx context.Context, snapshot source.Snapshot, version string) []DomainSymbol {
+	result, _ := boundedDomainSymbols(ctx, snapshot, version, 0)
+	return result
+}
+
+func boundedDomainSymbols(ctx context.Context, snapshot source.Snapshot, version string, limit int) ([]DomainSymbol, error) {
 	result := []DomainSymbol{}
+	bytes := 0
 	for _, b := range domainBindings(ctx, snapshot, version) {
 		for key, declarations := range b.declarations {
 			if ctx.Err() != nil {
-				return nil
+				return nil, ctx.Err()
 			}
 			kind := 13
 			if key.kind == "template" || key.kind == "task" || key.kind == "step" {
 				kind = 12
 			}
 			container := key.kind
+			owner := ""
 			if key.owner >= 0 {
-				container = stringValue(member(b.templates[key.owner], "name")) + " · " + key.kind
+				owner = stringValue(member(b.templates[key.owner], "name"))
+			}
+			size := len(key.name) + len(container) + len(snapshot.URI()) + 64
+			if owner != "" {
+				size += len(owner) + len(" · ")
+			}
+			if limit > 0 && (len(declarations) > 100000-len(result) || size > (limit-bytes)/max(1, len(declarations))) {
+				return nil, fmt.Errorf("document symbols exceed summary budget")
+			}
+			bytes += size * len(declarations)
+			if owner != "" {
+				container = owner + " · " + key.kind
 			}
 			for _, d := range declarations {
 				result = append(result, DomainSymbol{key.name, kind, container, spanLocation(snapshot, d.span)})
@@ -120,7 +139,7 @@ func DomainSymbols(ctx context.Context, snapshot source.Snapshot, version string
 		a, z := result[i].Location.Range.Start, result[j].Location.Range.Start
 		return a.Line < z.Line || a.Line == z.Line && a.Character < z.Character
 	})
-	return result
+	return result, nil
 }
 func Definitions(ctx context.Context, snapshot source.Snapshot, version string, pos source.Position) []Location {
 	result, _ := domainDefinitions(ctx, snapshot, version, pos)

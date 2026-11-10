@@ -122,7 +122,15 @@ try:
                 'range': {'start': {'line': 2, 'character': 17}, 'end': {'line': 2, 'character': 21}},
             }]
             response = case['definition']
-            checks['query_observes_disk_change'] = 'error' not in response and response.get('result') == expected_definition
+            if case['mode'] == 'delete':
+                checks['query_observes_known_disk_change'] = 'error' not in response and response.get('result') == expected_definition
+            else:
+                # Unknown URIs are found by the persistent scanner, not a
+                # fresh whole-root walk in every foreground request. The
+                # final publication assertion above still requires the real
+                # unwatched creation to converge within this observation.
+                checks['query_uses_only_known_positive_candidates'] = (
+                    'error' not in response and response.get('result') in ([], expected_definition))
         m.result(case['name'], checks, {
             'before': case['before'], 'definition': case.get('definition'),
             'newPublications': events, 'observationSeconds': time.monotonic() - changed_at,

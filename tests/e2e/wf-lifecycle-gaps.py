@@ -22,8 +22,14 @@ def result(name,checks,details=None):
  RESULTS.append(r);save(OUT/'results.json',RESULTS);print(name,'PASS' if r['pass'] else 'FAIL',flush=True)
 class Client:
  def __init__(self,dest,work):
-  self.dest,self.work=dest,work;self.received=[];self.sent=[];self.raw=bytearray();self.stdinraw=bytearray();self.cv=threading.Condition();self.error=None;self.next_id=1;self.started=time.monotonic();self.stopped=False
+  self.dest,self.work=dest,work;self.received=[];self.sent=[];self.raw=bytearray();self.stdinraw=bytearray();self.stderrraw=bytearray();self.cv=threading.Condition();self.error=None;self.next_id=1;self.started=time.monotonic();self.stopped=False
   self.p=subprocess.Popen([str(BINARY),'serve','--stdio'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=os.environ)
+  def read_stderr():
+   while True:
+    data=self.p.stderr.read1(4096)
+    if not data:return
+    self.stderrraw.extend(data)
+  self.stderr_thread=threading.Thread(target=read_stderr,daemon=True);self.stderr_thread.start()
   def reader():
    try:
     while True:
@@ -71,6 +77,16 @@ class Client:
   self.send('textDocument/didOpen',{'textDocument':{'uri':path.as_uri(),'version':version,'languageId':'yaml','text':text}})
   return self.diagnostics(path,version)
  def change(self,path,text,version):self.send('textDocument/didChange',{'textDocument':{'uri':path.as_uri(),'version':version},'contentChanges':[{'text':text}]})
+ def index_ready(self,root,after=-1,since=0):
+  deadline=time.monotonic()+20
+  while time.monotonic()<deadline:
+   for line in bytes(self.stderrraw)[since:].splitlines():
+    try:state=json.loads(line)
+    except (ValueError,UnicodeDecodeError):continue
+    if state.get('phase')=='index' and state.get('state')=='Ready' and pathlib.Path(state.get('root','')).resolve()==root.resolve() and state.get('generation',-1)>after:return state
+   if self.p.poll() is not None:raise RuntimeError('server exited before index completion')
+   time.sleep(.01)
+  raise TimeoutError('index completion deadline for '+str(root))
  def close(self):
   start=time.monotonic()
   try:
@@ -78,7 +94,7 @@ class Client:
     self.request('shutdown');self.send('exit');self.p.wait(timeout=5)
   finally:
    if self.p.poll() is None:self.p.kill();self.p.wait()
-   self.thread.join(timeout=1);(self.dest/'stdout.raw').write_bytes(self.raw);(self.dest/'stdin.raw').write_bytes(self.stdinraw);(self.dest/'stderr.raw').write_bytes(self.p.stderr.read());save(self.dest/'traffic.json',{'sent':self.sent,'received':self.received});save(self.dest/'command.json',{'command':[str(BINARY),'serve','--stdio'],'exitCode':self.p.returncode,'shutdownExitSeconds':time.monotonic()-start})
+   self.thread.join(timeout=1);self.stderr_thread.join(timeout=1);(self.dest/'stdout.raw').write_bytes(self.raw);(self.dest/'stdin.raw').write_bytes(self.stdinraw);(self.dest/'stderr.raw').write_bytes(self.stderrraw);save(self.dest/'traffic.json',{'sent':self.sent,'received':self.received});save(self.dest/'command.json',{'command':[str(BINARY),'serve','--stdio'],'exitCode':self.p.returncode,'shutdownExitSeconds':time.monotonic()-start})
   return self.p.returncode,time.monotonic()-start
 def symbol_params(path):return {'textDocument':{'uri':path.as_uri()}}
 def huge(count=1200):return 'apiVersion: argoproj.io/v1alpha1\nkind: WorkflowTemplate\nmetadata: {name: big}\nspec:\n  templates:\n'+''.join('    - name: template-%d\n      container: {image: alpine}\n'%i for i in range(count))
@@ -106,16 +122,23 @@ def authority():
 def nested():
  name='nested-root-spelling';dest,work=setup(name,{'parent.yaml':SMALL.replace('name: work','name: parent'),'nested/child.yaml':SMALL.replace('name: work','name: child'),'nested/.argo-workflows-ls.yaml':CFG});c=Client(dest,work)
  try:
+  initial=c.index_ready(work);child_start=len(c.stderrraw)
   c.send('workspace/didChangeWorkspaceFolders',{'event':{'added':[{'uri':(work/'nested').as_uri()+'/','name':'nested'}],'removed':[]}})
+  parent_added=c.index_ready(work,after=initial['generation']);child_added=c.index_ready(work/'nested',since=child_start)
   r=c.request('workspace/symbol',{'query':'child'})
   (work/'.argo-workflows-ls.yaml').write_text(CFG+'exclude: ["nested/**"]\n')
+  c.send('workspace/didChangeWatchedFiles',{'changes':[{'uri':(work/'.argo-workflows-ls.yaml').as_uri(),'type':2}]})
   c.send('workspace/didChangeWorkspaceFolders',{'event':{'added':[],'removed':[{'uri':(work/'nested').as_uri(),'name':'nested'}]}})
-  removed=c.request('workspace/symbol',{'query':'child'})
+  removed_first=c.request('workspace/symbol',{'query':'child'});parent_removed=c.index_ready(work,after=parent_added['generation']);removed=c.request('workspace/symbol',{'query':'child'})
+  child_start=len(c.stderrraw)
   c.send('workspace/didChangeWorkspaceFolders',{'event':{'added':[{'uri':(work/'nested').as_uri(),'name':'nested'}],'removed':[]}})
+  parent_readded=c.index_ready(work,after=parent_removed['generation']);child_readded=c.index_ready(work/'nested',since=child_start)
   added=c.request('workspace/symbol',{'query':'child'})
   c.send('workspace/didChangeWorkspaceFolders',{'event':{'added':[],'removed':[{'uri':(work/'nested').as_uri()+'/','name':'nested'}]}})
-  removed_slash=c.request('workspace/symbol',{'query':'child'})
-  result(name,{'one_owner':len(r.get('result',[]))==1,'remove_other_spelling':removed.get('result')==[],'add_normal':len(added.get('result',[]))==1,'remove_slash_spelling':removed_slash.get('result')==[]},{'response':r,'removed':removed,'added':added,'removedSlash':removed_slash})
+  slash_first=c.request('workspace/symbol',{'query':'child'});parent_final=c.index_ready(work,after=parent_readded['generation']);removed_slash=c.request('workspace/symbol',{'query':'child'})
+  withdrawn=lambda response:response.get('error',{}).get('code')==-32801 or 'error' not in response and response.get('result')==[]
+  exact_child=lambda response:len(response.get('result',[]))==1 and response['result'][0]['name']=='child' and response['result'][0]['location']['uri']==(work/'nested'/'child.yaml').as_uri()
+  result(name,{'one_owner':exact_child(r),'remove_other_spelling':withdrawn(removed_first) and removed.get('result')==[],'add_normal':exact_child(added),'remove_slash_spelling':withdrawn(slash_first) and removed_slash.get('result')==[]},{'response':r,'removedFirst':removed_first,'removed':removed,'added':added,'removedSlashFirst':slash_first,'removedSlash':removed_slash,'readiness':[initial,parent_added,child_added,parent_removed,parent_readded,child_readded,parent_final]})
  finally:c.close()
 def interrupted_close(attempt):
  name='close-clear-interrupted-'+str(attempt)

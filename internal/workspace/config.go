@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
@@ -365,7 +366,19 @@ func OpenDocument(w Workspace, snapshot source.Snapshot, override string) (Docum
 	if excluded {
 		name = "opened:" + string(snapshot.URI())
 	}
-	sum := sha256.Sum256([]byte(w.Root + "\n" + name + "\n" + version))
+	// A streamed metadata header already carries the exact configuration
+	// identity. Reuse it rather than replacing it with an identity that omits
+	// namespace and reference policy changes.
+	for _, target := range w.Targets {
+		if target.Root == w.Root && target.Scope == name && target.Version == version && target.Source == from {
+			return Document{Snapshot: snapshot, Target: target}, nil
+		}
+	}
+	identity, _ := json.Marshal(struct {
+		Config                       Config
+		Root, Scope, Version, Source string
+	}{w.Config, w.Root, name, version, from})
+	sum := sha256.Sum256(identity)
 	target := Target{ID: w.Root + "#" + name, Root: w.Root, Scope: name, Version: version, Source: from, SchemaHash: compat.SchemaHash(version), Experimental: !compat.Accepted(version), ConfigHash: hex.EncodeToString(sum[:])}
 	return Document{Snapshot: snapshot, Target: target}, nil
 }

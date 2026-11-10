@@ -29,6 +29,15 @@ with tempfile.TemporaryDirectory(prefix='wf-edits-') as d:
    if isinstance(v,Exception):raise v
    if predicate(v):return v
  def diagnosis(version):return wait(lambda x:x.get('method')=='textDocument/publishDiagnostics' and x['params']['uri']==uri and x['params'].get('version')==version)['params']['diagnostics']
+ def settle_dependency():
+  # Unrelated files no longer force publication of every open document. Observe
+  # their actual detached symbols before testing the previous action proof.
+  deadline=time.monotonic()+5;ident=100
+  while time.monotonic()<deadline:
+   ident+=1;send('workspace/symbol',{'query':'noop'},ident);response=wait(lambda x:x.get('id')==ident)
+   if response.get('result'):return
+   time.sleep(.02)
+  raise TimeoutError('watched dependency did not enter the index')
  def apply(current,edit,version):
   change=edit['documentChanges'];assert len(change)==1 and change[0]['textDocument']=={'uri':uri,'version':version};lines=current.splitlines(keepends=True);replacements=[]
   for item in change[0]['edits']:
@@ -38,7 +47,7 @@ with tempfile.TemporaryDirectory(prefix='wf-edits-') as d:
   return current
  try:
   send('initialize',{'rootUri':work.as_uri(),'capabilities':{'workspace':{'workspaceEdit':{'documentChanges':True}}}},1);v=wait(lambda x:x.get('id')==1);checks['edit_capability']=bool(v['result']['capabilities'].get('codeActionProvider')) and bool(v['result']['capabilities'].get('renameProvider'));send('initialized',{});send('textDocument/didOpen',{'textDocument':{'uri':uri,'version':1,'languageId':'yaml','text':text}});ds=diagnosis(1)
-  send('textDocument/codeAction',{'textDocument':{'uri':uri},'range':{'start':{'line':6,'character':2},'end':{'line':6,'character':12}},'context':{'diagnostics':ds}},2);v=wait(lambda x:x.get('id')==2);action=next(x for x in v['result'] if 'parallelism' in x['title']);dependency=work/'dependency.yaml';dependency.write_bytes('apiVersion: argoproj.io/v1alpha1\nkind: WorkflowTemplate\nmetadata: {name: helper}\nspec: {templates: [{name: noop, container: {image: alpine}}]}\n'.encode('utf-8'));send('workspace/didChangeWatchedFiles',{'changes':[{'uri':dependency.as_uri(),'type':1}]});diagnosis(1);send('codeAction/resolve',action,20);v=wait(lambda x:x.get('id')==20);checks['scope_change_stale']=v.get('error',{}).get('code')==-32801;send('textDocument/codeAction',{'textDocument':{'uri':uri},'range':{'start':{'line':6,'character':2},'end':{'line':6,'character':12}},'context':{'diagnostics':ds}},21);v=wait(lambda x:x.get('id')==21);action=next(x for x in v['result'] if 'parallelism' in x['title']);send('codeAction/resolve',action,3);v=wait(lambda x:x.get('id')==3);fixed=apply(text,v['result']['edit'],1);checks['field_bytes']=fixed==text.replace('paralelism','parallelism');(out/'field-after.yaml').write_bytes(fixed.encode('utf-8'))
+  send('textDocument/codeAction',{'textDocument':{'uri':uri},'range':{'start':{'line':6,'character':2},'end':{'line':6,'character':12}},'context':{'diagnostics':ds}},2);v=wait(lambda x:x.get('id')==2);action=next(x for x in v['result'] if 'parallelism' in x['title']);dependency=work/'dependency.yaml';dependency.write_bytes('apiVersion: argoproj.io/v1alpha1\nkind: WorkflowTemplate\nmetadata: {name: helper}\nspec: {templates: [{name: noop, container: {image: alpine}}]}\n'.encode('utf-8'));send('workspace/didChangeWatchedFiles',{'changes':[{'uri':dependency.as_uri(),'type':1}]});settle_dependency();send('codeAction/resolve',action,20);v=wait(lambda x:x.get('id')==20);checks['scope_change_stale']=v.get('error',{}).get('code')==-32801;send('textDocument/codeAction',{'textDocument':{'uri':uri},'range':{'start':{'line':6,'character':2},'end':{'line':6,'character':12}},'context':{'diagnostics':ds}},21);v=wait(lambda x:x.get('id')==21);action=next(x for x in v['result'] if 'parallelism' in x['title']);send('codeAction/resolve',action,3);v=wait(lambda x:x.get('id')==3);fixed=apply(text,v['result']['edit'],1);checks['field_bytes']=fixed==text.replace('paralelism','parallelism');(out/'field-after.yaml').write_bytes(fixed.encode('utf-8'))
   send('textDocument/didChange',{'textDocument':{'uri':uri,'version':2},'contentChanges':[{'text':fixed}]});checks['field_diagnostic_removed']=diagnosis(2)==[];send('codeAction/resolve',action,4);v=wait(lambda x:x.get('id')==4);checks['stale_rejected']=v.get('error',{}).get('code')==-32801
   send('textDocument/prepareRename',{'textDocument':{'uri':uri},'position':{'line':5,'character':15}},5);v=wait(lambda x:x.get('id')==5);checks['prepare']=v['result']['placeholder']=='main'
   send('textDocument/rename',{'textDocument':{'uri':uri},'position':{'line':5,'character':15},'newName':'renamed'},6);v=wait(lambda x:x.get('id')==6);renamed=apply(fixed,v['result'],2);checks['rename_bytes']=renamed==fixed.replace('entrypoint: main','entrypoint: renamed').replace('name: main','name: renamed');(out/'rename-after.yaml').write_bytes(renamed.encode('utf-8'))
