@@ -65,7 +65,7 @@ still requests strict checking; remove that key to restore automatic compatibili
 
 ## Standalone CLI / other editors
 
-Download your platform archive from the [LSP alpha release](https://github.com/lazysnail1024/zed-argo-workflows/releases/tag/v0.0.1-alpha.1),
+Download your platform archive from the [LSP alpha release](https://github.com/lazysnail1024/zed-argo-workflows/releases/tag/v0.0.1-alpha.2),
 extract it, and run:
 
 ```sh

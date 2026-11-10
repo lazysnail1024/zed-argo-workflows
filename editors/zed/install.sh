@@ -4,7 +4,7 @@ set -eu
 
 repo=lazysnail1024/zed-argo-workflows
 extension=argo-workflows-lsp
-version=0.0.1-alpha.2
+version=0.0.1-alpha.3
 assets_dir=
 rollback=false
 
