@@ -174,8 +174,26 @@ func Serve(in io.Reader, out, log io.Writer) int {
 			if request != nil {
 				_, _, err = state.handle(request.message)
 			} else {
+				// Clear unrelated YAML before a slow Workflow can consume the
+				// shared deadline. These per-URI results precede the final result,
+				// so the owner removes them from pending before reporting a timeout.
+				ownedURIs := []string{}
 				for _, uri := range uris {
-					if ctx.Err() != nil {
+					if state.ownsPublication(uri) {
+						ownedURIs = append(ownedURIs, uri)
+						continue
+					}
+					output.Reset()
+					err = state.publishEmpty(uri)
+					if err != nil {
+						break
+					}
+					if !send(workerResult{output: append([]byte(nil), output.Bytes()...), epoch: state.epoch, background: true, uri: uri}) {
+						return
+					}
+				}
+				for _, uri := range ownedURIs {
+					if err != nil || ctx.Err() != nil {
 						break
 					}
 					output.Reset()

@@ -138,3 +138,38 @@ See [development and test entry points](../DEVELOPMENT.md),
 [architecture ablations](ablation.md). This document records the incident and
 required evidence; the exact-commit CI reports and release assets establish
 which checks passed and which version has actually been published.
+
+## 2026-11-10: Workflow analysis errors on unrelated YAML
+
+The Zed adapter attaches to YAML and Helm language buffers. The server acquired
+the workspace and evaluated cross-file references before deciding whether the
+current buffer contained a Workflows resource. A configuration failure could
+therefore diagnose Deployment, Application, values and ordinary configuration
+files. A background deadline also published `WF_ANALYSIS_INCOMPLETE` to every
+remaining URI, including documents the worker had not reached.
+
+Publication now checks the current buffer's top-level API group and kind before
+workspace acquisition. It recognizes all eight Workflows kinds, quoted/flow
+identities, bounded aliases/merges and mixed streams. It clears foreign buffers
+in a first pass, before any Workflow consumes the shared five-second deadline.
+Version/epoch checks still reject stale publications, and changing a Workflow
+into ordinary YAML clears its previous diagnostics. Actual chart templates
+remain excluded by the existing chart/path boundary.
+
+If damaged YAML prevents establishing resource ownership, the server records
+that fact in its log; the generic YAML server owns the syntax diagnostic. This
+does not change CLI completeness accounting, cross-file input completeness or
+explicit open-buffer resource-refusal handling. A real Workflow timeout remains
+visible and suggests saving to retry, without blaming input/configuration.
+
+Existing CLI mixed-document tests did not cover editor publication under failed
+workspace acquisition or a slow earlier document. The new stdio consumer checks
+foreign files against deliberately invalid Workflows configuration, all eight
+positive kind controls and unsaved ownership transitions. A separate Go overlay
+control delays analysis until the existing deadline with six workspace roots;
+it requires a Workflow timeout, six empty foreign publications and edit recovery.
+The overlay changes neither the timeout nor publication logic, and its binary
+hash/evidence are explicitly separate from the unmodified native binary.
+Both consumers run on every native CI platform. The core mutation gate removes
+the ownership check and requires the named foreign-document assertions to fail;
+build errors, crashes, incomplete reports and harness timeouts are not acceptance.
