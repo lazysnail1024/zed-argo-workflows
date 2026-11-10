@@ -6,40 +6,21 @@ import (
 	"fmt"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-type Input struct {
-	Snapshots       []source.Snapshot
-	NotEvaluated    []string
-	IncompleteFiles []string
-	ScopeNames      map[source.URI]string
-}
-
-func Read(root string) (Input, error) {
-	return readInput(context.Background(), root, nil, nil, Config{}, "")
-}
-func readInput(ctx context.Context, root string, nested []string, buffers map[string]source.Snapshot, config Config, selected string) (Input, error) {
-	result := Input{ScopeNames: map[source.URI]string{}}
-	budget, _ := ctx.Value(snapshotBudgetKey{}).(*snapshotBudget)
-	if budget == nil {
-		budget = &snapshotBudget{}
-		for _, snapshot := range buffers {
-			budget.bytes += len(snapshot.Text())
-		}
+// readDocuments is the CLI's one-shot collection. Membership, target selection
+// and stable bounded reads are shared with the editor's streamed input path.
+func readDocuments(ctx context.Context, header Workspace, selected, override string) (Workspace, error) {
+	result := header
+	result.Targets = nil
+	if _, ok := ctx.Value(snapshotBudgetKey{}).(*snapshotBudget); !ok {
+		ctx = WithSnapshotBudget(ctx, 0)
 	}
-	if err := budget.check(0); err != nil {
-		return result, err
-	}
-	absolute, err := filepath.Abs(root)
-	if err != nil {
-		return result, err
-	}
-	info, err := os.Stat(absolute)
+	info, err := os.Stat(header.Root)
 	if err != nil {
 		return result, err
 	}
@@ -47,17 +28,13 @@ func readInput(ctx context.Context, root string, nested []string, buffers map[st
 		return result, fmt.Errorf("root is not a directory")
 	}
 	count := 0
-	err = filepath.WalkDir(absolute, func(path string, d fs.DirEntry, err error) error {
+	targets := map[string]bool{}
+	err = filepath.WalkDir(header.Root, func(path string, d fs.DirEntry, err error) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if err != nil {
 			return err
-		}
-		for _, child := range nested {
-			if path == child && path != absolute {
-				return filepath.SkipDir
-			}
 		}
 		if d.IsDir() {
 			switch d.Name() {
@@ -69,95 +46,51 @@ func readInput(ctx context.Context, root string, nested []string, buffers map[st
 		if d.Type()&os.ModeSymlink != 0 {
 			return nil
 		}
-		if filepath.Ext(path) != ".yaml" && filepath.Ext(path) != ".yml" {
-			return nil
-		}
-		if d.Name() == ".argo-workflows-ls.yaml" {
-			return nil
-		}
-		if HelmTemplate(absolute, path) {
-			return nil
+		relative, err := candidatePath(header.Root, path, nil)
+		if err != nil || relative == "" {
+			return err
 		}
 		count++
 		if count > 50000 {
 			return fmt.Errorf("workspace exceeds 50000 YAML files")
 		}
-		relative, _ := filepath.Rel(absolute, path)
-		relative = filepath.ToSlash(relative)
-		if matches(config.Exclude, relative) {
+		if matches(header.Config.Exclude, relative) {
 			return nil
 		}
-		scopeName := "root"
-		if len(config.Scopes) > 0 {
-			scopeName = "unassigned"
-			matched := 0
-			for _, scope := range config.Scopes {
-				if matches(scope.Include, relative) {
-					matched++
-					scopeName = scope.Name
-				}
-			}
-			if matched > 1 {
-				return fmt.Errorf("file %s matches multiple scopes", relative)
-			}
+		name, err := scopeName(header.Config, relative)
+		if err != nil {
+			return err
 		}
-		if selected != "" && scopeName != selected {
+		if selected != "" && name != selected {
 			return nil
 		}
 		uri, err := fileuri.FromPath(path)
 		if err != nil {
 			return err
 		}
-		result.ScopeNames[source.URI(uri)] = scopeName
-		if snapshot, ok := buffers[uri]; ok {
-			result.Snapshots = append(result.Snapshots, snapshot)
-			return nil
-		}
-		f, err := openConfig(path)
+		text, err := ReadText(ctx, path)
 		if err != nil {
-			return err
-		}
-		defer f.Close()
-		info, err := f.Stat()
-		if err != nil {
-			return err
-		}
-		if !info.Mode().IsRegular() || info.Size() > 5*1024*1024 {
-			result.IncompleteFiles = append(result.IncompleteFiles, path)
-			reason := "input exceeds 5 MiB"
-			if !info.Mode().IsRegular() {
-				reason = "input is not a regular file"
+			if _, unavailable := err.(inputProblem); !unavailable {
+				return err
 			}
-			result.NotEvaluated = append(result.NotEvaluated, path+": "+reason)
-			return nil
+		} else {
+			var snapshot source.Snapshot
+			snapshot, err = source.New(source.URI(uri), 1, text)
+			if err == nil {
+				target, err := documentTarget(header, path, override)
+				if err != nil {
+					return err
+				}
+				result.Documents = append(result.Documents, Document{Snapshot: snapshot, Target: target})
+				if !targets[target.ID] {
+					result.Targets = append(result.Targets, target)
+					targets[target.ID] = true
+				}
+				return nil
+			}
 		}
-		if err := budget.check(int(info.Size())); err != nil {
-			return err
-		}
-		raw, err := io.ReadAll(io.LimitReader(f, 5*1024*1024+1))
-		if err != nil {
-			return err
-		}
-		after, err := f.Stat()
-		if err != nil {
-			return err
-		}
-		if len(raw) > 5*1024*1024 || after.Size() != info.Size() || !after.ModTime().Equal(info.ModTime()) {
-			result.IncompleteFiles = append(result.IncompleteFiles, path)
-			result.NotEvaluated = append(result.NotEvaluated, path+": input grew or changed during read")
-			return nil
-		}
-		if err := budget.check(len(raw)); err != nil {
-			return err
-		}
-		snapshot, err := source.New(source.URI(uri), 1, string(raw))
-		if err != nil {
-			result.IncompleteFiles = append(result.IncompleteFiles, path)
-			result.NotEvaluated = append(result.NotEvaluated, path+": "+err.Error())
-			return nil
-		}
-		budget.bytes += len(snapshot.Text())
-		result.Snapshots = append(result.Snapshots, snapshot)
+		result.IncompleteScopes[header.Root+"#"+name] = true
+		result.NotEvaluated = append(result.NotEvaluated, path+": "+err.Error())
 		return nil
 	})
 	return result, err

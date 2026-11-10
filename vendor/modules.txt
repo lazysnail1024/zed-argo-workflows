@@ -10,7 +10,7 @@ github.com/expr-lang/expr/parser/lexer
 github.com/expr-lang/expr/parser/operator
 github.com/expr-lang/expr/parser/utils
 github.com/expr-lang/expr/vm/runtime
-# github.com/lazysnail1024/k8s-crd-toolkit v0.0.0-20261110063134-79c46c0625b9
+# github.com/lazysnail1024/k8s-crd-toolkit v0.0.0-20261110114800-b1e411d4b3ab
 ## explicit; go 1.27.3
 github.com/lazysnail1024/k8s-crd-toolkit/edit
 github.com/lazysnail1024/k8s-crd-toolkit/index

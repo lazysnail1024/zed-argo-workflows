@@ -5,8 +5,10 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
+	shared "github.com/lazysnail1024/k8s-crd-toolkit/workspace"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/analysis"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/buildinfo"
@@ -53,7 +55,6 @@ type session struct {
 	roots             []string
 	override          string
 	buffers           map[string]buffer
-	bufferBytes       int
 	initialized       bool
 	shutdown          bool
 	epoch             uint64
@@ -234,9 +235,6 @@ func (s *session) workspaceWithConfig(root, selected string, overlay *string) (w
 	after.NotEvaluated = before.NotEvaluated
 	return after, nil
 }
-func (s *session) publishAffected(uri string) error {
-	return s.publish(uri)
-}
 func (s *session) publish(uri string) error {
 	if s.pending != nil {
 		s.pending[uri] = true
@@ -318,8 +316,8 @@ func (s *session) queryDocument(uri string) (workspace.Document, error) {
 	return document, err
 }
 
-// Check retained text before constructing a snapshot. Refused updates retain
-// identity/version only for safe recovery; queries never fall back to old or disk data.
+// Check retained text before constructing a snapshot. Refused updates keep the
+// last accepted snapshot unavailable; queries never fall back to old or disk data.
 func (s *session) bufferBudget(uri string, size int) string {
 	limit := 5 * 1024 * 1024
 	name, _ := filePath(uri)
@@ -329,7 +327,7 @@ func (s *session) bufferBudget(uri string, size int) string {
 	if size > limit {
 		return fmt.Sprintf("buffer exceeds %d MiB", limit/(1024*1024))
 	}
-	if size > workspace.MaxSnapshotBytes-(s.bufferBytes-len(s.buffers[uri].snapshot.Text())) {
+	if size > workspace.MaxSnapshotBytes-(s.catalog.documents.OpenBytes()-len(s.buffers[uri].snapshot.Text())) {
 		return "retained open-buffer text exceeds 128 MiB"
 	}
 	return ""
@@ -338,13 +336,21 @@ func (s *session) refuseBuffer(uri string, version int32, reason string) error {
 	s.epoch++
 	b, ok := s.buffers[uri]
 	if !ok {
-		b.snapshot, _ = source.New(source.URI(uri), source.Revision(s.epoch), "")
+		var err error
+		b.snapshot, err = s.catalog.documents.Open(source.URI(uri), "")
+		if errors.Is(err, shared.ErrLimit) {
+			// No source was accepted. Keep only protocol identity until a full
+			// replacement can claim a released document slot.
+			b.snapshot, _ = source.New(source.URI(uri), 0, "")
+		} else if err != nil {
+			return err
+		}
 	}
 	b.version = version
 	b.unavailable = reason
 	s.buffers[uri] = b
 	fmt.Fprintln(s.log, reason)
-	return s.publishAffected(uri)
+	return s.publish(uri)
 }
 
 func (s *session) handle(m message) (bool, int, error) {
@@ -584,13 +590,21 @@ func (s *session) handle(m message) (bool, int, error) {
 			return false, 0, s.refuseBuffer(uri, p.TextDocument.Version, reason)
 		}
 		s.epoch++
-		snapshot, err := source.New(source.URI(uri), source.Revision(s.epoch), p.TextDocument.Text)
+		var snapshot source.Snapshot
+		var err error
+		if current, opened := s.catalog.documents.Snapshot(source.URI(uri)); opened {
+			snapshot, err = s.catalog.documents.Change(source.URI(uri), current.Revision(), []source.Change{{Range: source.Span{End: len(current.Text())}, Text: p.TextDocument.Text}})
+		} else {
+			snapshot, err = s.catalog.documents.Open(source.URI(uri), p.TextDocument.Text)
+		}
+		if errors.Is(err, shared.ErrLimit) {
+			return false, 0, s.refuseBuffer(uri, p.TextDocument.Version, "open document capacity exceeded")
+		}
 		if err != nil {
 			return false, 0, err
 		}
-		s.bufferBytes += len(snapshot.Text()) - len(s.buffers[uri].snapshot.Text())
 		s.buffers[uri] = buffer{snapshot: snapshot, version: p.TextDocument.Version}
-		return false, 0, s.publishAffected(uri)
+		return false, 0, s.publish(uri)
 	case "textDocument/didChange":
 		var p protocol.DidChangeTextDocumentParams
 		if err := json.Unmarshal(m.Params, &p); err != nil {
@@ -603,9 +617,15 @@ func (s *session) handle(m message) (bool, int, error) {
 			fmt.Fprintln(s.log, "ignored stale or unopened buffer change")
 			return false, 0, nil
 		}
+		if len(p.ContentChanges) == 0 {
+			b.version = p.TextDocument.Version
+			s.buffers[uri] = b
+			return false, 0, nil
+		}
 		snapshot := b.snapshot
 		available := b.unavailable == ""
-		for _, change := range p.ContentChanges {
+		changes := make([]source.Change, 0, len(p.ContentChanges))
+		for n, change := range p.ContentChanges {
 			var span source.Span
 			var text string
 			switch c := change.(type) {
@@ -631,24 +651,45 @@ func (s *session) handle(m message) (bool, int, error) {
 			if reason := s.bufferBudget(uri, len(snapshot.Text())-(span.End-span.Start)+len(text)); reason != "" {
 				return false, 0, s.refuseBuffer(uri, p.TextDocument.Version, reason)
 			}
-			s.epoch++
-			next, err := snapshot.Apply(source.Revision(s.epoch), []source.Change{{Range: span, Text: text}})
-			if err != nil {
-				fmt.Fprintln(s.log, err)
-				return false, 0, nil
+			changes = append(changes, source.Change{Range: span, Text: text})
+			if n+1 < len(p.ContentChanges) {
+				// Later LSP ranges refer to earlier edits in this notification.
+				// This temporary view translates coordinates only; Documents
+				// atomically accepts all changes and owns the resulting revision.
+				var err error
+				snapshot, err = snapshot.Apply(snapshot.Revision()+1, changes[len(changes)-1:])
+				if err != nil {
+					fmt.Fprintln(s.log, err)
+					return false, 0, nil
+				}
 			}
-			snapshot = next
 		}
-		s.bufferBytes += len(snapshot.Text()) - len(b.snapshot.Text())
+		var err error
+		if _, opened := s.catalog.documents.Snapshot(source.URI(uri)); opened {
+			snapshot, err = s.catalog.documents.Change(source.URI(uri), b.snapshot.Revision(), changes)
+		} else {
+			snapshot, err = b.snapshot.Apply(b.snapshot.Revision()+1, changes)
+			if err == nil {
+				snapshot, err = s.catalog.documents.Open(source.URI(uri), snapshot.Text())
+			}
+		}
+		if errors.Is(err, shared.ErrLimit) {
+			return false, 0, s.refuseBuffer(uri, p.TextDocument.Version, "open document capacity exceeded")
+		}
+		if err != nil {
+			fmt.Fprintln(s.log, err)
+			return false, 0, nil
+		}
+		s.epoch++
 		s.buffers[uri] = buffer{snapshot: snapshot, version: p.TextDocument.Version}
-		return false, 0, s.publishAffected(uri)
+		return false, 0, s.publish(uri)
 	case "textDocument/didClose":
 		var p protocol.DidCloseTextDocumentParams
 		if err := json.Unmarshal(m.Params, &p); err != nil {
 			return false, 0, nil
 		}
 		uri := string(p.TextDocument.URI)
-		s.bufferBytes -= len(s.buffers[uri].snapshot.Text())
+		s.catalog.documents.Close(source.URI(uri))
 		delete(s.buffers, uri)
 		for token, action := range s.actions {
 			if action.uri == uri {
@@ -656,7 +697,7 @@ func (s *session) handle(m message) (bool, int, error) {
 			}
 		}
 		s.epoch++
-		return false, 0, s.publishAffected(uri)
+		return false, 0, s.publish(uri)
 	case "workspace/didChangeWorkspaceFolders":
 		var p struct {
 			Event struct {

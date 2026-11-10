@@ -10,7 +10,7 @@ with tempfile.TemporaryDirectory(prefix='wf-workspace-') as d:
  cfg=work/'.argo-workflows-ls.yaml';cfg.write_text(config)
  def run(name,args,check):
   cmd=[str(binary),'check','--root',str(work),'--format','json',*args];p=subprocess.run(cmd,capture_output=True,timeout=20);(out/(name+'.stdout')).write_bytes(p.stdout);(out/(name+'.stderr')).write_bytes(p.stderr)
-  assertions={'exit':p.returncode==(1 if name in ['override','file'] else e['exitCode'])}
+  assertions={'exit':p.returncode==(1 if name in ['scopes','override','file'] else e['exitCode'])}
   try:assertions.update(check(json.loads(p.stdout)))
   except Exception as err:assertions['parse']=str(err)
   results.append({'name':name,'command':cmd,'exitCode':p.returncode,'assertions':assertions,'pass':all(x is True for x in assertions.values())})
@@ -18,7 +18,7 @@ with tempfile.TemporaryDirectory(prefix='wf-workspace-') as d:
  try:v=json.loads(p.stdout);passed=p.returncode==0 and {t['scope']:t['version'] for t in v['targets']}==e['scopeVersions'] and v['analysisReady'] is True
  except Exception:passed=False
  results.append({'name':'explain-config','command':cmd,'exitCode':p.returncode,'assertions':{'effectiveTargets':passed},'pass':passed})
- run('scopes',[],lambda v:{'versions':{t['scope']:t['version'] for t in v['targets']}==e['scopeVersions'],'binding':all(d['targetId'] in {t['id'] for t in v['targets']} for d in v['diagnostics']),'noConfigError':not v['configurationErrors']})
+ run('scopes',[],lambda v:{'versions':{t['scope']:t['version'] for t in v['targets']}==e['scopeVersions'],'binding':all(d['targetId'] in {t['id'] for t in v['targets']} for d in v['diagnostics']),'noConfigError':not v['configurationErrors'],'analysisComplete':v['analysisComplete'] is True,'supportedTargets':all(t['experimental'] is False and t['analysisComplete'] is True for t in v['targets'])})
  run('override',['--target-version',e['overrideVersion']],lambda v:{'override':len(v['targets'])==2 and all(t['version']==e['overrideVersion'] and t['source']=='cli' for t in v['targets'])})
  run('file',['--scope','dev','--file',str(work/'dev/a.yaml')],lambda v:{'dependencyInput':v['filesAnalyzed']==e['selectedScopeFiles'],'onlyFile':len(v['diagnostics'])==e['selectedDiagnostics'] and all(x['uri'].endswith('/dev/a.yaml') for x in v['diagnostics'])})
  for name,text,args in [('unknownField',config+'typo: true\n',[]),('overlap',config.replace('prod/**/*.yaml','dev/**/*.yaml'),[]),('unknownVersion',config.replace('3.5.0','99.0.0'),[]),('duplicateScope',config.replace('name: prod','name: dev'),[]),('missingScope',config,['--scope','missing']),('outsideFile',config,['--scope','dev','--file',str(work/'prod/c.yaml')])]:
