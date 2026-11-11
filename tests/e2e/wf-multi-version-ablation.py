@@ -54,7 +54,7 @@ lock=json.loads((source/'compat/catalog.lock.json').read_text())
 file=next(x for x in lock['automatic']['sources'] if x['kind']=='Workflow')['normalizedSchemas']['argoproj.io/v1alpha1']['file']
 schema_path=source/'internal/assets/schemas'/file
 original_schema=schema_path.read_bytes();schema=json.loads(original_schema)
-query_path=source/'internal/analysis/query_context.go';original_query=query_path.read_text()
+query_path=source/'internal/analysis/query_schema.go';original_query=query_path.read_text()
 BASE={'apiVersion':'argoproj.io/v1alpha1','kind':'Workflow','metadata':{'name':'ablation'},'spec':{'entrypoint':'main','templates':[{'name':'main','container':{'image':'alpine'}}]}}
 OLD=copy.deepcopy(BASE);OLD['spec']['podPriority']=1
 BAD=copy.deepcopy(BASE);BAD['spec']['podResources']=True
@@ -112,8 +112,10 @@ for name in ['latest-only','open-alternatives','no-query-selection','no-schema-i
         changed=copy.deepcopy(schema);changed['anyOf']=changed['anyOf'][:1];schema_path.write_text(json.dumps(changed,separators=(',',':')))
     elif name=='open-alternatives':schema_path.write_text(json.dumps(loose(schema),separators=(',',':')))
     elif name=='no-query-selection':
-        before='schema = queryAutomatic(ctx, schema, value, activePath)';assert before in original_query
-        query_path.write_text(original_query.replace(before,'_ = activePath // compatibility branch selection removed for ablation'))
+        # Keep the public SelectShapes call and its errors. Disable only the
+        # Workflow adapter applying the selected release alternatives to queries.
+        before='selected.AnyOf = possible';assert original_query.count(before)==1
+        query_path.write_text(original_query.replace(before,'selected.AnyOf = schema.AnyOf // compatibility branch selection removed for ablation',1))
     else:schema_path.write_text(json.dumps(expand(schema),separators=(',',':')))
     binary=dest/('server.exe' if os.name=='nt' else 'server')
     cmd=[go,'build','-mod=vendor','-trimpath','-buildvcs=false','-o',str(binary),'./cmd/argo-workflows-ls']
@@ -144,6 +146,10 @@ for name in ['latest-only','open-alternatives','no-query-selection','no-schema-i
             row['decision']=('Keep build-time schema interning: the baseline completes, while expansion exceeds the unchanged analysis deadline with no completed result and substantially higher memory.' if row['budgetExhausted'] else 'Keep build-time schema interning: removing it preserves these validation results but substantially increases schema size and memory.')
     rows.append(row);m.save(OUT/'results.json',rows);print(json.dumps(row),flush=True)
 # Remove the copied sources and binaries after retaining exact change hashes and evidence.
+# Vendored directories can retain read-only module-cache modes. Change only the
+# disposable copy so removing its children does not fail after successful probes.
+for directory,_,_ in os.walk(source):
+    path=pathlib.Path(directory);path.chmod(path.stat().st_mode|0o200)
 shutil.rmtree(source)
 m.save(OUT/'manifest.json',{'command':sys.argv,'binarySha256':m.sha(BINARY),'testSha256':m.sha(pathlib.Path(__file__)),'catalogSha256':m.sha(ROOT/'compat/catalog.lock.json'),'scope':'isolated native mechanism removal; no production source mutation'})
 raise SystemExit(0 if len(rows)==4 and all(r['detected'] for r in rows) else 1)
