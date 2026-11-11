@@ -6,8 +6,8 @@ github.com/expr-lang/expr v1.16.9 h1:WUAzmR0JNI9JCiF0/ewwHB1gmcGw5wW7nWt8gc6PpCI
 github.com/expr-lang/expr v1.16.9/go.mod h1:8/vRC7+7HBzESEqt5kKpYXxrxkr31SaO8r40VO/1IT4=
 github.com/google/go-cmp v0.5.9 h1:O2Tfq5qg4qc4AmwVlvv0oLiVAGB7enBSJ2x2DqQFi38=
 github.com/google/go-cmp v0.5.9/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
-github.com/lazysnail1024/k8s-crd-toolkit v0.0.0-20261110160307-7b0f547348cd h1:AJcGhVsLOqSoIjB48LIkIMxnGObAsy8TABNb7HwnndQ=
-github.com/lazysnail1024/k8s-crd-toolkit v0.0.0-20261110160307-7b0f547348cd/go.mod h1:OGR5QG1ScUCxRFJIhys1WWAjONMx3ZK9O6F6wwV4Coc=
+github.com/lazysnail1024/k8s-crd-toolkit v0.0.0-20261111044740-2be4e04dc495 h1:mzWDEBXom0BIy/A9fH57C2eNEaqApOMd+V7ALzp2Snc=
+github.com/lazysnail1024/k8s-crd-toolkit v0.0.0-20261111044740-2be4e04dc495/go.mod h1:OGR5QG1ScUCxRFJIhys1WWAjONMx3ZK9O6F6wwV4Coc=
 github.com/mattn/go-pointer v0.0.1 h1:n+XhsuGeVO6MEAp7xyEukFINEa+Quek5psIR/ylA6o0=
 github.com/mattn/go-pointer v0.0.1/go.mod h1:2zXcozF6qYGgmsG+SeTZz3oAbFLdD3OWqnUbNvJZAlc=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

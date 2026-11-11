@@ -77,14 +77,14 @@ WorkspaceEdit 能力约束。具体协议分支以 [stdio.go](../internal/lsp/st
 | [domain_queries.go](../internal/analysis/domain_queries.go)、[domain_external_completion.go](../internal/analysis/domain_external_completion.go)、[symbols.go](../internal/analysis/symbols.go) | 域内/跨资源名称补全、定义、引用和符号位置 |
 | [edits.go](../internal/analysis/edits.go)、[quickfixes.go](../internal/analysis/quickfixes.go)、[localrename.go](../internal/analysis/localrename.go)、[pin.go](../internal/analysis/pin.go) | 源码编辑计划、YAML 标量编码、绑定安全性和版本 pin 修复；拒绝不精确或不安全的修改 |
 | [local_edits.go](../internal/analysis/local_edits.go) | 在当前文档内模拟修复，要求资源身份、导出模板和外部调用边界保持不变；可证明局部安全时不等待完整目录，否则使用完整 scope 验证 |
-| [externalrename.go](../internal/analysis/externalrename.go) | 静态 WorkflowTemplate/ClusterWorkflowTemplate 资源名及引用的联合 Rename；复用现有资源/调用模型，检查全 scope、唯一声明、精确来源、新名捕获与批量修改后的语义 |
+| [externalrename.go](../internal/analysis/externalrename.go) | 按当前 CST 的光标位置选择局部或资源 Rename；静态 WorkflowTemplate/ClusterWorkflowTemplate 资源名及引用复用现有资源/调用模型，检查全 scope、唯一声明、精确来源、新名捕获与批量修改后的语义 |
 | [invocation.go](../internal/analysis/invocation.go)、[preparse.go](../internal/analysis/preparse.go)、[facts.go](../internal/analysis/facts.go)、[external_facts.go](../internal/analysis/external_facts.go) | 单次分析复用、CLI 有界预解析、可选解析事实交接及外部诊断复用；缓存不改变输入准入或完整性判断 |
 
 ## 公共依赖与隔离边界
 
 通过 [go.mod](../go.mod) 固定源码版本
-`v0.0.0-20261110160307-7b0f547348cd`，完整 commit 为
-`7b0f547348cd7f28e40ebd88c26f42939e0bdd4b`。
+`v0.0.0-20261111044740-2be4e04dc495`，完整 commit 为
+`2be4e04dc4955991bd937ace3abf28673d289898`。
 [toolkit.lock.json](../contracts/toolkit.lock.json)记录源码/ZIP/合同 hash，`published: false`；
 依赖方式是固定源码 commit 和已提交 vendor，无需 toolkit release、兄弟仓库 checkout 或本地 `replace`。
 [toolkit-design-4.md](../contracts/toolkit-design-4.md)是按 hash 校验的当前 API 合同。
@@ -107,6 +107,11 @@ Zed、Argo schema 或这个仓库；Workflows 与 Argo CD 插件互不 import。
 Expr 与 JSON Schema 是本仓实际使用并单独记录补丁的依赖，不因使用 toolkit 而隐去其来源。
 公共包没有 Argo 资源注册器、通用 Rename 服务或 LSP 调度器。固定版本 schema 的未知字段
 识别仍由 [fields.go](../internal/analysis/fields.go) 读取产品 schema 元数据，不能声称所有产品规则都已公共化。
+
+公共投影可以省略 CST 已证明安全的尾部 ASCII 注释，减少多个分析阶段重复解码的成本。
+原文档字节必须与快照匹配；含 TAB 的文档保留完整范围，非 ASCII 或控制字符仍留给严格解码器。
+原 `Span`、块标量内容和来源坐标不变。插件的文件大小、open buffer 与请求总输入预算仍按原始文本计费，
+不能使用缩短后的 `ContentSpan` 放宽配额。
 
 ## 输入、扫描与查询如何协作
 

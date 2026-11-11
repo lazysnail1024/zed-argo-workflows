@@ -55,9 +55,9 @@ def ready(client,work,files,opened=None,marker=0):
   time.sleep(.02)
  raise AssertionError({'root':str(work),'expectedFiles':files,'expectedOpenBytes':opened,'states':index_states(client,work)})
 
-def summary_without_disk_read(client,path):
- # Watch the genuinely new, unwatched URI. A summary request must not turn into
- # the old whole-root raw read, independently of counters reported by the LSP.
+def without_disk_read(path,operation):
+ # Observe actual opens independently of counters reported by the LSP. Neither
+ # detached summaries nor independent local edits may acquire closed input.
  libc=ctypes.CDLL(None,use_errno=True)
  libc.inotify_init1.argtypes=[ctypes.c_int];libc.inotify_init1.restype=ctypes.c_int
  libc.inotify_add_watch.argtypes=[ctypes.c_int,ctypes.c_char_p,ctypes.c_uint32];libc.inotify_add_watch.restype=ctypes.c_int
@@ -65,7 +65,7 @@ def summary_without_disk_read(client,path):
  if fd<0:raise OSError(ctypes.get_errno(),'inotify_init1')
  try:
   if libc.inotify_add_watch(fd,os.fsencode(path),0x20)<0:raise OSError(ctypes.get_errno(),'inotify_add_watch')
-  response=client.request('workspace/symbol',{'query':'main'})
+  response=operation()
   opened=0
   while True:
    try:data=os.read(fd,65536)
@@ -108,18 +108,32 @@ try:
  ready(client,other,25)
  indexed=ready(client,work,2,128*MiB)
  extra=work/'disk-extra.yaml';extra.write_text(base)
- r,reads=summary_without_disk_read(client,extra)
+ r,reads=without_disk_read(extra,lambda:client.request('workspace/symbol',{'query':'main'}))
  m.result('summaries-at-full-buffer-budget',{
   'allAcceptedBufferSymbols':'error' not in r and len(r.get('result',[]))==26 and {x['location']['uri'] for x in r.get('result',[])}=={p.as_uri() for p in paths},
   'unknownDiskURIIsNotHydrated':reads==0 and all(x['location']['uri']!=extra.as_uri() for x in r.get('result',[])),
   'fullBufferReservation':indexed['retainedTextBytes']==128*MiB},{'response':r,'extraFileOpens':reads,'state':indexed})
  extra.unlink()
  position=m.pos(caller,'paralelism');request={'textDocument':{'uri':paths[-1].as_uri()},'range':{'start':position,'end':position}}
- refusal=client.request('textDocument/codeAction',request)
+ def local_edits():
+  actions=client.request('textDocument/codeAction',request);resolved=[];fixed=[]
+  for action in actions.get('result',[]):
+   response=client.request('codeAction/resolve',action);resolved.append(response)
+   if 'edit' in response.get('result',{}):fixed.append(m.apply(caller,response['result']['edit'],paths[-1].as_uri(),1))
+  return actions,resolved,fixed
+ (local,resolved,fixed),local_reads=without_disk_read(work/'callee.yaml',local_edits)
+ # Resource rename must prove the whole closed scope and edit the declaration
+ # as well as this reference. Local-fix availability must not waive that input
+ # reservation or turn the known closed template into unbudgeted raw input.
+ rename={'textDocument':{'uri':paths[-1].as_uri()},'position':m.pos(caller,'name: helper',offset=6),'newName':'renamed-helper'}
+ refusal,dependency_reads=without_disk_read(work/'callee.yaml',lambda:client.request('textDocument/rename',rename))
  m.result('buffers-reserved-before-dependency',{
-  'noUnbudgetedDependencyEdit':refusal.get('result')==[] and 'error' not in refusal or refusal.get('error',{}).get('code')==-32803 and '128 MiB' in refusal.get('error',{}).get('message','') and 'result' not in refusal,
+  'independentLocalFixAvailable':fixed==[caller.replace('paralelism','parallelism')],
+  'localFixDoesNotOpenClosedDependency':local_reads==0,
+  'externalRenameRequiresCompleteBudgetedScope':refusal.get('error',{}).get('code')==-32602 and refusal.get('error',{}).get('message')=='resource rename requires the complete selected scope' and 'result' not in refusal,
+  'noUnbudgetedDependencyRead':dependency_reads==0,
   'knownClosedTargetRetained':(work/'callee.yaml').read_text()==callee},
-  {'response':refusal,'openBytes':128*MiB,'closedDependencyBytes':len(callee.encode())})
+  {'localActions':local,'localResolved':resolved,'localDependencyOpens':local_reads,'externalRename':refusal,'externalDependencyOpens':dependency_reads,'openBytes':128*MiB,'closedDependencyBytes':len(callee.encode())})
  refused=other/'overflow.yaml';refused.write_text(base.replace('name: main','name: disk-only'))
  client.send('textDocument/didOpen',{'textDocument':{'uri':refused.as_uri(),'version':1,'languageId':'yaml','text':base}})
  r=client.request('textDocument/documentSymbol',{'textDocument':{'uri':refused.as_uri()}})
@@ -134,10 +148,21 @@ try:
  for action in recovered.get('result',[]):
   resolved=client.request('codeAction/resolve',action)
   if 'result' in resolved:fixed.append(m.apply(caller,resolved['result']['edit'],paths[-1].as_uri(),1))
+ # Resource edits require every affected file to be open and versioned. Once
+ # capacity is released, open the declaration and demand both exact edits from
+ # the same rename request, independently of the local quick-fix result.
+ callee_uri=(work/'callee.yaml').as_uri()
+ client.send('textDocument/didOpen',{'textDocument':{'uri':callee_uri,'version':1,'languageId':'yaml','text':callee}})
+ ready(client,work,2,123*MiB+len(base.encode())+len(callee.encode()))
+ renamed=client.request('textDocument/rename',rename);renamed_text={}
+ for change in renamed.get('result',{}).get('documentChanges',[]):
+  uri=change['textDocument']['uri'];text={paths[-1].as_uri():caller,callee_uri:callee}[uri]
+  renamed_text[uri]=m.apply(text,{'documentChanges':[change]},uri,1)
  m.result('buffer-budget-recovery',{
   'fullReplacementAccepted':[x['name'] for x in r.get('result',[])]==['main'],
-  'releasedBudgetRestoresExactDependencyEdit':fixed==[caller.replace('paralelism','parallelism')],
-  'notKilled':not state['killed']},{'resourceObservation':state,'documentSymbols':r,'actions':recovered})
+  'independentLocalFixStillExact':fixed==[caller.replace('paralelism','parallelism')],
+  'releasedBudgetRestoresExternalRename':len(renamed.get('result',{}).get('documentChanges',[]))==2 and renamed_text=={paths[-1].as_uri():caller.replace('name: helper','name: "renamed-helper"'),callee_uri:callee.replace('name: helper','name: "renamed-helper"')},
+  'notKilled':not state['killed']},{'resourceObservation':state,'documentSymbols':r,'actions':recovered,'externalRename':renamed})
 except Exception as e:m.result('buffer-budget-runner',{'completed':False},{'error':repr(e),**state})
 finally:
  stop.set();guard.join()
