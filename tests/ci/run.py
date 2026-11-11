@@ -511,9 +511,26 @@ def mutations(args):
         for name, count in (("shared-yaml-projection", 2), ("catalog-queries", 7), ("responsive-editing", 4)):
             destination = args.output / name
             script = E2E / ("ablate-" + name + ".py")
+            passing_baseline = None
+            if name == "shared-yaml-projection":
+                baseline_output = args.output / "shared-yaml-baseline"
+                passing_baseline = command([sys.executable, E2E / "wf-shared-yaml-projection.py", baseline, baseline_output],
+                                           args.output / "shared-yaml-baseline-driver", timeout=180)
+                passing_baseline["name"] = "shared YAML baseline"
+                try:
+                    passing_baseline["caseCount"] = validate_results(baseline_output / "results.json", require_assertions=True)
+                    passing_baseline["pass"] = passing_baseline["pass"] and passing_baseline["caseCount"] == 4
+                except (OSError, ValueError, TypeError):
+                    passing_baseline["pass"] = False
+                    passing_baseline["evidenceError"] = traceback.format_exc()
+                if not passing_baseline["pass"]:
+                    rows.append(passing_baseline)
+                    continue
             command_args = [sys.executable, script, destination] if name == "shared-yaml-projection" else [sys.executable, script, baseline, destination]
             extra = command(command_args, args.output / (name + "-driver"), timeout=600)
             extra["name"] = name + " mutations"
+            if passing_baseline is not None:
+                extra["baseline"] = passing_baseline
             try:
                 report_file = destination / ("results.json" if name == "shared-yaml-projection" else "report.json")
                 evidence = json.loads(report_file.read_text(encoding="utf-8"))
