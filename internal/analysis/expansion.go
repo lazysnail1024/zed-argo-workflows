@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
+	"github.com/lazysnail1024/k8s-crd-toolkit/yamlvalue"
 	"github.com/lazysnail1024/k8s-crd-toolkit/yamlview"
 )
 
@@ -42,40 +43,6 @@ func admitProjection(ctx context.Context, key projectionIdentity, cost int) erro
 	return nil
 }
 
-func graphDocument(n yamlview.Node) bool {
-	if n.Kind() == yamlview.Alias {
-		return true
-	}
-	for _, m := range n.Members() {
-		if m.Key.Raw() == "<<" || graphDocument(m.Value) {
-			return true
-		}
-	}
-	for _, e := range n.Elements() {
-		if graphDocument(e) {
-			return true
-		}
-	}
-	return false
-}
-
-// Containers, mapping keys and scalar/null values each count once. Repeated
-// expanded occurrences count separately; documents without a graph cost zero.
-func logicalNodes(value any) int {
-	count := 1
-	switch v := value.(type) {
-	case map[string]any:
-		for _, child := range v {
-			count += 1 + logicalNodes(child)
-		}
-	case []any:
-		for _, child := range v {
-			count += logicalNodes(child)
-		}
-	}
-	return count
-}
-
 type projectedDocument struct {
 	value      any
 	graphNodes int
@@ -89,17 +56,13 @@ func sharedOrigins(ctx context.Context, snapshot source.Snapshot, doc yamlview.D
 			return value.shared
 		}
 	}
-	shared := map[source.Span]bool{}
 	// Artificial completion snapshots intentionally bypass reusable facts.
-	// Their source provenance still follows the same bounded preflight.
-	_ = preflight(ctx, snapshot, doc, shared)
-	return shared
+	projected, err := yamlvalue.Project(ctx, snapshot, doc, yamlvalue.Options{MaxNodes: 100000, MaxVisits: 100000, RejectExplicitTags: true})
+	if err != nil {
+		return nil
+	}
+	return projected.Shared
 }
 func sharedOrigin(shared map[source.Span]bool, span source.Span) bool {
-	for parent := range shared {
-		if span.Start >= parent.Start && span.End <= parent.End {
-			return true
-		}
-	}
-	return false
+	return yamlvalue.Shared(shared, span)
 }

@@ -6,7 +6,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lazysnail1024/k8s-crd-toolkit/schemaquery"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
+	"github.com/lazysnail1024/k8s-crd-toolkit/yamlvalue"
 	"github.com/lazysnail1024/k8s-crd-toolkit/yamlview"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/assets"
@@ -48,11 +50,32 @@ func queryField(ctx context.Context, snapshot source.Snapshot, version string, p
 	keyMarker := "__argo_query_key__"
 	for _, doc := range view.Documents() {
 		if span.Start >= doc.Span().Start && span.End <= doc.Span().End {
-			origins := map[source.Span]bool{}
-			if err := preflight(WithLogicalResult(ctx), snapshot, doc, origins); err != nil {
+			original, candidate := snapshot, doc
+			if key && after == ": " && !doc.Complete() {
+				// Make only the unfinished key syntactically complete. Keep its
+				// original spelling so projection still catches duplicate keys,
+				// tags and aliases before replacing the active token with a marker.
+				text := snapshot.Text()[:span.End] + ": null" + snapshot.Text()[span.End:]
+				original, err = source.New(snapshot.URI(), snapshot.Revision(), text)
+				if err != nil {
+					return fieldContext{}, err
+				}
+				recovered, err := yamlview.Parse(ctx, original)
+				if err != nil {
+					return fieldContext{}, err
+				}
+				for _, recoveredDoc := range recovered.Documents() {
+					if span.Start >= recoveredDoc.Span().Start && span.End <= recoveredDoc.Span().End {
+						candidate = recoveredDoc
+						break
+					}
+				}
+			}
+			projected, err := yamlvalue.Project(ctx, original, candidate, yamlvalue.Options{MaxNodes: 100000, MaxVisits: 100000, RejectExplicitTags: true})
+			if err != nil {
 				return fieldContext{}, err
 			}
-			shared = sharedOrigin(origins, span)
+			shared = sharedOrigin(projected.Shared, span)
 			if key {
 				keyMarker = queryKeyMarker(ctx, doc.Root())
 			}
@@ -128,7 +151,10 @@ func queryField(ctx context.Context, snapshot source.Snapshot, version string, p
 				if key {
 					activePath = append(append([]string{}, path...), marker)
 				}
-				schema = queryAutomatic(ctx, schema, value, activePath)
+				schema, err = queryAutomatic(ctx, schema, value, activePath)
+				if err != nil {
+					return fieldContext{}, err
+				}
 			}
 			field := fieldContext{shared: shared, schema: schema, path: path, value: value, span: span, key: key, name: name, prefix: prefix, before: before, after: after, api: api, kind: kind, existing: map[string]bool{}}
 			parentValue := value
@@ -152,9 +178,12 @@ func queryField(ctx context.Context, snapshot source.Snapshot, version string, p
 					field.existing[field.name] = true
 				}
 				// A first sequence token can be either an object key or a scalar item.
-				nodes, _ := queryNodes(ctx, schema, path, value, 0)
+				query, err := schemaquery.Lookup(ctx, schema, path, value, schemaquery.Limits{})
+				if err != nil {
+					return fieldContext{}, err
+				}
 				hasFields := false
-				for _, n := range nodes {
+				for _, n := range query.Nodes {
 					if len(n.Properties) > 0 {
 						hasFields = true
 					}

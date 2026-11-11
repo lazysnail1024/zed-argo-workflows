@@ -9,7 +9,7 @@ for name in ['flow-context','key-closure']:
  if name=='flow-context':
   path=source/'internal/analysis/query_context.go';before=path.read_text();after=before.replace('offset, flowDepth)', 'offset, 0)');kind='actual';required=['multiline-flow-sibling','multiline-flow-sibling-crlf-comment','multiline-flow-array-object']
  else:
-  path=source/'internal/analysis/queries.go';before=path.read_text();after=before.replace('if !queryAllowsKey(ctx, field.schema, path, field.value, 0) {','if false {');kind='synthetic';required=['closedConjunction-keys','closedRefConjunction-keys']
+  path=source/'internal/analysis/queries.go';before=path.read_text();after=before.replace('if !allowed {','if false && !allowed {');kind='synthetic';required=['closedConjunction-keys','closedRefConjunction-keys']
   shutil.copy2(root/'tests/fixtures/schema-query/contract.json',source/'internal/assets/schemas/96631f9b6d683112ccd0dd0dd7c28b3a59310400e3b2550e8cadb0a370410ac7.json')
  assert before!=after;path.write_text(after);(dest/'change.json').write_text(json.dumps({'file':str(path.relative_to(source)),'before':before,'after':after},indent=2)+'\n')
  cmd=[str(pathlib.Path(env['GOROOT'])/'bin/go'),'build','-mod=vendor','-trimpath','-buildvcs=false','-o',str(dest/'server'),'./cmd/argo-workflows-ls']

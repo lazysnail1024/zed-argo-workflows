@@ -63,6 +63,21 @@ window. It does not guess your cluster version. An existing explicit `targetVers
 still requests strict checking; remove that key to restore automatic compatibility.
 [Version behavior and advanced configuration](docs/configuration.md).
 
+## Navigation and safe edits
+
+The current source supports definition/references, workspace symbols, local
+template/name edits and static WorkflowTemplate/ClusterWorkflowTemplate resource
+renames. Cross-file resource renames require a complete scope with `closed`
+reference policy, a known namespace for namespaced resources, a unique definition,
+and every affected file open with a client version. Dynamic, shared or ambiguous
+source references cannot be renamed safely.
+
+Current-file diagnostics and proven local fixes can respond while the workspace
+index is still being built. Hover, completion and document symbols have a separate
+bounded request lane. See [current capabilities and boundaries](docs/architecture.md).
+Installed releases use their recorded source commit; development capabilities do
+not imply that an older released binary contains them.
+
 ## Standalone CLI / other editors
 
 Download your platform archive from the [LSP alpha release](https://github.com/lazysnail1024/zed-argo-workflows/releases/tag/v0.0.1-alpha.2),

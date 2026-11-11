@@ -178,11 +178,8 @@ func (s *session) workspace(root, selected string) (workspace.Workspace, error) 
 		return w, err
 	}
 	s.proofs = append(s.proofs, proof)
-	for n, d := range w.Documents {
-		if b, opened := s.buffers[string(d.Snapshot.URI())]; opened && b.unavailable == "" {
-			w.Documents[n].Snapshot = b.snapshot
-		}
-	}
+	// Catalog documents and their proofs are one read. Replacing a dependency
+	// with an older worker buffer would attach a fresh proof to stale source.
 	if s.context().Err() == nil && s.workspaces != nil {
 		s.workspaces[workspaceKey{root, selected}] = w
 		boundary := analysis.FactBoundary(w)
@@ -282,9 +279,16 @@ func (s *session) bufferDocument(uri string) (workspace.Document, error) {
 		snapshot = b.snapshot
 	}
 	if s.catalog != nil {
-		if header, _, err := s.catalog.header(root); err == nil {
+		// Capture the metadata revision actually read by this worker. Resolving
+		// pending configuration is not itself another client input change.
+		s.catalog.mu.Lock()
+		if current := s.catalog.roots[root]; current != nil && current.problem == "" {
+			header := current.header
+			s.proofs = append(s.proofs, catalogProof{root: root, epoch: current.epoch})
+			s.catalog.mu.Unlock()
 			return workspace.OpenDocument(header, snapshot, s.override)
 		}
+		s.catalog.mu.Unlock()
 	}
 	configURI, err := fileuri.FromPath(filepath.Join(root, ".argo-workflows-ls.yaml"))
 	if err != nil {

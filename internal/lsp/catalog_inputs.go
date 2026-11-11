@@ -90,18 +90,7 @@ func (c *catalog) scopeReadyLocked(root *catalogRoot, target string) bool {
 	if root == nil || root.problem != "" || root.scanProblem != "" || !root.done {
 		return false
 	}
-	for uri, file := range c.files {
-		if file.root != root.header.Root {
-			continue
-		}
-		if file.target.ID == "" {
-			return false
-		}
-		if file.target.ID == target && (c.queue.Pending(uri) || file.blocked || file.problem != "" || file.invalidated) {
-			return false
-		}
-	}
-	return true
+	return root.unknown == 0 && root.unready[target] == 0
 }
 
 func (c *catalog) scopeReady(root, target string) bool {
@@ -173,7 +162,10 @@ func (c *catalog) document(ctx context.Context, uri string) (workspace.Document,
 		}
 		header, override := r.header, r.override
 		proof := catalogProof{root: root, epoch: r.epoch}
-		if file := c.files[source.URI(uri)]; file != nil {
+		file := c.files[source.URI(uri)]
+		var stamp uint64
+		if file != nil {
+			stamp = file.stamp
 			proof.files = map[source.URI]catalogInput{source.URI(uri): {file.stamp, file.hash}}
 		}
 		c.mu.Unlock()
@@ -182,7 +174,26 @@ func (c *catalog) document(ctx context.Context, uri string) (workspace.Document,
 			return workspace.Document{}, proof, err
 		}
 		document, err := workspace.OpenDocument(header, snapshot, override)
-		return document, proof, err
+		if err != nil {
+			return document, proof, err
+		}
+		c.mu.Lock()
+		if c.roots[root] != r || r.epoch != proof.epoch || c.files[source.URI(uri)] != file || file != nil && file.stamp != stamp {
+			c.mu.Unlock()
+			return workspace.Document{}, proof, shared.ErrStale
+		}
+		if file != nil {
+			hash := sha256.Sum256([]byte(snapshot.Text()))
+			if file.hash != hash && !c.queue.Pending(source.URI(uri)) {
+				// A closed read can discover a missed watch. Keep this useful
+				// positive input, but withdraw any claim of scope completeness.
+				c.mark(source.URI(uri), shared.Related, true)
+				proof.repaired = true
+			}
+			proof.files[source.URI(uri)] = catalogInput{file.stamp, hash}
+		}
+		c.mu.Unlock()
+		return document, proof, nil
 	}
 }
 
@@ -296,10 +307,11 @@ type catalogInput struct {
 }
 
 type catalogProof struct {
-	root   string
-	epoch  uint64
-	states map[index.Scope]uint64
-	files  map[source.URI]catalogInput
+	root     string
+	epoch    uint64
+	states   map[index.Scope]uint64
+	files    map[source.URI]catalogInput
+	repaired bool
 }
 
 func (c *catalog) valid(proofs []catalogProof) bool {
@@ -311,8 +323,7 @@ func (c *catalog) valid(proofs []catalogProof) bool {
 			return false
 		}
 		for scope, generation := range proof.states {
-			_, state := c.index.Definitions(scope, "")
-			if !c.scopeReadyLocked(root, string(scope)) || state.Generation != generation {
+			if !c.scopeReadyLocked(root, string(scope)) || c.scopeGeneration(root, string(scope)) != generation {
 				return false
 			}
 		}
@@ -365,8 +376,7 @@ func (c *catalog) workspace(ctx context.Context, root, selected, focus string, r
 			continue
 		}
 		if c.scopeReadyLocked(r, target.ID) {
-			_, state := c.index.Definitions(index.Scope(target.ID), "")
-			proof.states[index.Scope(target.ID)] = state.Generation
+			proof.states[index.Scope(target.ID)] = c.scopeGeneration(r, target.ID)
 		} else {
 			incomplete[target.ID] = true
 		}
@@ -380,7 +390,7 @@ func (c *catalog) workspace(ctx context.Context, root, selected, focus string, r
 	w.Documents = nil
 	w.IncompleteScopes = incomplete
 	for _, uri := range uris {
-		document, _, err := c.document(ctx, string(uri))
+		document, observed, err := c.document(ctx, string(uri))
 		if err != nil {
 			if os.IsNotExist(err) {
 				c.mu.Lock()
@@ -399,16 +409,16 @@ func (c *catalog) workspace(ctx context.Context, root, selected, focus string, r
 		}
 		c.mu.Lock()
 		file := c.files[uri]
-		if file != nil && file.hash != sha256.Sum256([]byte(document.Snapshot.Text())) && !c.queue.Pending(uri) {
-			c.mark(uri, shared.Related, true)
+		if observed.repaired {
 			delete(proof.states, index.Scope(document.Target.ID))
 			w.IncompleteScopes[document.Target.ID] = true
 		}
 		if file == nil || file.problem != "" || file.invalidated {
 			w.IncompleteScopes[document.Target.ID] = true
 		}
-		if file != nil {
-			proof.files[uri] = catalogInput{file.stamp, sha256.Sum256([]byte(document.Snapshot.Text()))}
+		if input, ok := observed.files[uri]; ok {
+			// Preserve the stamp from the read, not a later watch notification.
+			proof.files[uri] = input
 		}
 		if strings.HasPrefix(document.Target.Scope, "opened:") && file != nil && file.problem == "" {
 			delete(w.IncompleteScopes, document.Target.ID)

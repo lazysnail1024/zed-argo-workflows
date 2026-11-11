@@ -42,6 +42,16 @@ class Mutation:
 
 MUTATIONS = (
     Mutation(
+        "resource-rename-unique", "audit", "resource Rename needs a unique declaration", "internal/analysis/externalrename.go",
+        (("if declarations != 1 {", "if declarations < 1 {"),),
+        "wf-resource-rename.py", (("duplicate-definition", "prepareRefused"),), ("--cases", "duplicate-definition"),
+    ),
+    Mutation(
+        "resource-rename-capture", "audit", "resource Rename must preserve every call binding", "internal/analysis/externalrename.go",
+        (("if afterBindings[call] != target {", "if false && afterBindings[call] != target {"),),
+        "wf-resource-rename.py", (("unresolved-capture", "renameRefused"),), ("--cases", "unresolved-capture"),
+    ),
+    Mutation(
         "diagnostic-ownership", "core", "unrelated YAML diagnostic isolation", "internal/lsp/serve.go",
         (("if state.ownsPublication(uri) {", "if true {"),),
         "wf-diagnostic-ownership.py",
@@ -79,8 +89,8 @@ MUTATIONS = (
     Mutation(
         "stale-action", "core", "ablate-edits.py", "internal/lsp/edits.go",
         ((
-            "if err != nil || !opened || b.snapshot.Revision() != action.revision || s.actionFingerprint(w) != action.fingerprint {",
-            "if false && (err != nil || !opened || b.snapshot.Revision() != action.revision || s.actionFingerprint(w) != action.fingerprint) {",
+            "if err != nil || !opened || b.snapshot.Revision() != action.revision || currentFingerprint != action.fingerprint {",
+            "if false && (err != nil || !opened || b.snapshot.Revision() != action.revision || currentFingerprint != action.fingerprint) {",
         ),),
         "wf-delivery.py", (("edits", "staleAction"),), ("--cases", "edits"),
     ),
@@ -142,8 +152,8 @@ MUTATIONS = (
     Mutation(
         "opened-scope-action", "audit", "reaudit R-04", "internal/lsp/edits.go",
         ((
-            "w, err := s.documentWorkspace(action.uri, action.scope)",
-            'w, err := s.workspace(s.root(action.uri), "root")',
+            "d, err = s.queryDocument(action.uri)",
+            'd, err = s.queryDocument(action.uri); if err == nil && strings.HasPrefix(d.Target.Scope, "opened:") { d.Target.Scope = "root"; d.Target.ID = "root" }',
         ),),
         "wf-reaudit-actions.py", (("excluded", "immediateExactEdit"),
                                  ("internal-directory", "immediateExactEdit")),
@@ -151,8 +161,8 @@ MUTATIONS = (
     Mutation(
         "isolated-action-configuration", "audit", "reaudit R-04", "internal/lsp/edits.go",
         ((
-            "}{fingerprint(w), w.Config.ReferencePolicy, w.Config.DefaultNamespace, generations, incomplete})",
-            '}{fingerprint(w), "", "", generations, incomplete})',
+            "[]string{fingerprint(w), w.Config.ReferencePolicy, w.Config.DefaultNamespace}",
+            '[]string{fingerprint(w), "", ""}',
         ),),
         "wf-reaudit-actions.py", (("isolated-config-policy", "effectiveConfigChangeRefused"),
                                  ("isolated-config-namespace", "effectiveConfigChangeRefused")),

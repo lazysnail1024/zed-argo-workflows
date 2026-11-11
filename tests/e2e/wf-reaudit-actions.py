@@ -190,7 +190,7 @@ def changed_dependency():
         checks['immediateExactEdit'] = exact_edit(responses['immediate'], path, BROKEN, 1)
         client.change(dependency, PEER + '# same scope input changed\n', 2)
         responses['changedDependency'] = client.request('codeAction/resolve', action)
-        checks['changedDependencyRefused'] = refused(responses['changedDependency'])
+        checks['independentPeerKeepsLocalEdit'] = exact_edit(responses['changedDependency'], path, BROKEN, 1)
         responses['freshOffer'], current = offer(client, path, BROKEN, diagnostics)
         checks['freshActionOffered'] = current is not None
         if current is not None:
