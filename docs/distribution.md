@@ -4,9 +4,9 @@
 
 | 组件 | 当前源码中的版本入口 | 交付形式 |
 | --- | --- | --- |
-| 原生 Go LSP/CLI | 根 [VERSION](../VERSION)，当前 `0.0.1-alpha.2` | `v<VERSION>` 下的平台可执行文件、独立 archive、来源记录、`SHA256SUMS` |
-| Zed adapter | [extension.toml](../editors/zed/extension.toml) 与 [Cargo.toml](../editors/zed/Cargo.toml)，当前 `0.0.1-alpha.3` | `zed-v<VERSION>` 下预编译 adapter ZIP、身份记录、`SHA256SUMS` |
-| adapter 选择的原生服务 | [native-server-version](../editors/zed/native-server-version)，当前 `0.0.1-alpha.2` | 固定 native release，独立于 adapter 自身版本 |
+| 原生 Go LSP/CLI | 根 [VERSION](../VERSION)，当前 `0.0.1-alpha.3` | `v<VERSION>` 下的平台可执行文件、独立 archive、来源记录、`SHA256SUMS` |
+| Zed adapter | [extension.toml](../editors/zed/extension.toml) 与 [Cargo.toml](../editors/zed/Cargo.toml)，当前 `0.0.1-alpha.4` | `zed-v<VERSION>` 下预编译 adapter ZIP、身份记录、`SHA256SUMS` |
+| adapter 选择的原生服务 | [native-server-version](../editors/zed/native-server-version)，当前 `0.0.1-alpha.3` | 固定 native release，独立于 adapter 自身版本 |
 
 这里列出源码配置，不据此宣称对应 release 已发布或包含 main 的后续改动。
 安装前以 [Releases](https://github.com/lazysnail1024/zed-argo-workflows/releases) 的资产为准，

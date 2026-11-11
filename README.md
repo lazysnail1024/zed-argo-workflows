@@ -80,7 +80,7 @@ not imply that an older released binary contains them.
 
 ## Standalone CLI / other editors
 
-Download your platform archive from the [LSP alpha release](https://github.com/lazysnail1024/zed-argo-workflows/releases/tag/v0.0.1-alpha.2),
+Download your platform archive from the [LSP alpha release](https://github.com/lazysnail1024/zed-argo-workflows/releases/tag/v0.0.1-alpha.3),
 extract it, and run:
 
 ```sh

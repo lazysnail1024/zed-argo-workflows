@@ -9,7 +9,7 @@
 | --- | --- |
 | [native.yml](../.github/workflows/native.yml) | 五个平台实际构建/执行 Go 服务；Linux 语义、资源与 mutation；汇总 `Acceptance gate` 并校验完整原生分发 |
 | [zed.yml](../.github/workflows/zed.yml) | Linux/macOS/Windows 的 Rust 安装器测试；Linux/Windows 的 WASI 安装运行时；独立 WASM、package 和隔离负向控制；汇总 `Zed acceptance gate` |
-| [zed-install.yml](../.github/workflows/zed-install.yml) | 三个操作系统使用已发布 `0.0.1-alpha.1` fixture 做文件系统安装、替换、回滚；该 fixture 不等于当前 adapter 或 native pin |
+| [zed-install.yml](../.github/workflows/zed-install.yml) | 三个操作系统使用已发布 Zed adapter `0.0.1-alpha.4`（固定原生 LSP `0.0.1-alpha.3`）做真实 Release 文件系统安装、替换、回滚和校验 |
 | [release.yml](../.github/workflows/release.yml)、[zed-release.yml](../.github/workflows/zed-release.yml) | 对固定源码和版本运行各自门禁后发布；发布规则见 [分发](distribution.md) |
 
 原生支持 Linux amd64/arm64、macOS amd64/arm64、Windows amd64；Go 版本来自
