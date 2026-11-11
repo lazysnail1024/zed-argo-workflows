@@ -5,8 +5,28 @@ import (
 	"fmt"
 
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
+	"github.com/lazysnail1024/k8s-crd-toolkit/yamlview"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
 )
+
+// Recognition can skip projection for plain foreign YAML. This only detects
+// syntax that may change the effective GVK; it does not expand the YAML graph.
+func graphDocument(n yamlview.Node) bool {
+	if n.Kind() == yamlview.Alias {
+		return true
+	}
+	for _, m := range n.Members() {
+		if m.Key.Raw() == "<<" || graphDocument(m.Value) {
+			return true
+		}
+	}
+	for _, e := range n.Elements() {
+		if graphDocument(e) {
+			return true
+		}
+	}
+	return false
+}
 
 // OwnsSnapshot checks resource identities before editor diagnostics acquire a
 // workspace or compile schemas. Nested examples, comments and block scalars do

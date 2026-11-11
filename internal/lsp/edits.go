@@ -24,6 +24,7 @@ type pendingAction struct {
 	epoch                                   uint64
 	revision                                source.Revision
 	plan                                    edit.Plan
+	local                                   bool
 }
 
 func detachedPlan(plan edit.Plan) edit.Plan {
@@ -84,6 +85,42 @@ func versionedEdit(uri string, b buffer, plan edit.Plan) any {
 	return map[string]any{"documentChanges": []any{map[string]any{"textDocument": map[string]any{"uri": uri, "version": b.version}, "edits": analysis.PlanEdits(b.snapshot, plan)}}}
 }
 
+// Local fixes depend only on the opened document's effective target and policy.
+// They do not acquire the indexed dependency closure or wait for discovery.
+func (s *session) localEditWorkspace(d workspace.Document) (workspace.Workspace, error) {
+	w, _, err := s.catalog.header(s.root(string(d.Snapshot.URI())))
+	if err != nil {
+		return w, err
+	}
+	w.Documents = []workspace.Document{d}
+	w.IncompleteScopes = map[string]bool{d.Target.ID: true}
+	return w, nil
+}
+
+func localActionFingerprint(w workspace.Workspace) string {
+	w.Documents = append([]workspace.Document(nil), w.Documents...)
+	for n, d := range w.Documents {
+		if strings.HasPrefix(d.Target.Scope, "opened:") {
+			w.Documents[n].Target.ConfigHash = d.Target.ID + "\n" + d.Target.Version
+		}
+	}
+	input, _ := json.Marshal([]string{fingerprint(w), w.Config.ReferencePolicy, w.Config.DefaultNamespace})
+	sum := sha256.Sum256(input)
+	return hex.EncodeToString(sum[:])
+}
+
+func (s *session) rememberFix(d workspace.Document, w workspace.Workspace, fix analysis.Fix, local bool) map[string]any {
+	input := localActionFingerprint(w)
+	if !local {
+		input = s.actionFingerprint(w)
+	}
+	s.actionSequence++
+	token := fmt.Sprintf("%d:%d", s.epoch, s.actionSequence)
+	s.actions[token] = pendingAction{uri: string(d.Snapshot.URI()), title: fix.Title, version: d.Target.Version,
+		scope: d.Target.Scope, fingerprint: input, epoch: s.epoch, revision: d.Snapshot.Revision(), plan: detachedPlan(fix.Plan), local: local}
+	return map[string]any{"title": fix.Title, "kind": "quickfix", "data": map[string]any{"token": token}}
+}
+
 func (s *session) handleEdit(m message) (bool, int, error) {
 	if !s.versionedEdits {
 		return false, 0, s.failure(m.ID, -32602, "client does not support versioned documentChanges")
@@ -111,8 +148,22 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 			return false, 0, s.failure(m.ID, -32602, "experimental target edits are disabled")
 		}
 		b, opened := s.buffers[action.uri]
-		w, err := s.documentWorkspace(action.uri, action.scope)
-		if err != nil || !opened || b.snapshot.Revision() != action.revision || s.actionFingerprint(w) != action.fingerprint {
+		var w workspace.Workspace
+		var err error
+		if action.local {
+			var d workspace.Document
+			d, err = s.queryDocument(action.uri)
+			if err == nil {
+				w, err = s.localEditWorkspace(d)
+			}
+		} else {
+			w, err = s.documentWorkspace(action.uri, action.scope)
+		}
+		currentFingerprint := localActionFingerprint(w)
+		if !action.local {
+			currentFingerprint = s.actionFingerprint(w)
+		}
+		if err != nil || !opened || b.snapshot.Revision() != action.revision || currentFingerprint != action.fingerprint {
 			return false, 0, s.failure(m.ID, -32801, "code action input changed")
 		}
 		if _, err := edit.Apply(b.snapshot, b.snapshot.Revision()+1, action.plan); err != nil {
@@ -216,26 +267,36 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		}
 		return false, 0, s.reply(m.ID, versionedEdit(uri, b, plan))
 	case "textDocument/codeAction":
-		w, err := s.workspace(s.root(uri), "")
+		local, err := s.localEditWorkspace(d)
 		if err != nil {
 			return false, 0, s.failure(m.ID, -32803, err.Error())
 		}
 		result := []map[string]any{}
+		localFixes := analysis.FieldFixes(analysis.WithLogicalResult(ctx), b.snapshot, d.Target.Version, p.Range)
+		localFixes = append(localFixes, analysis.ValueFixes(analysis.WithLogicalResult(ctx), local, d, p.Range)...)
+		for _, fix := range localFixes {
+			if analysis.SafeLocalPlan(ctx, local, d, fix.Plan) == nil {
+				result = append(result, s.rememberFix(d, local, fix, true))
+			}
+		}
+		if len(result) != 0 {
+			return false, 0, s.reply(m.ID, result)
+		}
+		w, err := s.workspace(s.root(uri), "")
+		if err != nil {
+			return false, 0, s.failure(m.ID, -32803, err.Error())
+		}
 		if w.IncompleteScopes[d.Target.ID] {
 			return false, 0, s.reply(m.ID, result)
 		}
-		fixes := analysis.FieldFixes(ctx, b.snapshot, d.Target.Version, p.Range)
-		fixes = append(fixes, analysis.ValueFixes(ctx, w, d, p.Range)...)
+		fixes := analysis.FieldFixes(analysis.WithLogicalResult(ctx), b.snapshot, d.Target.Version, p.Range)
+		fixes = append(fixes, analysis.ValueFixes(analysis.WithLogicalResult(ctx), w, d, p.Range)...)
 		scoped := scopeWorkspace(w, d.Target.ID)
-		requestFingerprint := s.actionFingerprint(scoped)
 		for _, fix := range fixes {
 			if fix.Code == "FIX_FIELD_NAME" && analysis.SafeScopePlan(ctx, w, d, fix.Plan) != nil {
 				continue
 			}
-			s.actionSequence++
-			token := fmt.Sprintf("%d:%d", s.epoch, s.actionSequence)
-			s.actions[token] = pendingAction{uri: uri, title: fix.Title, version: d.Target.Version, scope: d.Target.Scope, fingerprint: requestFingerprint, epoch: s.epoch, revision: b.snapshot.Revision(), plan: detachedPlan(fix.Plan)}
-			result = append(result, map[string]any{"title": fix.Title, "kind": "quickfix", "data": map[string]any{"token": token}})
+			result = append(result, s.rememberFix(d, scoped, fix, false))
 		}
 		return false, 0, s.reply(m.ID, result)
 	}

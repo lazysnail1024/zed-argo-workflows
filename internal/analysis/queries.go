@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/lazysnail1024/k8s-crd-toolkit/schemaquery"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
 )
@@ -22,10 +23,13 @@ func CompleteFields(ctx context.Context, snapshot source.Snapshot, version strin
 	if err != nil || field.schema == nil || field.shared {
 		return result, err
 	}
-	nodes, ambiguous := queryNodes(ctx, field.schema, field.path, field.value, 0)
+	query, err := schemaquery.Lookup(ctx, field.schema, field.path, field.value, schemaquery.Limits{})
+	if err != nil {
+		return nil, err
+	}
 	if field.key {
 		properties := map[string]bool{}
-		for _, s := range nodes {
+		for _, s := range query.Nodes {
 			for name := range s.Properties {
 				if !field.existing[name] && strings.HasPrefix(name, field.prefix) {
 					properties[name] = true
@@ -39,11 +43,19 @@ func CompleteFields(ctx context.Context, snapshot source.Snapshot, version strin
 		sort.Strings(names)
 		for _, name := range names {
 			path := append(append([]string(nil), field.path...), name)
-			if !queryAllowsKey(ctx, field.schema, path, field.value, 0) {
+			allowed, err := schemaquery.AllowsKey(ctx, field.schema, path, field.value, schemaquery.Limits{})
+			if err != nil {
+				return nil, err
+			}
+			if !allowed {
 				continue
 			}
-			detail := queryType(ctx, field.schema, path, field.value) + " · Argo Workflows " + version
-			if ambiguous {
+			kind, err := schemaquery.Type(ctx, field.schema, path, field.value, schemaquery.Limits{})
+			if err != nil {
+				return nil, err
+			}
+			detail := kind + " · Argo Workflows " + version
+			if query.Ambiguous {
 				detail += " · candidate (branch unresolved)"
 			}
 			replacement := name + field.after
@@ -54,29 +66,16 @@ func CompleteFields(ctx context.Context, snapshot source.Snapshot, version strin
 			result = append(result, map[string]any{"label": name, "kind": 10, "detail": detail, "insertTextFormat": 1, "textEdit": map[string]any{"range": queryRange(snapshot, field.span), "newText": replacement}})
 		}
 	} else {
-		values := map[string]any{}
-		for _, s := range nodes {
-			if s.Enum != nil {
-				for _, v := range s.Enum.Values {
-					if raw, e := json.Marshal(v); e == nil {
-						values[string(raw)] = v
-					}
-				}
-			}
-			if s.Const != nil {
-				if raw, e := json.Marshal(*s.Const); e == nil {
-					values[string(raw)] = *s.Const
-				}
-			}
+		values, err := schemaquery.Values(ctx, field.schema, field.path, field.value, schemaquery.Limits{})
+		if err != nil {
+			return nil, err
 		}
-		names := []string{}
-		for name, value := range values {
-			if queryAccepts(ctx, field.schema, field.path, field.value, value, 0) {
-				names = append(names, name)
+		for _, value := range values {
+			raw, err := json.Marshal(value)
+			if err != nil {
+				return nil, err
 			}
-		}
-		sort.Strings(names)
-		for _, name := range names {
+			name := string(raw)
 			result = append(result, map[string]any{"label": name, "kind": 12, "detail": "Argo Workflows " + version, "insertTextFormat": 1, "textEdit": map[string]any{"range": queryRange(snapshot, field.span), "newText": field.before + name + field.after}})
 		}
 	}
@@ -104,13 +103,20 @@ func HoverField(ctx context.Context, snapshot source.Snapshot, version string, p
 		}
 		path = append(append([]string(nil), path...), field.name)
 	}
-	nodes, ambiguous := queryNodes(ctx, field.schema, path, field.value, 0)
-	if len(nodes) == 0 {
+	query, err := schemaquery.Lookup(ctx, field.schema, path, field.value, schemaquery.Limits{})
+	if err != nil {
+		return nil, err
+	}
+	if len(query.Nodes) == 0 {
 		return nil, nil
 	}
-	text := fmt.Sprintf("**%s**\n\nType: `%s`\n\nArgo Workflows target: `%s`", field.name, queryType(ctx, field.schema, path, field.value), version)
+	kind, err := schemaquery.Type(ctx, field.schema, path, field.value, schemaquery.Limits{})
+	if err != nil {
+		return nil, err
+	}
+	text := fmt.Sprintf("**%s**\n\nType: `%s`\n\nArgo Workflows target: `%s`", field.name, kind, version)
 	seen := map[string]bool{}
-	for _, s := range nodes {
+	for _, s := range query.Nodes {
 		if s.Description != "" && !seen[s.Description] {
 			text += "\n\n" + s.Description
 			seen[s.Description] = true
@@ -124,7 +130,7 @@ func HoverField(ctx context.Context, snapshot source.Snapshot, version string, p
 			}
 		}
 	}
-	if ambiguous {
+	if query.Ambiguous {
 		text += "\n\nCandidate: branch selection is unresolved."
 	}
 	if origin, err := compat.SchemaSource(version, field.api, field.kind); err == nil {

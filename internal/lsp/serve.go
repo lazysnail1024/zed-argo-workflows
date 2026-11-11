@@ -18,6 +18,7 @@ import (
 type queuedRequest struct {
 	message message
 	epoch   uint64
+	input   requestInput
 }
 type workerResult struct {
 	output, log []byte
@@ -30,9 +31,10 @@ type workerResult struct {
 	final       bool
 	proofs      []catalogProof
 	local       bool
+	lane        int
 }
 
-// Serve owns mutable state and all transport writes. At most one foreground
+// Serve owns mutable state and all transport writes. One local query, one heavy
 // request and one background publication worker run on immutable snapshots.
 // Publication is accepted per URI, so a later timeout cannot discard progress.
 func Serve(in io.Reader, out, log io.Writer) int {
@@ -73,10 +75,9 @@ func Serve(in io.Reader, out, log io.Writer) int {
 		}
 	}()
 	finished := make(chan workerResult, 16)
-	var foregroundCancel, backgroundCancel context.CancelFunc
-	var active *queuedRequest
-	foregroundRunning, backgroundRunning, canceled := false, false, false
-	queue := []queuedRequest{}
+	var backgroundCancel context.CancelFunc
+	backgroundRunning := false
+	lanes := [2]requestLane{}
 	due := time.Time{}
 	timer := time.NewTicker(20 * time.Millisecond)
 	defer timer.Stop()
@@ -107,12 +108,15 @@ func Serve(in io.Reader, out, log io.Writer) int {
 		}
 		return clone
 	}
-	abort := func(code int, reason string) {
-		if foregroundRunning {
-			foregroundCancel()
-			if active != nil && !canceled {
-				_ = s.failure(active.message.ID, code, reason)
-				canceled = true
+	abort := func(code int, reason string, all bool) {
+		for i := range lanes {
+			lane := &lanes[i]
+			if lane.running && (all || !s.requestCurrent(*lane.active)) {
+				lane.cancel()
+				if !lane.canceled {
+					_ = s.failure(lane.active.message.ID, code, reason)
+					lane.canceled = true
+				}
 			}
 		}
 		if backgroundRunning {
@@ -120,8 +124,10 @@ func Serve(in io.Reader, out, log io.Writer) int {
 		}
 	}
 	defer func() {
-		if foregroundCancel != nil {
-			foregroundCancel()
+		for i := range lanes {
+			if lanes[i].cancel != nil {
+				lanes[i].cancel()
+			}
 		}
 		if backgroundCancel != nil {
 			backgroundCancel()
@@ -132,14 +138,15 @@ func Serve(in io.Reader, out, log io.Writer) int {
 		ctx = analysis.WithInvocation(workspace.WithSnapshotBudget(ctx, s.catalog.documents.OpenBytes()))
 		state := snapshot(ctx)
 		background := request == nil
+		laneID := -1
 		if background {
 			backgroundRunning = true
 			backgroundCancel = cancel
 		} else {
-			foregroundRunning = true
-			foregroundCancel = cancel
-			active = request
-			canceled = false
+			laneID = laneFor(request.message.Method)
+			lane := &lanes[laneID]
+			lane.running, lane.canceled = true, false
+			lane.cancel, lane.active = cancel, request
 		}
 		go func() {
 			var output, logs bytes.Buffer
@@ -157,20 +164,7 @@ func Serve(in io.Reader, out, log io.Writer) int {
 			var cacheProofs []catalogProof
 			if request != nil {
 				state.method = request.message.Method
-				var p struct {
-					TextDocument struct {
-						URI string `json:"uri"`
-					} `json:"textDocument"`
-					Data struct {
-						Token string `json:"token"`
-					} `json:"data"`
-				}
-				if json.Unmarshal(request.message.Params, &p) == nil {
-					state.focus = p.TextDocument.URI
-					if state.method == "codeAction/resolve" {
-						state.focus = state.actions[p.Data.Token].uri
-					}
-				}
+				state.focus = request.input.uri
 				_, _, err = state.handle(request.message)
 			} else {
 				// Clear unrelated YAML before a slow Workflow can consume the
@@ -227,16 +221,17 @@ func Serve(in io.Reader, out, log io.Writer) int {
 			// The owner accepts detached caches and actions only. Do not carry
 			// worker parsing contexts or borrowed input through the result queue.
 			state.ctx, state.factInput, state.workspaces, state.buffers = nil, nil, nil, nil
-			send(workerResult{output: append([]byte(nil), output.Bytes()...), log: logs.Bytes(), state: state, err: err, canceled: ctx.Err() != nil, epoch: state.epoch, background: background, final: true, proofs: state.proofs})
+			send(workerResult{output: append([]byte(nil), output.Bytes()...), log: logs.Bytes(), state: state, err: err, canceled: ctx.Err() != nil, epoch: state.epoch, background: background, final: true, proofs: state.proofs, lane: laneID})
 		}()
 	}
 	for {
 		if !s.shutdown {
-			if !foregroundRunning {
-				for len(queue) > 0 {
-					q := queue[0]
-					queue = queue[1:]
-					if q.epoch != s.epoch {
+			for i := range lanes {
+				lane := &lanes[i]
+				for !lane.running && len(lane.queue) > 0 {
+					q := lane.queue[0]
+					lane.queue = lane.queue[1:]
+					if !s.requestCurrent(q) {
 						_ = s.failure(q.message.ID, -32801, "input changed before request execution")
 						continue
 					}
@@ -260,7 +255,7 @@ func Serve(in io.Reader, out, log io.Writer) int {
 				if input.err != io.EOF {
 					fmt.Fprintln(log, "LSP transport:", input.err)
 				}
-				abort(-32800, "transport closed")
+				abort(-32800, "transport closed", true)
 				return 2
 			}
 			m := input.message
@@ -269,39 +264,45 @@ func Serve(in io.Reader, out, log io.Writer) int {
 					ID json.RawMessage `json:"id"`
 				}
 				if json.Unmarshal(m.Params, &p) == nil {
-					if active != nil && bytes.Equal(active.message.ID, p.ID) && !canceled {
-						foregroundCancel()
-						_ = s.failure(active.message.ID, -32800, "request cancelled")
-						canceled = true
-					}
-					kept := queue[:0]
-					for _, q := range queue {
-						if bytes.Equal(q.message.ID, p.ID) {
-							_ = s.failure(q.message.ID, -32800, "request cancelled")
-						} else {
-							kept = append(kept, q)
+					for i := range lanes {
+						lane := &lanes[i]
+						if lane.active != nil && bytes.Equal(lane.active.message.ID, p.ID) && !lane.canceled {
+							lane.cancel()
+							_ = s.failure(lane.active.message.ID, -32800, "request cancelled")
+							lane.canceled = true
 						}
+						kept := lane.queue[:0]
+						for _, q := range lane.queue {
+							if bytes.Equal(q.message.ID, p.ID) {
+								_ = s.failure(q.message.ID, -32800, "request cancelled")
+							} else {
+								kept = append(kept, q)
+							}
+						}
+						lane.queue = kept
 					}
-					queue = kept
 				}
 				continue
 			}
 			if len(m.ID) > 0 && m.Method != "initialize" && m.Method != "shutdown" {
+				lane := &lanes[laneFor(m.Method)]
 				if s.shutdown {
 					_ = s.failure(m.ID, -32600, "server is shutting down")
-				} else if len(queue) >= 16 {
+				} else if len(lane.queue) >= 8 {
 					_ = s.failure(m.ID, -32803, "request queue is full")
 				} else {
-					queue = append(queue, queuedRequest{m, s.epoch})
+					lane.queue = append(lane.queue, s.queueRequest(m))
 				}
 				continue
 			}
 			if m.Method == "shutdown" {
-				abort(-32800, "server is shutting down")
-				for _, q := range queue {
-					_ = s.failure(q.message.ID, -32800, "server is shutting down")
+				abort(-32800, "server is shutting down", true)
+				for i := range lanes {
+					for _, q := range lanes[i].queue {
+						_ = s.failure(q.message.ID, -32800, "server is shutting down")
+					}
+					lanes[i].queue = nil
 				}
-				queue = nil
 				s.pending = map[string]bool{}
 			}
 			epoch := s.epoch
@@ -311,11 +312,11 @@ func Serve(in io.Reader, out, log io.Writer) int {
 				return 2
 			}
 			if done {
-				abort(-32800, "server exiting")
+				abort(-32800, "server exiting", true)
 				return code
 			}
 			if epoch != s.epoch {
-				abort(-32801, "input changed during request")
+				abort(-32801, "input changed during request", false)
 				due = time.Now().Add(120 * time.Millisecond)
 			}
 		case result := <-finished:
@@ -335,16 +336,22 @@ func Serve(in io.Reader, out, log io.Writer) int {
 				}
 				continue
 			}
+			var lane *requestLane
 			if result.background {
 				backgroundCancel()
 				backgroundRunning = false
 			} else {
-				foregroundCancel()
-				foregroundRunning = false
+				lane = &lanes[result.lane]
+				lane.cancel()
+				lane.running = false
 			}
-			current := result.epoch == s.epoch && !s.shutdown
+			sameEpoch := result.epoch == s.epoch
+			current := sameEpoch && !s.shutdown
+			if lane != nil {
+				current = s.requestCurrent(*lane.active)
+			}
 			valid := s.catalog.valid(result.proofs)
-			if current && valid && !result.canceled && (!canceled || result.background) {
+			if current && valid && !result.canceled && (lane == nil || !lane.canceled) {
 				if result.err != nil {
 					fmt.Fprintln(log, "LSP worker:", result.err)
 					return 2
@@ -353,23 +360,27 @@ func Serve(in io.Reader, out, log io.Writer) int {
 					if _, err := out.Write(result.output); err != nil {
 						return 2
 					}
-					s.actions = result.state.actions
-					s.actionSequence = result.state.actionSequence
-					s.queryResults = result.state.queryResults
-					s.queryBytes = result.state.queryBytes
+					if editMethod(lane.active.message.Method) {
+						s.actions = result.state.actions
+						s.actionSequence = result.state.actionSequence
+					}
+					if sameEpoch {
+						s.queryResults = result.state.queryResults
+						s.queryBytes = result.state.queryBytes
+					}
 				}
-				if result.state.externalFacts != nil {
+				if sameEpoch && result.state.externalFacts != nil {
 					s.externalFacts = result.state.externalFacts
 				}
-				if result.state.facts != nil {
+				if sameEpoch && result.state.facts != nil {
 					s.facts = result.state.facts
 				}
-			} else if !result.background && active != nil && !canceled {
+			} else if lane != nil && !lane.canceled {
 				code, reason := -32800, "request timed out or cancelled"
-				if current && !valid {
+				if !current || !valid {
 					code, reason = -32801, "workspace input changed during request"
 				}
-				_ = s.failure(active.message.ID, code, reason)
+				_ = s.failure(lane.active.message.ID, code, reason)
 			}
 			if result.background && current && result.canceled {
 				// A stable input that exhausts its budget terminates visibly. New input,
@@ -385,8 +396,8 @@ func Serve(in io.Reader, out, log io.Writer) int {
 					delete(s.pending, uri)
 				}
 			}
-			if !result.background {
-				active = nil
+			if lane != nil {
+				lane.active = nil
 			}
 			if !s.shutdown && len(s.pending) > 0 && due.IsZero() {
 				due = time.Now().Add(120 * time.Millisecond)

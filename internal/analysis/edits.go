@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/lazysnail1024/k8s-crd-toolkit/edit"
+	"github.com/lazysnail1024/k8s-crd-toolkit/schemaquery"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
 	"sort"
@@ -76,9 +77,12 @@ func FieldFixes(ctx context.Context, s source.Snapshot, version string, requeste
 		if raw != field.name {
 			continue
 		}
-		nodes, _ := queryNodes(ctx, field.schema, field.path, field.value, 0)
+		query, err := schemaquery.Lookup(ctx, field.schema, field.path, field.value, schemaquery.Limits{})
+		if err != nil {
+			continue
+		}
 		candidates := map[string]bool{}
-		for _, schema := range nodes {
+		for _, schema := range query.Nodes {
 			for name := range schema.Properties {
 				if !field.existing[name] && distance(name, field.name) == 1 {
 					candidates[name] = true
@@ -92,7 +96,11 @@ func FieldFixes(ctx context.Context, s source.Snapshot, version string, requeste
 		sort.Strings(names)
 		for _, name := range names {
 			path := append(append([]string(nil), field.path...), name)
-			switch queryType(ctx, field.schema, path, field.value) {
+			kind, err := schemaquery.Type(ctx, field.schema, path, field.value, schemaquery.Limits{})
+			if err != nil {
+				continue
+			}
+			switch kind {
 			case "string", "integer", "number", "boolean":
 			default:
 				continue
@@ -139,6 +147,12 @@ func SafeScopePlan(ctx context.Context, w workspace.Workspace, document workspac
 		}
 		after.Documents = append(after.Documents, d)
 	}
+	return safeScopeChange(ctx, before, after, document.Target.ID)
+}
+
+// safeScopeChange validates the complete before/after batch, so intermediate
+// rename states never manufacture unresolved references between edited files.
+func safeScopeChange(ctx context.Context, before, after workspace.Workspace, target string) error {
 	collect := func(input workspace.Workspace) ([]Diagnostic, error) {
 		ctx := WithLogicalResult(ctx)
 		diagnostics := []Diagnostic{}
@@ -150,7 +164,7 @@ func SafeScopePlan(ctx context.Context, w workspace.Workspace, document workspac
 			diagnostics = append(diagnostics, result.Diagnostics...)
 		}
 		externalDiagnostics, _, complete, _ := external(ctx, input, nil)
-		if !complete[document.Target.ID] {
+		if !complete[target] {
 			return nil, fmt.Errorf("external scope analysis is incomplete")
 		}
 		diagnostics = append(diagnostics, externalDiagnostics...)

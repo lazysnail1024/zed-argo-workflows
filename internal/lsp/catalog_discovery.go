@@ -62,13 +62,7 @@ func (c *catalog) reportProgress(root *catalogRoot) {
 	if root.problem != "" {
 		state = "Failed"
 	}
-	known := 0
-	for _, file := range c.files {
-		if file.root == root.header.Root {
-			known++
-		}
-	}
-	data, _ := json.Marshal(map[string]any{"phase": "index", "state": state, "root": root.header.Root, "pass": root.pass, "knownFiles": known, "queue": c.queue.Len(), "reads": root.reads, "readBytes": root.bytes, "parses": root.parses, "problem": root.problem})
+	data, _ := json.Marshal(map[string]any{"phase": "index", "state": state, "root": root.header.Root, "pass": root.pass, "knownFiles": root.known, "queue": c.queue.Len(), "reads": root.reads, "readBytes": root.bytes, "parses": root.parses, "problem": root.problem})
 	c.logs[root.header.Root], root.reportedAt = string(data), time.Now()
 	if state == "Failed" {
 		root.lastState, root.reported = state, true
@@ -247,7 +241,7 @@ func (c *catalog) admitDiscovery(root *catalogRoot, epoch uint64, paths []string
 // A pass finishes only after its bounded batches and file jobs finish. Partial
 // enumeration and per-file failures never establish absence or uniqueness.
 func (c *catalog) finishPass(root *catalogRoot) {
-	if c.roots[root.header.Root] != root || root.scanEpoch != root.epoch || !root.done || root.reported {
+	if c.roots[root.header.Root] != root || root.scanEpoch != root.epoch || !root.done || root.reported || root.pending != 0 {
 		return
 	}
 	root.membership.Finish(root.scanPass, root.problem == "" && root.scanProblem == "")

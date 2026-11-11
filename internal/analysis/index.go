@@ -29,18 +29,16 @@ func ResourceAlternatives(known *index.Index, scope index.Scope, missing index.K
 	if json.Unmarshal([]byte(missing), &wanted) != nil {
 		return nil, nil
 	}
-	candidates, err := known.Symbols(scope, "", 1000)
+	prefix, _ := json.Marshal(wanted[:2])
+	prefix[len(prefix)-1] = ','
+	candidates, err := known.SymbolsWithPrefix(scope, index.Key(prefix), "", 1000)
 	if err != nil {
 		return nil, err
 	}
-	result := []index.Definition{}
-	for _, candidate := range candidates.Items {
-		var identity [3]string
-		if json.Unmarshal([]byte(candidate.Symbol.Key), &identity) == nil && identity[0] == wanted[0] && identity[1] == wanted[1] {
-			result = append(result, candidate)
-		}
+	if candidates.Truncated {
+		return nil, fmt.Errorf("resource repair candidates exceed 1000 matching entries")
 	}
-	return result, nil
+	return candidates.Items, nil
 }
 
 func resourceIndexKey(kind, namespace, name string) index.Key {

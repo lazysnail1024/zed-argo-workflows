@@ -37,6 +37,8 @@ type catalogRoot struct {
 	reportedAt                                            time.Time
 	overlay                                               *string
 	reads, bytes, parses                                  uint64
+	known, unknown, pending                               int
+	unready                                               map[string]int
 }
 
 type catalogFile struct {
@@ -50,6 +52,7 @@ type catalogFile struct {
 	opened, blocked, invalidated, owned, awaiting bool
 	symbols                                       []analysis.DomainSymbol
 	symbolBytes                                   int
+	readiness                                     catalogReadiness
 }
 
 // catalog survives every request/publication worker. Its maps retain identities,
@@ -168,7 +171,9 @@ func (s *session) accept(m message) (bool, int, error) {
 // and immediate index invalidation are serialized before workers can accept it.
 func (c *catalog) syncInputs(s *session, m message) {
 	current := map[string]bool{}
-	rootsChanged := false
+	// A remove/add event fences the old root lifetime even if the final set of
+	// paths is identical. Workers must not reuse proofs from the removed root.
+	rootsChanged := m.Method == "workspace/didChangeWorkspaceFolders"
 	for _, root := range s.roots {
 		current[root] = true
 		r := c.roots[root]
@@ -266,6 +271,7 @@ func (c *catalog) syncInputs(s *session, m message) {
 			c.queue.Remove(uri)
 			c.removeFacts(uri)
 			file.problem = b.unavailable
+			c.refreshReadiness(uri)
 			continue
 		}
 		c.mark(uri, shared.Current, true)
@@ -335,6 +341,7 @@ func (c *catalog) diskEvent(uri source.URI, deleted bool) {
 }
 
 func (c *catalog) mark(uri source.URI, priority shared.Priority, invalidate bool) {
+	defer c.refreshReadiness(uri)
 	file := c.files[uri]
 	if file == nil || file.blocked {
 		return
@@ -388,6 +395,7 @@ func (c *catalog) remove(uri source.URI) {
 	if file := c.files[uri]; file != nil {
 		c.symbolBytes -= file.symbolBytes
 		c.symbolCount -= len(file.symbols)
+		file.readiness.add(-1)
 	}
 	delete(c.files, uri)
 }
@@ -455,7 +463,7 @@ func (c *catalog) worker() {
 }
 
 func (c *catalog) process(job shared.WorkTicket) {
-	defer c.queue.Complete(job)
+	defer c.complete(job)
 	uri := job.URI
 	c.mu.Lock()
 	file := c.files[uri]
@@ -505,6 +513,7 @@ func (c *catalog) process(job shared.WorkTicket) {
 	c.mu.Lock()
 	if c.files[uri] == file && file.stamp == stamp && r.epoch == epoch {
 		file.target = selected.Target
+		c.refreshReadiness(uri)
 	}
 	c.mu.Unlock()
 	snapshot, err := c.readSnapshot(ctx, uri)
@@ -547,6 +556,7 @@ func (c *catalog) process(job shared.WorkTicket) {
 			}
 		}
 	}
+	c.refreshReadiness(uri)
 	c.mu.Unlock()
 	if err != nil {
 		c.finishFile(uri, file, stamp, epoch, err)
@@ -559,6 +569,7 @@ func (c *catalog) process(job shared.WorkTicket) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	defer c.refreshReadiness(uri)
 	if c.files[uri] != file || file.stamp != stamp || c.roots[file.root] != r || r.epoch != epoch {
 		return
 	}
@@ -604,6 +615,7 @@ func (c *catalog) process(job shared.WorkTicket) {
 func (c *catalog) finishFile(uri source.URI, file *catalogFile, stamp, epoch uint64, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	defer c.refreshReadiness(uri)
 	r := c.roots[file.root]
 	if c.files[uri] != file || file.stamp != stamp || r == nil || r.epoch != epoch {
 		return

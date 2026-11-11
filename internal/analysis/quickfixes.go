@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/lazysnail1024/k8s-crd-toolkit/edit"
+	"github.com/lazysnail1024/k8s-crd-toolkit/schemaquery"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/k8s-crd-toolkit/yamlview"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
@@ -117,19 +118,9 @@ func ValueFixes(ctx context.Context, w workspace.Workspace, d workspace.Document
 			if err != nil || field.key || field.schema == nil || field.span != node.Span() {
 				continue
 			}
-			nodes, _ := queryNodes(ctx, field.schema, field.path, field.value, 0)
-			seen := map[string]bool{}
-			for _, schema := range nodes {
-				if schema.Enum == nil {
-					continue
-				}
-				for _, value := range schema.Enum.Values {
-					raw, _ := json.Marshal(value)
-					if !seen[string(raw)] && queryAccepts(ctx, field.schema, field.path, field.value, value, 0) {
-						values = append(values, value)
-						seen[string(raw)] = true
-					}
-				}
+			values, err = schemaquery.Values(ctx, field.schema, field.path, field.value, schemaquery.Limits{})
+			if err != nil {
+				continue
 			}
 			code = "FIX_ENUM_VALUE"
 		} else if diag.Code == "WF_LOCAL_TEMPLATE_MISSING" {
@@ -186,7 +177,8 @@ func ValueFixes(ctx context.Context, w workspace.Workspace, d workspace.Document
 			if !ok {
 				continue
 			}
-			if SafeScopePlan(ctx, w, d, plan) != nil || !diagnosticGone(ctx, w, d, plan, diag) {
+			local := SafeLocalPlan(ctx, w, d, plan) == nil
+			if !local && SafeScopePlan(ctx, w, d, plan) != nil || !diagnosticGone(WithLogicalResult(ctx), w, d, plan, diag) {
 				continue
 			}
 			if diag.Code == "WF_TEMPLATE_REF_UNRESOLVED" {
