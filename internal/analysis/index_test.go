@@ -3,6 +3,7 @@ package analysis
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -10,6 +11,40 @@ import (
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
 )
+
+func TestRepairCandidatesFilterBeforeTheirBudget(t *testing.T) {
+	idx, err := index.New(index.Limits{Files: 4, Symbols: 3000, References: 4, Bytes: 1024 * 1024})
+	if err != nil {
+		t.Fatal(err)
+	}
+	add := func(uri source.URI, namespace string, count int) {
+		t.Helper()
+		facts := index.Facts{}
+		for n := 0; n < count; n++ {
+			name := fmt.Sprintf("library-%04d", n)
+			facts.Symbols = append(facts.Symbols, index.Symbol{ID: index.SymbolID(name),
+				Key: resourceIndexKey("WorkflowTemplate", namespace, name), Name: name,
+				Span: source.Span{End: 1}, Selection: source.Span{End: 1}})
+		}
+		ticket, err := idx.Begin(uri, "scope", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := idx.Commit(ticket, facts); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("file:///a-unrelated.yaml", "other", 1001)
+	add("file:///z-selected.yaml", "argo", 1)
+	got, err := ResourceAlternatives(idx, "scope", resourceIndexKey("WorkflowTemplate", "argo", "typo"))
+	if err != nil || len(got) != 1 || got[0].URI != "file:///z-selected.yaml" {
+		t.Fatalf("unrelated namespaces consumed the candidate budget: got=%v, err=%v", got, err)
+	}
+	add("file:///z-selected.yaml", "argo", 1001)
+	if got, err := ResourceAlternatives(idx, "scope", resourceIndexKey("WorkflowTemplate", "argo", "typo")); err == nil || len(got) != 0 {
+		t.Fatal("a truncated matching set was accepted as a complete repair candidate set")
+	}
+}
 
 const summaryCaller = "apiVersion: argoproj.io/v1alpha1\nkind: Workflow\nmetadata: {name: caller, namespace: argo}\nspec:\n  entrypoint: main\n  templates:\n    - name: main\n      steps:\n        - - name: call\n            templateRef: {name: library, template: run}\n"
 const summaryLibrary = "apiVersion: argoproj.io/v1alpha1\nkind: WorkflowTemplate\nmetadata: {name: library, namespace: argo}\nspec:\n  templates:\n    - name: run\n      container: {image: alpine}\n"

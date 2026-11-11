@@ -168,7 +168,7 @@ def edits(client, response, text, path, version=1):
         outputs.append(apply(text, resolved['result']['edit'], path.as_uri(), version))
     return outputs
 
-def scalar_case(name, text, needle, expected, files=None, config=CONFIG, stale=False):
+def scalar_case(name, text, needle, expected, files=None, config=CONFIG, stale=False, incomplete=False):
     dest, work = setup(name, {'case.yaml': text, **(files or {})}, config)
     client = LSP(dest, work)
     try:
@@ -181,14 +181,17 @@ def scalar_case(name, text, needle, expected, files=None, config=CONFIG, stale=F
                 dependency=work/'new.yaml'
                 client.open(dependency,'apiVersion: v1\nkind: ConfigMap\nmetadata: {name: changed}\n')
                 old=client.request('codeAction/resolve',response['result'][0])
-                assertions['dependency_epoch_rejected']=old.get('error',{}).get('code')==-32801
+                assertions['independent_peer_keeps_local_edit']='result' in old and apply(text,old['result']['edit'],path.as_uri(),1)==got[0]
             newds=client.change(path,got[0],2)
             cliwork=dest/'after-input'
             if cliwork.exists(): shutil.rmtree(cliwork)
             shutil.copytree(work,cliwork)
             (cliwork/'case.yaml').write_bytes(got[0].encode())
             exitcode,report=cli(dest,cliwork)
-            assertions['cli_after_contract']=exitcode==0 and report['analysisComplete'] is True and not any(d['severity']=='Error' for d in report['diagnostics'])
+            if incomplete:
+                assertions['incomplete_peer_still_reported']=exitcode==2 and report['analysisComplete'] is False and bool(report['notEvaluated'])
+            else:
+                assertions['cli_after_contract']=exitcode==0 and report['analysisComplete'] is True and not any(d['severity']=='Error' for d in report['diagnostics'])
             assertions['target_removed']=not any(d['code'] in ('WF_LOCAL_TEMPLATE_MISSING','WF_TEMPLATE_REF_UNRESOLVED','SCHEMA_VALIDATION') for d in newds)
             if stale:
                 old=client.request('codeAction/resolve',response['result'][0])
@@ -245,7 +248,7 @@ try:
     scalar_case('reference-local-candidates',BASE,'missing',[BASE.replace('missing',v) for v in EXPECTED['local']],stale=True)
     scalar_case('reference-quoted-crlf',BASE.replace('missing',"'missing'").replace('\n','\r\n'),'missing',[BASE.replace('missing',v).replace('\n','\r\n') for v in EXPECTED['local']])
     scalar_case('reference-dynamic',BASE.replace('missing','"{{workflow.parameters.pick}}"'),'workflow.parameters',[])
-    scalar_case('reference-incomplete-scope',BASE,'missing',[],{'broken.yaml':'apiVersion: [\n'})
+    scalar_case('reference-incomplete-scope',BASE,'missing',[BASE.replace('missing',v) for v in EXPECTED['local']],{'broken.yaml':'apiVersion: [\n'},incomplete=True)
     scalar_case('reference-sibling-resource',BASE+'---\n'+BASE.replace('missing','only-other').replace('name: first','name: only-other'),'missing',[BASE.replace('missing',v)+'---\n'+BASE.replace('missing','only-other').replace('name: first','name: only-other') for v in EXPECTED['local']])
     scalar_case('enum-candidates',ENUM,'Bogus',[ENUM.replace('Bogus',v) for v in EXPECTED['enum']],stale=True)
     scalar_case('enum-valid',ENUM.replace('Bogus','Never'),'Never',[])

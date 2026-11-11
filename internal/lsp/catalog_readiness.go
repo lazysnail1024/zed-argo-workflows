@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"github.com/lazysnail1024/k8s-crd-toolkit/index"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	shared "github.com/lazysnail1024/k8s-crd-toolkit/workspace"
 )
@@ -23,6 +24,14 @@ func (state catalogReadiness) add(delta int) {
 	r.known += delta
 	if state.target == "" {
 		r.unknown += delta
+	} else {
+		if r.members == nil {
+			r.members = map[string]int{}
+		}
+		r.members[state.target] += delta
+		if r.members[state.target] == 0 {
+			delete(r.members, state.target)
+		}
 	}
 	if state.pending {
 		r.pending += delta
@@ -61,4 +70,14 @@ func (c *catalog) complete(job shared.WorkTicket) {
 	defer c.mu.Unlock()
 	c.queue.Complete(job)
 	c.refreshReadiness(job.URI)
+}
+
+// An empty scope has no index generation of its own. Its completeness comes
+// from finished discovery and catalog membership, not mutations in other scopes.
+func (c *catalog) scopeGeneration(root *catalogRoot, scope string) uint64 {
+	if root.members[scope] == 0 {
+		return 0
+	}
+	_, state := c.index.Definitions(index.Scope(scope), "")
+	return state.Generation
 }

@@ -30,11 +30,11 @@ and publishes the native assets. An exact version-tag push or a manual run on
 ## Shared toolkit source
 
 The toolkit dependency is pinned to source commit
-`b1e411d4b3abe5c1ad70518be161c1daff717d61`, represented by Go pseudo-version
-`v0.0.0-20261110114800-b1e411d4b3ab`. It does not require a toolkit release tag.
-The vendored `source`, `yamlview`, `edit`, `index`, and `workspace` packages match
+`7b0f547348cd7f28e40ebd88c26f42939e0bdd4b`, represented by Go pseudo-version
+`v0.0.0-20261110160307-7b0f547348cd`. It does not require a toolkit release tag.
+The vendored `source`, `yamlview`, `yamlvalue`, `schemaquery`, `edit`, `index`, and `workspace` packages match
 that commit; builds need no sibling checkout or local `replace` directive.
-`contracts/toolkit-design-3.md` is the byte-identical API contract, with its
+`contracts/toolkit-design-4.md` is the byte-identical API contract, with its
 implementation and content identities in `contracts/toolkit.lock.json`.
 The vendor script also restores the existing Expr formatter and JSON Schema
 compiler patches, verifying their input and output hashes against
@@ -46,6 +46,13 @@ vendor, restore the native parser source trees and reapply the recorded Expr
 formatter and JSON Schema compiler patches. Keep `go.sum`, vendored sources and provenance records in the
 same change. The executable's `version --json` reports the linked toolkit
 dependency from Go build metadata.
+
+`yamlvalue` supplies strict YAML values, bounded alias/merge expansion and source
+sharing; `schemaquery` reads the same compiled schema graph as the validator.
+The plugin owns resource identity, release selection, explicit-tag policy,
+logical-result budgets, reference semantics and edit safety. Do not add a second
+complete YAML decoder or schema walker as a fallback after a shared query fails.
+Budget, cancellation and unsupported-query errors remain explicit.
 
 ## Zed adapter
 
@@ -108,6 +115,13 @@ and `editors/zed/tests/ablate_distribution.py`. Require a passing baseline and
 the intended assertion failure after each isolated mutation; compilation errors,
 unrelated failures and zero matching tests must not count as regression detection.
 Record exact-commit evidence separately from any manual Zed acceptance.
+
+Shared YAML/query changes use `wf-shared-yaml-projection.py`,
+`wf-projected-query-context.py`, `wf-semantic-origins.py`, and the separate
+`tests/ci/run.py schema` gate. `ablate-shared-yaml-projection.py` must compile each
+variant and trigger its named source-validation or tag-policy failure.
+When moving code into a dependency, migrate mutation selectors to the executing
+code path; a selector that no longer matches is a test failure.
 
 Version collection and normalization preserve upstream commit IDs and SHA-256
 source identities. The default auto window is derived from the latest two stable

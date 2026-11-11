@@ -323,8 +323,7 @@ func (c *catalog) valid(proofs []catalogProof) bool {
 			return false
 		}
 		for scope, generation := range proof.states {
-			_, state := c.index.Definitions(scope, "")
-			if !c.scopeReadyLocked(root, string(scope)) || state.Generation != generation {
+			if !c.scopeReadyLocked(root, string(scope)) || c.scopeGeneration(root, string(scope)) != generation {
 				return false
 			}
 		}
@@ -377,8 +376,7 @@ func (c *catalog) workspace(ctx context.Context, root, selected, focus string, r
 			continue
 		}
 		if c.scopeReadyLocked(r, target.ID) {
-			_, state := c.index.Definitions(index.Scope(target.ID), "")
-			proof.states[index.Scope(target.ID)] = state.Generation
+			proof.states[index.Scope(target.ID)] = c.scopeGeneration(r, target.ID)
 		} else {
 			incomplete[target.ID] = true
 		}

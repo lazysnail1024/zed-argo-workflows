@@ -4,7 +4,7 @@
 [extension.toml](../editors/zed/extension.toml) 和它选择的
 [native-server-version](../editors/zed/native-server-version)分别管理版本。
 当前 native pin 为 `0.0.1-alpha.2`；修改 main 上的源码不会更新已发布的同名二进制。
-安装该 pin 不能据此视为已包含本次索引重构，运行身份应以 `version --json` 的
+安装该 pin 不能据此视为已包含当前源码能力，运行身份应以 `version --json` 的
 `sourceCommit`、`toolkitVersion`、`catalogHash` 为准。
 
 ## 目标与产品边界
@@ -46,9 +46,10 @@ scope 的有效 target。`stream.go` 的 `Describe` 只读取配置元数据，`
 | 文件 | 所有权和职责 |
 | --- | --- |
 | [stdio.go](../internal/lsp/stdio.go) | JSON-RPC framing、能力协商、请求路由、UTF-16 更新、LSP document version 和 unavailable 状态；借用共享 Documents 的不可变 snapshot |
-| [serve.go](../internal/lsp/serve.go) | 独占可变 session 和所有传输写入；最多一个前台请求、一个诊断发布 worker；取消、排队、按 URI 接受结果、epoch/proof 校验和 LSP 软内存目标 |
+| [serve.go](../internal/lsp/serve.go)、[request.go](../internal/lsp/request.go) | 独占可变 session 和所有传输写入；轻查询与重请求各一条固定 lane，每条最多一个 active 和八个 queued 请求，另有一个诊断 worker；复制 snapshot/启动 worker 前准入，实际输入 proof 决定读结果是否可交付 |
 | [catalog.go](../internal/lsp/catalog.go) | 会话级 catalog、root/file 状态；原子接受输入并失效索引；WorkQueue 调度、两个文件 worker、`Index.Begin/Reuse/Commit`、依赖失效传播 |
 | [catalog_discovery.go](../internal/lsp/catalog_discovery.go) | 配置刷新、可恢复 Scanner、目录优先级、Membership 扫描轮次、删除确认、scope 完整性与进度日志 |
+| [catalog_readiness.go](../internal/lsp/catalog_readiness.go) | 在现有 file record 上记录对 root/scope 计数的贡献；新增、失效、重绑、拒绝、任务完成和删除同步调整，完整性检查不再遍历全部文件 |
 | [catalog_inputs.go](../internal/lsp/catalog_inputs.go) | Documents read ticket、依赖闭包物化、逆向依赖、root/scope/file proof、按摘要查 workspace symbols、诊断完成确认 |
 | [publication.go](../internal/lsp/publication.go) | 先判断资源归属并清空无关 YAML 的诊断，再执行本地/外部诊断；区分配置不可用、真实未完成和非本产品文件 |
 | [document_workspace.go](../internal/lsp/document_workspace.go) | 为被 exclude 或内部目录隔离的 `opened:<URI>` buffer 重新获取当前输入；Quick Fix 不会误选磁盘 scope |
@@ -67,39 +68,45 @@ WorkspaceEdit 能力约束。具体协议分支以 [stdio.go](../internal/lsp/st
 | 文件组 | 领域职责 |
 | --- | --- |
 | [ownership.go](../internal/analysis/ownership.go)、[schema.go](../internal/analysis/schema.go) | 识别 API group/kind、多文档归属；将 schema 检查结果投射到源码诊断，区分 schema 缺失与分析失败 |
-| [projection.go](../internal/analysis/projection.go)、[semantic_origin.go](../internal/analysis/semantic_origin.go)、[expansion.go](../internal/analysis/expansion.go) | YAML alias/merge 的有界投影、源位置来源及逻辑展开预算；保留精确/派生/共享来源差异 |
+| [projection.go](../internal/analysis/projection.go)、[semantic_origin.go](../internal/analysis/semantic_origin.go)、[expansion.go](../internal/analysis/expansion.go) | 调用公共 `yamlvalue.Project`，保留 Workflow 归属/版本校验、每个逻辑结果的展开预算与缓存准入；语义节点使用精确/派生/共享来源，普通 YAML 继续使用原 CST 位置 |
 | [local.go](../internal/analysis/local.go)、[references.go](../internal/analysis/references.go)、[arguments.go](../internal/analysis/arguments.go)、[depends.go](../internal/analysis/depends.go) | 本地模板、参数和输出绑定，调用实参与 DAG/steps 依赖等静态规则 |
 | [expressionreferences.go](../internal/analysis/expressionreferences.go) | 使用 Expr lexer/parser/AST 识别表达式引用和位置；不执行表达式，错误格式化补丁单独记录 |
 | [external.go](../internal/analysis/external.go)、[external_exit.go](../internal/analysis/external_exit.go)、[inherited_parameters.go](../internal/analysis/inherited_parameters.go) | templateRef/workflowTemplateRef、命名空间、clusterScope、继承及调用方依赖，按 scope 处理不完整或歧义绑定 |
 | [index.go](../internal/analysis/index.go) | 将当前资源投射成共享 `index.Facts` 与脱离原文的 DomainSymbol 摘要 |
-| [queries.go](../internal/analysis/queries.go)、[query_context.go](../internal/analysis/query_context.go)、[query_schema.go](../internal/analysis/query_schema.go) | 未完成 YAML 的查询上下文、schema 分支筛选、字段补全与悬停 |
+| [queries.go](../internal/analysis/queries.go)、[query_context.go](../internal/analysis/query_context.go)、[query_schema.go](../internal/analysis/query_schema.go) | 未完成 YAML 的临时查询上下文，调用公共 `Lookup/Values/AllowsKey/Type/SelectShapes`；Workflow 自己选择 release catalog 并组装补全/悬停，不保留私有完整 schema walker |
 | [domain_queries.go](../internal/analysis/domain_queries.go)、[domain_external_completion.go](../internal/analysis/domain_external_completion.go)、[symbols.go](../internal/analysis/symbols.go) | 域内/跨资源名称补全、定义、引用和符号位置 |
 | [edits.go](../internal/analysis/edits.go)、[quickfixes.go](../internal/analysis/quickfixes.go)、[localrename.go](../internal/analysis/localrename.go)、[pin.go](../internal/analysis/pin.go) | 源码编辑计划、YAML 标量编码、绑定安全性和版本 pin 修复；拒绝不精确或不安全的修改 |
+| [local_edits.go](../internal/analysis/local_edits.go) | 在当前文档内模拟修复，要求资源身份、导出模板和外部调用边界保持不变；可证明局部安全时不等待完整目录，否则使用完整 scope 验证 |
+| [externalrename.go](../internal/analysis/externalrename.go) | 静态 WorkflowTemplate/ClusterWorkflowTemplate 资源名及引用的联合 Rename；复用现有资源/调用模型，检查全 scope、唯一声明、精确来源、新名捕获与批量修改后的语义 |
 | [invocation.go](../internal/analysis/invocation.go)、[preparse.go](../internal/analysis/preparse.go)、[facts.go](../internal/analysis/facts.go)、[external_facts.go](../internal/analysis/external_facts.go) | 单次分析复用、CLI 有界预解析、可选解析事实交接及外部诊断复用；缓存不改变输入准入或完整性判断 |
 
 ## 公共依赖与隔离边界
 
 通过 [go.mod](../go.mod) 固定源码版本
-`v0.0.0-20261110114800-b1e411d4b3ab`，完整 commit 为
-`b1e411d4b3abe5c1ad70518be161c1daff717d61`。
+`v0.0.0-20261110160307-7b0f547348cd`，完整 commit 为
+`7b0f547348cd7f28e40ebd88c26f42939e0bdd4b`。
 [toolkit.lock.json](../contracts/toolkit.lock.json)记录源码/ZIP/合同 hash，`published: false`；
 依赖方式是固定源码 commit 和已提交 vendor，无需 toolkit release、兄弟仓库 checkout 或本地 `replace`。
-[toolkit-design-3.md](../contracts/toolkit-design-3.md)是按 hash 校验的 API 合同，不能当作旧设计删改。
+[toolkit-design-4.md](../contracts/toolkit-design-4.md)是按 hash 校验的当前 API 合同。
 
 | 共享能力 | 本仓落点 | 留在 Workflows 的决策 |
 | --- | --- | --- |
 | `source` | workspace、analysis、LSP 共同使用不可变 Snapshot/Revision/Span 和 UTF-16 映射 | URI 本地路径政策、LSP version、配置与资源限额 |
-| `yamlview` | analysis 的语法视图、投影和位置查找 | 哪些 GVK 属于 Workflows、alias/merge 领域语义、schema 和诊断 |
+| `yamlview` | analysis 的语法视图和原文位置查找 | 哪些 GVK 属于 Workflows、schema 和诊断 |
+| `yamlvalue` | `projection.go`/`query_context.go` 的严格有效值与 alias/merge 来源；`Shared` 标记共享来源 | 显式 tag 拒绝策略、GVK/版本门槛、跨资源逻辑展开总预算；动态 Argo 值不由 YAML 投影求值 |
+| `schemaquery` | 直接查询 `jsonschema/v6` 已编译图，按有限兄弟约束筛选候选、类型和可用 key | 离线 catalog、版本选择、Kubernetes/Argo 语义、LSP 文案和可修复条件；公共错误不会触发第二套 walker |
 | `edit` | analysis 产生编辑计划，LSP 输出 WorkspaceEdit | Rename/Quick Fix 可行性、候选唯一性、配置 identity 和客户端能力 |
 | `workspace.Documents` | `newCatalog` 创建唯一实例；`session.accept` 在 catalog 锁内接受通知并同步失效；`readSnapshot` 使用 BeginRead/PublishRead | LSP document version、资源拒绝和恢复策略，当前输入的索引失效 |
 | `workspace.Scanner/Membership` | `catalog_discovery.go` 有界枚举；open/change/close/watch 记录 observation，完整且当前轮次才能 sweep | root 归属、exclude、Helm、配置 epoch、scope 完整性与 Ready/Limited 判定 |
 | `workspace.WorkQueue` | `catalog.go` 按 URI 合并优先级和运行中后续事件；worker 等待 Wake 并保证 Complete | 当前文件/相关目录优先级、具体任务内容、两个 worker 与各项预算 |
-| `index.Index` | `analysis.Summarize` 产出符号、引用、未解析依赖和 digest；catalog 管理票据与查询 | key 编码、namespace/kind、依赖闭包、缺失/歧义语义和最终发布 proof |
+| `index.Index` | `analysis.Summarize` 产出符号、引用、未解析依赖和 digest；`SymbolsWithPrefix` 在候选上限前按不透明 key 前缀筛选 | key 编码、namespace/kind、依赖闭包、缺失/歧义语义和最终发布 proof；截断的修复候选不进入安全编辑 |
 
 依赖方向是 Workflows → toolkit 公共包。toolkit 不回调 Workflows 的领域逻辑，不依赖 LSP、
 Zed、Argo schema 或这个仓库；Workflows 与 Argo CD 插件互不 import。
 两者可以使用相同共享源码，但各自拥有独立文档状态、索引、配置、资源判定、schema 和发布周期。
 Expr 与 JSON Schema 是本仓实际使用并单独记录补丁的依赖，不因使用 toolkit 而隐去其来源。
+公共包没有 Argo 资源注册器、通用 Rename 服务或 LSP 调度器。固定版本 schema 的未知字段
+识别仍由 [fields.go](../internal/analysis/fields.go) 读取产品 schema 元数据，不能声称所有产品规则都已公共化。
 
 ## 输入、扫描与查询如何协作
 
@@ -132,9 +139,31 @@ Expr 与 JSON Schema 是本仓实际使用并单独记录补丁的依赖，不�
    本地诊断先发后，scope 完整时补发外部诊断。结果带 root epoch、scope generation、file stamp/hash，
    失效后不能发布旧位置或恢复旧 Quick Fix；无变化的 Ready→Ready 不反复刷新全部已打开文件。
 
-这些行为的直接依据是 [catalog 三文件](../internal/lsp/catalog.go)、
+这些行为的直接依据是 [catalog](../internal/lsp/catalog.go)、
 [扫描实现](../internal/lsp/catalog_discovery.go)、[输入与 proof](../internal/lsp/catalog_inputs.go)
 及 [catalog 测试](../internal/lsp/catalog_test.go)。
+
+### 当前请求的独立性与完整性证明
+
+Hover、Completion 和 DocumentSymbol 使用轻查询 lane；其余请求使用重 lane。
+两条 lane 各自至多一个运行请求、八个排队请求，取消不会在 worker 退出前释放运行槽。
+这是固定请求准入，不是可扩展任务框架；两条 lane 仍共享进程内存和冷 schema 编译许可。
+
+只读文档请求记录当前 buffer 的 revision/version、root 对象/epoch、有效设置，并在返回时
+复核实际读取文件与 scope 的 proof。其他 scope 的编辑不会仅因全局 session epoch 改变而
+取消当前有用结果。跨 epoch 的只读结果即使仍可交付，也不能把旧 query cache、解析 facts
+或 external facts 写回当前 session；编辑请求继续要求严格的 session epoch。
+[请求身份](../internal/lsp/request.go)、[交付与缓存](../internal/lsp/serve.go)
+
+scope 就绪检查读取 root 的扫描完成状态、未知成员计数和目标 scope 的 unready 计数，
+不为每次查询遍历全部文件。计数由现有 file record 的贡献派生，更新和撤销均在 catalog 锁内完成；
+没有第二份资源注册表。空 scope 的 generation 来自它的成员状态，不借用其他 scope 的变化。
+[完整性计数](../internal/lsp/catalog_readiness.go)
+
+关闭文件读取若发现漏 watcher 的内容变化，会撤销旧索引并安排重建，同时只撤销该文件所属
+scope 的完整性证明。此次读到的新内容仍可用于已知正向导航；需要完整闭包的缺失诊断、引用查找
+或编辑不能把它当作完整索引。返回 proof 保留实际 read 的 stamp，后续 watch 变化仍会拒绝旧结果。
+[关闭文件自修复](../internal/lsp/catalog_inputs.go)、[并发读验证](../internal/lsp/catalog_query_repair_test.go)
 
 ### 资源索引表达什么
 
@@ -149,6 +178,29 @@ digest 包含资源 spec 和 target/namespace/reference policy。仅注释变化
 catalog 不另存 previous facts 副本。索引本身不证明目录完整，也不替插件解释 key。
 [摘要实现与测试](../internal/analysis/index.go)、[行为测试](../internal/analysis/index_test.go)
 
+候选修复先按 `[kind, effective namespace]` 的 key 前缀过滤，再应用 1,000 项上限。
+因此无关 kind/namespace 的符号不能挤掉当前候选。公共 Index 只比较不透明前缀；
+候选达到上限时显式拒绝依赖全量候选的修复，不把截断列表视为完整集合。
+
+## 安全修改的证明范围
+
+| 操作 | 当前证明和限制 |
+| --- | --- |
+| 当前文档 Quick Fix | 先模拟 schema/本地语义，资源身份、导出模板和外部引用边界必须不变；before/after 使用独立逻辑结果预算。可证明局部安全时不等待全目录，否则再检查完整 scope |
+| 延迟 Code Action resolve | 复核原 snapshot revision、有效 target/config 与动作指纹；本地动作只依赖其实际文档/配置，完整 scope 动作保留 scope generation；无关 scope 的编辑不使已证明局部的动作失效 |
+| 本地名称 Rename | 沿已有模板、参数、任务和输出绑定计算修改，要求精确位置与无新语义错误；普通 metadata/prose 不因字符串相似而被修改 |
+| 资源 Rename | 只覆盖 WorkflowTemplate/ClusterWorkflowTemplate 的 `metadata.name` 及静态 `templateRef.name`/`workflowTemplateRef.name`；closed 策略、完整选定 scope、唯一声明、已知 namespace、精确独立来源及全部受影响文件的打开版本均必需 |
+
+资源 Rename 使用当前资源/外部调用模型重新列举全部引用；动态引用、未知 namespace、未建模的
+nested/inline 引用、schema-only 资源或共享/派生来源会阻止证明完整性。所有替换先一起应用到
+临时快照，然后比较修改前后的调用到声明身份，拒绝已有声明冲突以及把原未解析引用捕获到新名称的情况，
+再执行整个 scope 的错误增量检查。数字或 YAML 布尔字样的新名称通过标量编码保留字符串类型。
+
+LSP 只返回带版本的 `documentChanges`；客户端如何原子应用多文件编辑由客户端实现决定。
+服务不直接写用户文件，不提供通用 Kubernetes 资源 Rename，也不把部分正向导航结果当作安全编辑证明。
+[局部边界](../internal/analysis/local_edits.go)、[资源改名](../internal/analysis/externalrename.go)、
+[版本化编辑与 resolve](../internal/lsp/edits.go)
+
 ## 预算与生命周期
 
 | 项目 | 当前上限或生命周期 |
@@ -159,7 +211,9 @@ catalog 不另存 previous facts 副本。索引本身不证明目录完整，�
 | 索引符号 / 引用与依赖 / 逻辑字符串 | 1,000,000 / 2,000,000 / 128 MiB |
 | 域符号摘要 | 总量 64 MiB、1,000,000 项；单文件构造 8 MiB |
 | WorkQueue | ready 512；outstanding 100,002，含 overflow/running；文件 worker 2 |
+| LSP 请求准入 | 轻/重两条固定 lane，各一个 active、八个 queued；另一个诊断 worker；每个 worker 五秒 deadline |
 | CLI 一次性目录收集 | 最多 50,000 YAML 候选；五秒分析 deadline |
+| YAML 投影与 schema 查询 | 每文档至多 100,000 展开/访问节点，单标量 1 MiB；alias/merge 的同一逻辑结果累计 100,000 有效节点；公共查询遵守其 work/depth 预算 |
 | 请求内解析复用 / 可选跨 worker 解析事实 | 50 MiB / 8 MiB 文本和 512,000 节点；超出可选缓存不扩大输入预算 |
 | 外部诊断事实复用 | 最多 20,000 keys / 4 MiB；候选集合参与身份 |
 | 名称候选 / workspace symbols | 1,000 / 20,000；冷索引或达到上限时不承诺全量结果 |

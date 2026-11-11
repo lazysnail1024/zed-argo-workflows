@@ -27,7 +27,7 @@ type catalogRoot struct {
 	override, identity, problem, scanProblem, unavailable string
 	membership                                            shared.Membership
 	scanPass                                              shared.ScanPass
-	epoch, pass, scanEpoch                                uint64
+	epoch, inputEpoch, pass, scanEpoch                    uint64
 	scanner                                               *shared.Scanner // Used only by discover, including Close/Prioritize.
 	priority                                              map[string]bool
 	done, complete, reported                              bool
@@ -39,6 +39,7 @@ type catalogRoot struct {
 	reads, bytes, parses                                  uint64
 	known, unknown, pending                               int
 	unready                                               map[string]int
+	members                                               map[string]int
 }
 
 type catalogFile struct {
@@ -194,6 +195,7 @@ func (c *catalog) syncInputs(s *session, m message) {
 		r.override, r.overlay, r.unavailable = s.override, overlay, unavailable
 		if changed {
 			r.epoch++
+			r.inputEpoch++
 			r.reported = false
 			r.checked, r.nextPass = time.Time{}, time.Time{}
 			r.problem, r.scanProblem, r.complete = "configuration pending", "", false
@@ -223,6 +225,7 @@ func (c *catalog) syncInputs(s *session, m message) {
 			// Registered roots change disk ownership even when configuration and
 			// file bytes are identical. Resume from a new discovery pass.
 			root.epoch++
+			root.inputEpoch++
 			root.done, root.complete, root.reported = false, false, false
 			root.nextPass = time.Time{}
 		}

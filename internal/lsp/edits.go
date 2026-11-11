@@ -109,16 +109,39 @@ func localActionFingerprint(w workspace.Workspace) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (s *session) rememberFix(d workspace.Document, w workspace.Workspace, fix analysis.Fix, local bool) map[string]any {
-	input := localActionFingerprint(w)
-	if !local {
-		input = s.actionFingerprint(w)
-	}
+func (s *session) rememberFix(d workspace.Document, input string, fix analysis.Fix, local bool) map[string]any {
 	s.actionSequence++
 	token := fmt.Sprintf("%d:%d", s.epoch, s.actionSequence)
 	s.actions[token] = pendingAction{uri: string(d.Snapshot.URI()), title: fix.Title, version: d.Target.Version,
 		scope: d.Target.Scope, fingerprint: input, epoch: s.epoch, revision: d.Snapshot.Revision(), plan: detachedPlan(fix.Plan), local: local}
 	return map[string]any{"title": fix.Title, "kind": "quickfix", "data": map[string]any{"token": token}}
+}
+
+func (s *session) resourceEditWorkspace(d workspace.Document) (workspace.Workspace, error) {
+	w, proof, err := s.catalog.workspace(s.context(), s.root(string(d.Snapshot.URI())), d.Target.Scope, "", true, true, true)
+	if err != nil {
+		return w, err
+	}
+	s.proofs = append(s.proofs, proof)
+	return scopeWorkspace(w, d.Target.ID), nil
+}
+
+func (s *session) requireResourceBuffers(w workspace.Workspace, files []source.URI) error {
+	documents := make(map[source.URI]workspace.Document, len(w.Documents))
+	for _, d := range w.Documents {
+		documents[d.Snapshot.URI()] = d
+	}
+	for _, uri := range files {
+		b, opened := s.buffers[string(uri)]
+		if !opened || b.unavailable != "" {
+			return fmt.Errorf("resource rename requires every affected file to be open and versioned")
+		}
+		d, found := documents[uri]
+		if !found || d.Snapshot.Revision() != b.snapshot.Revision() || d.Snapshot.Text() != b.snapshot.Text() || !compat.Accepted(d.Target.Version) {
+			return fmt.Errorf("resource rename input no longer matches an accepted buffer")
+		}
+	}
+	return nil
 }
 
 func (s *session) handleEdit(m message) (bool, int, error) {
@@ -159,8 +182,10 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		} else {
 			w, err = s.documentWorkspace(action.uri, action.scope)
 		}
-		currentFingerprint := localActionFingerprint(w)
-		if !action.local {
+		var currentFingerprint string
+		if action.local {
+			currentFingerprint = localActionFingerprint(w)
+		} else {
 			currentFingerprint = s.actionFingerprint(w)
 		}
 		if err != nil || !opened || b.snapshot.Revision() != action.revision || currentFingerprint != action.fingerprint {
@@ -241,7 +266,7 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 	pos := source.Position{Line: p.Position.Line, UTF16Column: p.Position.Character}
 	switch m.Method {
 	case "textDocument/prepareRename":
-		w, err := s.workspace(s.root(uri), "")
+		w, err := s.resourceEditWorkspace(d)
 		if err != nil {
 			return false, 0, s.failure(m.ID, -32602, err.Error())
 		}
@@ -250,17 +275,41 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		}
 		result, err := analysis.PrepareRename(ctx, b.snapshot, d.Target.Version, pos)
 		if err != nil {
-			return false, 0, s.failure(m.ID, -32602, err.Error())
+			var files []source.URI
+			result, files, err = analysis.PrepareResourceRename(ctx, w, uri, pos)
+			if err == nil {
+				err = s.requireResourceBuffers(w, files)
+			}
+			if err != nil {
+				return false, 0, s.failure(m.ID, -32602, err.Error())
+			}
 		}
 		return false, 0, s.reply(m.ID, result)
 	case "textDocument/rename":
-		plan, err := analysis.RenameLocal(ctx, b.snapshot, d.Target.Version, pos, p.NewName)
+		w, err := s.resourceEditWorkspace(d)
 		if err != nil {
 			return false, 0, s.failure(m.ID, -32602, err.Error())
 		}
-		w, err := s.workspace(s.root(uri), "")
+		plan, err := analysis.RenameLocal(ctx, b.snapshot, d.Target.Version, pos, p.NewName)
 		if err != nil {
-			return false, 0, s.failure(m.ID, -32602, err.Error())
+			plans, err := analysis.RenameResource(ctx, w, uri, pos, p.NewName)
+			if err != nil {
+				return false, 0, s.failure(m.ID, -32602, err.Error())
+			}
+			files := make([]source.URI, 0, len(plans))
+			for file := range plans {
+				files = append(files, file)
+			}
+			sort.Slice(files, func(i, j int) bool { return files[i] < files[j] })
+			if err := s.requireResourceBuffers(w, files); err != nil {
+				return false, 0, s.failure(m.ID, -32602, err.Error())
+			}
+			changes := []any{}
+			for _, file := range files {
+				buffer := s.buffers[string(file)]
+				changes = append(changes, map[string]any{"textDocument": map[string]any{"uri": file, "version": buffer.version}, "edits": analysis.PlanEdits(buffer.snapshot, plans[file])})
+			}
+			return false, 0, s.reply(m.ID, map[string]any{"documentChanges": changes})
 		}
 		if err := analysis.SafeScopePlan(ctx, w, d, plan); err != nil {
 			return false, 0, s.failure(m.ID, -32602, err.Error())
@@ -274,9 +323,10 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		result := []map[string]any{}
 		localFixes := analysis.FieldFixes(analysis.WithLogicalResult(ctx), b.snapshot, d.Target.Version, p.Range)
 		localFixes = append(localFixes, analysis.ValueFixes(analysis.WithLogicalResult(ctx), local, d, p.Range)...)
+		localFingerprint := localActionFingerprint(local)
 		for _, fix := range localFixes {
 			if analysis.SafeLocalPlan(ctx, local, d, fix.Plan) == nil {
-				result = append(result, s.rememberFix(d, local, fix, true))
+				result = append(result, s.rememberFix(d, localFingerprint, fix, true))
 			}
 		}
 		if len(result) != 0 {
@@ -292,11 +342,12 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		fixes := analysis.FieldFixes(analysis.WithLogicalResult(ctx), b.snapshot, d.Target.Version, p.Range)
 		fixes = append(fixes, analysis.ValueFixes(analysis.WithLogicalResult(ctx), w, d, p.Range)...)
 		scoped := scopeWorkspace(w, d.Target.ID)
+		requestFingerprint := s.actionFingerprint(scoped)
 		for _, fix := range fixes {
 			if fix.Code == "FIX_FIELD_NAME" && analysis.SafeScopePlan(ctx, w, d, fix.Plan) != nil {
 				continue
 			}
-			result = append(result, s.rememberFix(d, scoped, fix, false))
+			result = append(result, s.rememberFix(d, requestFingerprint, fix, false))
 		}
 		return false, 0, s.reply(m.ID, result)
 	}

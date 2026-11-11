@@ -199,5 +199,79 @@ schema 资源控制接受已完成有效样本与明确分析 deadline 样本的
 [file URI](../internal/fileuri/fileuri.go)、[字节规则](../.gitattributes)、
 [CLI/LSP 生命周期](../tests/e2e/wf-remediation-lifecycle.py)、[包验证](../tests/e2e/native-package.py)
 
+## 13. 严格 YAML 投影也要保留正在输入的键
+
+**共享接入中暴露。** 直接要求原文是完整 YAML，会拒绝 `paral`、`outp` 这类正在输入的键；
+但若先用特殊 marker 替换原键，又会掩盖原输入中同名键重复的问题。显式 tag、未知 alias 和
+共享 anchor 也不能在临时恢复时被当作普通字面量擦除。
+
+**当前修复。** 仅在不完整的当前键末尾追加 `: null`，保留原键拼写，先由公共 `yamlvalue.Project`
+检查原始语义，再建立独立 marker 查询快照。普通文档仍用 CST 精确位置，公共投影负责 alias/merge
+值和共享来源。Workflow 显式传入 tag 拒绝与预算策略；失败不会回退到另一套宽松解码器。
+
+**防回归。** 真实 stdio 消费者检查根键/模板键、CRLF、当前键重复、标准显式 tag，以及 didChange 后
+恢复诊断和 Hover。两项可编译消融分别移除原来源拒绝与 tag 策略，必须命中对应具体用例。
+[临时输入恢复](../internal/analysis/query_context.go)、
+[共享投影消费者](../tests/e2e/wf-shared-yaml-projection.py)、
+[投影反向控制](../tests/e2e/ablate-shared-yaml-projection.py)
+
+## 14. 代码下沉后，旧消融注入点会失效
+
+**重构中发现。** 私有 schema walker 被公共 `schemaquery` 取代后，旧脚本仍匹配 `queryAllowsKey`
+和分支过滤循环。此时“没有观测到坏结果”并不能说明删除保护是安全的，实验可能根本没有修改执行路径。
+公共形状查询还需区分用于选择版本的字段结构与无关值断言；不能因 schema 存在 `not` 就拒绝所有结构候选。
+
+**当前规则。** `Lookup/Values/AllowsKey/Type/SelectShapes` 直接使用实际编译图，产品选择 release catalog。
+消融选择器随调用路径迁移，保留精确命中、构建成功与指定消费者断言失败的条件；预算、取消和
+不支持的查询由错误返回显式传播，不伪装成成功的空候选。
+
+**防回归。** 原生 CRD 的版本查询、独立合成 schema 合同分别执行。key closure 控制移除消费端
+实际的 `AllowsKey` 判断；兄弟字段控制在隔离副本的公共包中修改实际查询路径，验证无关错误不应屏蔽补全。
+[schema gate](../tests/ci/run.py)、[边界消融](../tests/e2e/ablate-schema-query-boundaries.py)、
+[兄弟约束消融](../tests/e2e/ablate-schema-query-sibling.py)
+
+## 15. 全局 epoch 和单一前台队列会压制当前文件操作
+
+**请求调度审计。** 单一前台 worker 让慢重操作排在 Hover/Completion 前面；任意文件的 didChange
+又令所有旧 session epoch 请求无效，持续编辑无关文件也会取消当前文件的有效读结果。
+
+**当前修复。** 固定轻/重两条有界 lane，在复制请求状态之前准入，取消后仍等待 worker 真正退出。
+只读请求复核自身 buffer revision/version、root epoch 和实际依赖；跨全局 epoch 的有效读结果可以返回，
+但其缓存不能写回当前 session。编辑请求保留严格 epoch，当前 buffer 或依赖变更仍拒绝旧结果。
+
+**防回归。** 同时检查慢重请求期间轻查询能返回、无关编辑期间查询确实成功、当前文件变更仍拒绝
+旧读结果，以及取消/队列满后不产生额外运行槽。性能断言必须伴随正确内容，不能只统计快速返回的错误。
+[请求输入证明](../internal/lsp/request.go)、[调度与交付](../internal/lsp/serve.go)
+
+## 16. 自己修复索引后，不能把新读到的输入也一并判旧
+
+**关闭文件读取控制。** 漏 watcher 后的前台读取可以发现真实新内容并使旧索引失效；如果仍携带
+读取前的“完整 scope generation”，查询会因自己触发的修复而收到 ContentModified。反过来用稍后的
+catalog stamp 覆盖实际 read stamp，又可能掩盖并发 watcher 通知。
+
+**当前修复。** 记录本次读取是否触发修复，只撤销被修复 scope 的完整性证明并安排重建；
+保留实际读取的文件证明。新的正向导航结果可用，需要完整 scope 的操作仍等待其重新就绪。
+scope 就绪由现有文件记录的增量贡献计数决定，前台检查不再反复线性扫描全部 YAML。
+
+**防回归。** 读后并发变化必须拒绝；自修复读取可以返回实际新内容且不声称完整；无关 scope 的
+变更不能污染空 scope 的 generation。成员重绑、队列后续事件、拒绝、删除和 root 替换后计数都需收敛。
+[读取修复测试](../internal/lsp/catalog_query_repair_test.go)、
+[计数生命周期测试](../internal/lsp/catalog_readiness_test.go)
+
+## 17. 局部修复和跨文件改名需要不同范围的证明
+
+**编辑控制中暴露。** 对独立字段修复强制等待整个 scope，使冷索引中的当前文件无法纠错；
+把本地修复的配置身份扩大到其他 scope，也会让无关配置变更使 resolve 失效。相反，仅根据正向
+定义位置生成跨文件 Rename，会遗漏未解析的新名引用、动态值或未建模的 nested/inline 引用。
+
+**当前修复。** 本地修复证明资源身份、导出模板和外部调用边界不变，前后分析各用独立逻辑预算。
+资源 Rename 要求完整 closed scope 和所有受影响打开文件的版本，批量模拟后重新比较调用到声明的身份，
+并检查新增错误；普通未解析引用也参与新名捕获判定。公共库只提供投影、索引和文本计划，不承载 Argo Rename 规则。
+
+**防回归。** 检查局部修复在冷索引和无关编辑后仍可 resolve，原文件或有效配置变化则拒绝；
+资源改名检查精确最终字节、名称碰撞、原未解析引用的新绑定、动态/共享来源、namespace 及关闭文件拒绝。
+[局部边界](../internal/analysis/local_edits.go)、[资源改名消费者](../tests/e2e/wf-resource-rename.py)、
+[资源改名消融](../tests/e2e/ablate-resource-rename.py)
+
 这些规则描述当前源码要求；某次修复是否已经交付，应核对实际 release 和二进制身份。
 CI、WASI 运行时与真实 Zed 编辑会话的结果分别记录，不能互相代替。

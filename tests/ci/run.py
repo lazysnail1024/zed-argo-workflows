@@ -36,6 +36,8 @@ NATIVE = (
     "wf-diagnostic-ownership", "wf-diagnostic-deadline",
     "wf-index-boundaries", "wf-mixed-parent-index", "wf-persistent-workspace",
     "wf-persistent-slowio",
+    "wf-shared-yaml-projection", "wf-responsive-editing",
+    "wf-resource-rename", "wf-catalog-queries",
 )
 EXTENDED = (
     "wf-audit-gaps", "wf-lifecycle", "wf-lifecycle-gaps",
@@ -503,7 +505,33 @@ def mutations(args):
         row["caseCount"] = len(variants)
     else:
         row["pass"] = False
-    return summary(args.output, [row], args.group + " semantic mutation gate")
+    rows = [row]
+    if args.group == "audit" and row["pass"]:
+        baseline = args.output / "gate/baseline" / ("server.exe" if os.name == "nt" else "server")
+        for name, count in (("shared-yaml-projection", 2), ("catalog-queries", 7), ("responsive-editing", 4)):
+            destination = args.output / name
+            script = E2E / ("ablate-" + name + ".py")
+            command_args = [sys.executable, script, destination] if name == "shared-yaml-projection" else [sys.executable, script, baseline, destination]
+            extra = command(command_args, args.output / (name + "-driver"), timeout=600)
+            extra["name"] = name + " mutations"
+            try:
+                report_file = destination / ("results.json" if name == "shared-yaml-projection" else "report.json")
+                evidence = json.loads(report_file.read_text(encoding="utf-8"))
+                if name == "shared-yaml-projection":
+                    complete = isinstance(evidence, list) and len(evidence) == count and all(
+                        value.get("buildExit") == 0 and value.get("consumerExit") == 1 and value.get("detected") is True for value in evidence)
+                else:
+                    values = evidence.get("rows", [])
+                    complete = evidence.get("passed") is True and len(values) == count + 1 and all(value.get("passed") is True for value in values)
+                extra["pass"] = extra["pass"] and complete
+                extra["caseCount"] = count
+                extra["resultsSha256"] = sha(report_file)
+            except (OSError, ValueError, TypeError):
+                extra["pass"] = False
+                extra["evidenceError"] = traceback.format_exc()
+            rows.append(extra)
+            summary(args.output, rows, args.group + " semantic mutation gate")
+    return summary(args.output, rows, args.group + " semantic mutation gate")
 
 
 def schema(args):

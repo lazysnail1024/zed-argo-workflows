@@ -64,7 +64,7 @@ func (s *session) queueRequest(m message) queuedRequest {
 	s.catalog.mu.Lock()
 	q.input.rootState = s.catalog.roots[q.input.root]
 	if q.input.rootState != nil {
-		q.input.rootEpoch = q.input.rootState.epoch
+		q.input.rootEpoch = q.input.rootState.inputEpoch
 	}
 	s.catalog.mu.Unlock()
 	return q
@@ -91,5 +91,5 @@ func (s *session) requestCurrent(q queuedRequest) bool {
 	s.catalog.mu.Lock()
 	defer s.catalog.mu.Unlock()
 	root := s.catalog.roots[input.root]
-	return root == input.rootState && (root == nil || root.epoch == input.rootEpoch)
+	return root == input.rootState && (root == nil || root.inputEpoch == input.rootEpoch)
 }

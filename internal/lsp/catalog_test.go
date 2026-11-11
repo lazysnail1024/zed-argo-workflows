@@ -156,12 +156,16 @@ func TestCatalogCompletenessIsPerScopeAfterDiscovery(t *testing.T) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	root := &catalogRoot{header: workspace.Workspace{Root: "/test"}, done: true}
+	c.roots["/test"] = root
 	c.files["file:///test/a.yaml"] = &catalogFile{root: "/test", target: workspace.Target{ID: "A"}, problem: "projection failed"}
 	c.files["file:///test/b.yaml"] = &catalogFile{root: "/test", target: workspace.Target{ID: "B"}}
+	c.refreshReadiness("file:///test/a.yaml")
+	c.refreshReadiness("file:///test/b.yaml")
 	if c.scopeReadyLocked(root, "A") || !c.scopeReadyLocked(root, "B") {
 		t.Fatal("known failure in A contaminated independently complete B")
 	}
 	c.files["file:///test/unknown.yaml"] = &catalogFile{root: "/test", problem: "target not determined"}
+	c.refreshReadiness("file:///test/unknown.yaml")
 	if c.scopeReadyLocked(root, "B") {
 		t.Fatal("unknown scope was treated as proof of complete B")
 	}
