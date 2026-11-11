@@ -30,6 +30,54 @@ type resourceRenameSelection struct {
 	occurrences []resourceNameUse
 }
 
+// ResourceRenameAt only chooses the rename domain from the current source.
+// Namespace, binding and edit safety remain the resource rename proof's job.
+// A local binding error must not be replaced by an unrelated resource error.
+func ResourceRenameAt(ctx context.Context, snapshot source.Snapshot, pos source.Position) (bool, error) {
+	at, err := snapshot.Offset(pos)
+	if err != nil {
+		return false, err
+	}
+	view, err := parseView(ctx, snapshot)
+	if err != nil {
+		return false, err
+	}
+	contains := func(n yamlview.Node) bool {
+		return n.Kind() != yamlview.Empty && at >= n.Span().Start && at <= n.Span().End
+	}
+	var referenceAt func(yamlview.Node) bool
+	referenceAt = func(n yamlview.Node) bool {
+		if !contains(n) || ctx.Err() != nil {
+			return false
+		}
+		for _, m := range n.Members() {
+			key := stringValue(m.Key)
+			if (key == "templateRef" || key == "workflowTemplateRef") && contains(member(m.Value, "name")) {
+				return true
+			}
+			if referenceAt(m.Value) {
+				return true
+			}
+		}
+		for _, child := range n.Elements() {
+			if referenceAt(child) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, doc := range view.Documents() {
+		root := doc.Root()
+		if !contains(root) || !owned(stringValue(member(root, "apiVersion")), stringValue(member(root, "kind"))) {
+			continue
+		}
+		kind := stringValue(member(root, "kind"))
+		declaration := (kind == "WorkflowTemplate" || kind == "ClusterWorkflowTemplate") && contains(member(member(root, "metadata"), "name"))
+		return declaration || referenceAt(member(root, "spec")), ctx.Err()
+	}
+	return false, ctx.Err()
+}
+
 func resourceIdentity(r resource) externalIdentity {
 	namespace := r.namespace
 	if r.kind == "ClusterWorkflowTemplate" {

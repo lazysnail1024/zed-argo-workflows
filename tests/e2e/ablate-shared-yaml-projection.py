@@ -11,6 +11,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 OUT = Path(sys.argv[1]).resolve()
 ENV = os.environ | {'GOWORK': 'off', 'GOTOOLCHAIN': 'local', 'CGO_ENABLED': '1'}
+GO = str(Path(ENV['GOROOT']) / 'bin/go') if ENV.get('GOROOT') else 'go'
 rows = []
 for name, required in [('original-source-check', 'selected-duplicate-key'), ('explicit-tag-policy', 'explicit-standard-tag')]:
     dest = OUT / name
@@ -33,7 +34,7 @@ for name, required in [('original-source-check', 'selected-duplicate-key'), ('ex
             assert before.count('RejectExplicitTags: true') == 1, 'tag policy no longer matches'
             path.write_text(before.replace('RejectExplicitTags: true', 'RejectExplicitTags: false'))
     binary = dest / ('server.exe' if os.name == 'nt' else 'server')
-    command = [str(Path(ENV['GOROOT']) / 'bin/go'), 'build', '-mod=vendor', '-trimpath', '-buildvcs=false', '-o', str(binary), './cmd/argo-workflows-ls']
+    command = [GO, 'build', '-mod=vendor', '-trimpath', '-buildvcs=false', '-o', str(binary), './cmd/argo-workflows-ls']
     build = subprocess.run(command, cwd=source, env=ENV, capture_output=True, timeout=180)
     (dest / 'build.stderr').write_bytes(build.stderr)
     row = {'name': name, 'buildExit': build.returncode, 'requiredFailure': required, 'detected': False}

@@ -264,6 +264,13 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		return false, 0, s.failure(m.ID, -32602, "experimental target edits are disabled")
 	}
 	pos := source.Position{Line: p.Position.Line, UTF16Column: p.Position.Character}
+	resourceName := false
+	if m.Method == "textDocument/prepareRename" || m.Method == "textDocument/rename" {
+		resourceName, err = analysis.ResourceRenameAt(ctx, b.snapshot, pos)
+		if err != nil {
+			return false, 0, s.failure(m.ID, -32602, err.Error())
+		}
+	}
 	switch m.Method {
 	case "textDocument/prepareRename":
 		w, err := s.resourceEditWorkspace(d)
@@ -273,16 +280,18 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		if err := analysis.SafeScopePlan(ctx, w, d, edit.Plan{BaseRevision: b.snapshot.Revision()}); err != nil {
 			return false, 0, s.failure(m.ID, -32602, err.Error())
 		}
-		result, err := analysis.PrepareRename(ctx, b.snapshot, d.Target.Version, pos)
-		if err != nil {
+		var result any
+		if resourceName {
 			var files []source.URI
 			result, files, err = analysis.PrepareResourceRename(ctx, w, uri, pos)
 			if err == nil {
 				err = s.requireResourceBuffers(w, files)
 			}
-			if err != nil {
-				return false, 0, s.failure(m.ID, -32602, err.Error())
-			}
+		} else {
+			result, err = analysis.PrepareRename(ctx, b.snapshot, d.Target.Version, pos)
+		}
+		if err != nil {
+			return false, 0, s.failure(m.ID, -32602, err.Error())
 		}
 		return false, 0, s.reply(m.ID, result)
 	case "textDocument/rename":
@@ -290,8 +299,7 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		if err != nil {
 			return false, 0, s.failure(m.ID, -32602, err.Error())
 		}
-		plan, err := analysis.RenameLocal(ctx, b.snapshot, d.Target.Version, pos, p.NewName)
-		if err != nil {
+		if resourceName {
 			plans, err := analysis.RenameResource(ctx, w, uri, pos, p.NewName)
 			if err != nil {
 				return false, 0, s.failure(m.ID, -32602, err.Error())
@@ -310,6 +318,10 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 				changes = append(changes, map[string]any{"textDocument": map[string]any{"uri": file, "version": buffer.version}, "edits": analysis.PlanEdits(buffer.snapshot, plans[file])})
 			}
 			return false, 0, s.reply(m.ID, map[string]any{"documentChanges": changes})
+		}
+		plan, err := analysis.RenameLocal(ctx, b.snapshot, d.Target.Version, pos, p.NewName)
+		if err != nil {
+			return false, 0, s.failure(m.ID, -32602, err.Error())
 		}
 		if err := analysis.SafeScopePlan(ctx, w, d, plan); err != nil {
 			return false, 0, s.failure(m.ID, -32602, err.Error())
