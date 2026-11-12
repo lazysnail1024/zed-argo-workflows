@@ -327,7 +327,10 @@ def summary(output, rows, classification):
 def build(args):
     output = args.output
     output.mkdir(parents=True, exist_ok=True)
-    env = os.environ | {"GOWORK": "off", "GOTOOLCHAIN": "local", "CGO_ENABLED": "1", "GOFLAGS": ""}
+    dependency_env = os.environ | {"GOENV": "off", "GOWORK": "off", "GOTOOLCHAIN": "local", "GOFLAGS": ""}
+    checked([sys.executable, ROOT / "scripts/vendor-native.py"], output / "dependencies",
+            timeout=600, env=dependency_env)
+    env = os.environ | {"GOENV": "off", "GOWORK": "off", "GOTOOLCHAIN": "local", "CGO_ENABLED": "1", "GOFLAGS": ""}
     expected = args.platform or host_platform()
     if expected != host_platform():
         raise ValueError(f"native execution required: requested {expected}, actual {host_platform()}")
@@ -341,7 +344,7 @@ def build(args):
                    "GOTMPDIR", "CC"}
         env = {key: value for key, value in os.environ.items() if key.upper() in allowed}
         env.update(GOENV="off", GOWORK="off", GOTOOLCHAIN="local", CGO_ENABLED="1", GOFLAGS="",
-                   GOPROXY="off", GOSUMDB="off", CGO_CFLAGS="-O2 -g", CGO_CPPFLAGS="",
+                   GOPROXY="off", CGO_CFLAGS="-O2 -g", CGO_CPPFLAGS="",
                    CGO_CXXFLAGS="-O2 -g", CGO_FFLAGS="-O2 -g", CGO_LDFLAGS="-O2 -g", LC_ALL="C")
     binary = output / ("argo-workflows-ls.exe" if os.name == "nt" else "argo-workflows-ls")
     metadata = {"platform": expected, "python": sys.version, "machine": platform.platform(),
@@ -392,6 +395,8 @@ def build(args):
             snapshot = Path(temporary) / "source"
             checked(["git", "worktree", "add", "--detach", snapshot, metadata["sourceCommit"]], output / "source-worktree")
             try:
+                checked([sys.executable, snapshot / "scripts/vendor-native.py"], output / "source-dependencies",
+                        timeout=600, env=dependency_env | {"GOPROXY": "off"}, cwd=snapshot)
                 checked(compile_command, output / "compile", timeout=600, env=env, cwd=snapshot)
                 retain_windows_runtime(snapshot)
                 checked(["go", "test", "-mod=vendor", "-count=1", "./internal/analysis", "./internal/assets", "./internal/lsp", "./internal/workspace"], output / "go-tests", timeout=300, env=env, cwd=snapshot)
@@ -483,6 +488,7 @@ def package(args):
 
 
 def mutations(args):
+    checked([sys.executable, ROOT / "scripts/vendor-native.py"], args.output / "dependencies", timeout=600)
     argv = [sys.executable, E2E / "ablate-ci.py", args.group, args.output / "gate"]
     if args.group == "resources":
         if platform.system() != "Linux":

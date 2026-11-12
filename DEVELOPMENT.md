@@ -2,10 +2,13 @@
 
 ## Native language server
 
-Use the Go version in `go.mod` and a C compiler for the vendored parser. Dependencies
-are vendored; no Rust toolchain or editor checkout is needed.
+Use the Go version in `go.mod`, Python, Git and a C compiler. Dependency source is
+downloaded at the versions in `go.mod`, verified against `go.sum`, and staged in
+an ignored, disposable `vendor/` directory. No Rust toolchain or editor checkout
+is needed. Prepare dependencies before direct Go or mutation-test commands:
 
 ```sh
+python3 scripts/vendor-native.py
 go build -mod=vendor -o build/argo-workflows-ls ./cmd/argo-workflows-ls
 go vet -mod=vendor ./...
 ./build/argo-workflows-ls version --json
@@ -31,7 +34,7 @@ and publishes the native assets. An exact version-tag push or a manual run on
 
 The toolkit dependency is pinned to the source commit in `contracts/toolkit.lock.json`,
 represented by the Go pseudo-version in `go.mod`. It does not require a toolkit release tag.
-The vendored `source`, `yamlview`, `yamlvalue`, `schemaquery`, `edit`, `index`, and `workspace` packages match
+The `source`, `yamlview`, `yamlvalue`, `schemaquery`, `edit`, `index`, and `workspace` packages match
 that commit; builds need no sibling checkout or local `replace` directive.
 `contracts/toolkit-design-5.md` is the byte-identical API contract, with its
 implementation and content identities in `contracts/toolkit.lock.json`.
@@ -41,10 +44,22 @@ compiler patches, verifying their input and output hashes against
 
 When advancing the source pin, update the Go dependency, contract snapshot and
 lock identities together. Run `python3 scripts/vendor-native.py` to regenerate
-vendor, restore the native parser source trees and reapply the recorded Expr
-formatter and JSON Schema compiler patches. Keep `go.sum`, vendored sources and provenance records in the
-same change. The executable's `version --json` reports the linked toolkit
+build inputs, restore native parser source trees and apply the recorded Expr
+formatter and JSON Schema compiler patches. Keep `go.sum`, the patch contracts
+and original notices in `licenses/modules/` in the same change; never commit
+the generated `vendor/` tree. The script checks all notice bytes against the
+verified modules, rejects replacements and lock drift, and does not modify the
+shared module cache. The executable's `version --json` reports the linked toolkit
 dependency from Go build metadata.
+
+The native CI builder prepares dependencies automatically and regenerates them
+inside the exact source snapshot used for release compilation. A warm module
+cache supports `GOPROXY=off`; a fresh checkout needs network access once. Plain
+`go mod vendor` and direct `-mod=readonly` builds omit the two required patches
+and are not supported release build paths. Runtime binaries remain standalone.
+`python3 tests/module_sources.py --output artifacts/module-sources` exercises a
+fresh isolated cache, deterministic offline regeneration and explicit refusal
+of checksum, patch, commit, replacement, notice and cache tampering.
 
 `yamlvalue` supplies strict YAML values, bounded alias/merge expansion and source
 sharing; `schemaquery` reads the same compiled schema graph as the validator.

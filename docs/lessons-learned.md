@@ -135,6 +135,9 @@ JSON Schema 编译每次入队线性扫描 pending graph，增加冷启动成本
 
 **防回归。** 再生成 vendor 必须走验证脚本；Expr 检查 ASCII/tab/multibyte/multiline 的精确错误文本，
 schema 检查冷/暖加载、版本语义和原有 10,000 文件 deadline。
+依赖迁移不能把“可直接编译”当作补丁可删除的证明：仓库已改用固定模块和忽略的构建期 vendor，
+保留两项有行为依据的补丁及原始许可证；移除无行为需要的 `x/text` 注释/Unicode 改写。
+官方构建入口每次重新验证、生成依赖，拒绝锁文件、补丁或许可证漂移；不信任现有忽略目录。
 [补丁操作规则](VENDORED_PATCHES.md)、[Expr 精确文本测试](../tests/e2e/wf-expr-error-text.py)、
 [表达式预算](../tests/e2e/wf-bounded-expressions.py)、[原负载消费者](../tests/e2e/wf-bounded-full.py)
 

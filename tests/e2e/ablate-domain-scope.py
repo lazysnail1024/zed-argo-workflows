@@ -11,7 +11,7 @@ if variant=='prefix':
 else:
  p=source/'internal/lsp/stdio.go';before=p.read_text();old='s.workspace(s.root(string(d.Snapshot.URI())), d.Target.Scope)';after=before.replace(old,'s.workspace(s.root(string(d.Snapshot.URI())), "")',1)
 assert after!=before;p.write_text(after);(out/'change.json').write_text(json.dumps({'file':str(p.relative_to(source)),'before':before,'after':after},indent=2)+'\n')
-env=os.environ|{'GOWORK':'off','GOTOOLCHAIN':'local','CGO_ENABLED':'1','GOPROXY':'off','GOSUMDB':'off'};cmd=[str(Path(env['GOROOT'])/'bin/go'),'build','-mod=vendor','-trimpath','-buildvcs=false','-o',str(out/'server'),'./cmd/argo-workflows-ls']
+env=os.environ|{'GOWORK':'off','GOTOOLCHAIN':'local','CGO_ENABLED':'1','GOPROXY':'off'};cmd=[str(Path(env['GOROOT'])/'bin/go'),'build','-mod=vendor','-trimpath','-buildvcs=false','-o',str(out/'server'),'./cmd/argo-workflows-ls']
 with (out/'build.stdout').open('wb') as so,(out/'build.stderr').open('wb') as se:r=subprocess.run(cmd,cwd=source,env=env,stdout=so,stderr=se)
 row={'variant':variant,'buildCommand':cmd,'buildExit':r.returncode,'detected':False}
 if r.returncode==0:

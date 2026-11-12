@@ -179,8 +179,8 @@ try:
     required = ['LICENSE', native_name, 'native/manifest.json', 'README.txt',
                 'licenses/go/LICENSE', 'licenses/go/PATENTS', 'licenses/schemas/LICENSE',
                 'provenance/VERSION', 'provenance/scripts/windows-runtime.json',
-                'licenses/vendor/github.com/tree-sitter/go-tree-sitter/src/unicode/LICENSE',
-                'licenses/vendor/go.yaml.in/yaml/v2/NOTICE']
+                'licenses/modules/github.com/tree-sitter/go-tree-sitter/src/unicode/LICENSE',
+                'licenses/modules/go.yaml.in/yaml/v2/NOTICE']
     folder_paths = {path.relative_to(first).as_posix() for path in first.rglob('*') if path.is_file()}
     require('complete-manifest', {'required': all((first / path).is_file() for path in required),
                                   'nonemptyHashes': isinstance(hashes, dict) and len(hashes) >= len(required) - 1,
@@ -221,7 +221,8 @@ try:
     source_checks = {}
     expected_source_paths = set()
     direct_files = {'LICENSE'}
-    provenance_files = {'VERSION', 'go.mod', 'go.sum', 'contracts/toolkit.lock.json', 'contracts/expr-patch.json', 'contracts/jsonschema-patch.json',
+    provenance_files = {'VERSION', 'go.mod', 'go.sum', 'contracts/toolkit.lock.json', 'contracts/expr-patch.json', 'contracts/expr-linear-error.patch',
+                        'contracts/jsonschema-patch.json', 'contracts/jsonschema-indexed-queue.patch',
                         'compat/catalog.lock.json', 'scripts/windows-runtime.json'}
     with tarfile.open(source, 'r:*') as archive:
         source_commit = archive.pax_headers.get('comment')
@@ -235,9 +236,9 @@ try:
                 destination = name
             elif name in provenance_files:
                 destination = 'provenance/' + name
-            elif parts[:2] == ('licenses', 'windows-runtime'):
+            elif parts[:2] in (('licenses', 'windows-runtime'), ('licenses', 'modules')):
                 destination = name
-            elif parts[0] in ('vendor', 'schemas') and any(
+            elif parts[0] == 'schemas' and any(
                     token in parts[-1].upper() for token in ('LICENSE', 'NOTICE', 'COPYING', 'COPYRIGHT', 'PATENTS')):
                 destination = 'licenses/' + name
             if destination is None:

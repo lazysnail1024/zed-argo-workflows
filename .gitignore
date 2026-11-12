@@ -2,6 +2,7 @@
 /build/
 /dist/
 /target/
+/vendor/
 /.cache/
 *.log
 .DS_Store
