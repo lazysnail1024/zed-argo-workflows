@@ -308,11 +308,12 @@ type catalogInput struct {
 }
 
 type catalogProof struct {
-	root     string
-	epoch    uint64
-	states   map[index.Scope]uint64
-	files    map[source.URI]catalogInput
-	repaired bool
+	root              string
+	epoch             uint64
+	states            map[index.Scope]uint64
+	files             map[source.URI]catalogInput
+	repaired          bool
+	allowIndexCatchUp bool
 }
 
 func (c *catalog) valid(proofs []catalogProof) bool {
@@ -330,7 +331,10 @@ func (c *catalog) valid(proofs []catalogProof) bool {
 		}
 		for uri, input := range proof.files {
 			file := c.files[uri]
-			if file == nil || file.stamp != input.stamp || !file.invalidated && file.hash != input.hash {
+			if file == nil || !file.invalidated && file.hash != input.hash {
+				return false
+			}
+			if file.stamp != input.stamp && !(proof.allowIndexCatchUp && !file.invalidated && file.hash == input.hash) {
 				return false
 			}
 		}

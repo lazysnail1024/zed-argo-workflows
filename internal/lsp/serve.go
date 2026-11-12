@@ -28,6 +28,7 @@ type workerResult struct {
 	epoch       uint64
 	background  bool
 	uri         string
+	foreign     bool
 	final       bool
 	proofs      []catalogProof
 	local       bool
@@ -77,6 +78,9 @@ func Serve(in io.Reader, out, log io.Writer) int {
 	finished := make(chan workerResult, 16)
 	var backgroundCancel context.CancelFunc
 	backgroundRunning := false
+	// An unchanged foreign buffer has already been cleared. Catalog index
+	// progress must not requeue it behind a slow Workflow publication.
+	clearedForeign := map[string]bool{}
 	lanes := [2]requestLane{}
 	due := time.Time{}
 	timer := time.NewTicker(20 * time.Millisecond)
@@ -181,7 +185,7 @@ func Serve(in io.Reader, out, log io.Writer) int {
 					if err != nil {
 						break
 					}
-					if !send(workerResult{output: append([]byte(nil), output.Bytes()...), epoch: state.epoch, background: true, uri: uri}) {
+					if !send(workerResult{output: append([]byte(nil), output.Bytes()...), epoch: state.epoch, background: true, uri: uri, foreign: true}) {
 						return
 					}
 				}
@@ -316,6 +320,7 @@ func Serve(in io.Reader, out, log io.Writer) int {
 				return code
 			}
 			if epoch != s.epoch {
+				clear(clearedForeign)
 				abort(-32801, "input changed during request", false)
 				due = time.Now().Add(120 * time.Millisecond)
 			}
@@ -332,6 +337,9 @@ func Serve(in io.Reader, out, log io.Writer) int {
 					// caches. Only an accepted result clears this URI's pending work.
 					if !s.catalog.acceptedPublication(result.uri, result.local) {
 						delete(s.pending, result.uri)
+					}
+					if result.foreign {
+						clearedForeign[result.uri] = true
 					}
 				}
 				continue
@@ -410,7 +418,7 @@ func Serve(in io.Reader, out, log io.Writer) int {
 			if !s.shutdown && len(uris) > 0 {
 				s.externalFacts = nil
 				for _, uri := range uris {
-					if _, opened := s.buffers[uri]; opened {
+					if _, opened := s.buffers[uri]; opened && !clearedForeign[uri] {
 						s.pending[uri] = true
 					}
 				}

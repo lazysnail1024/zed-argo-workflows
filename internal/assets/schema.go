@@ -33,6 +33,17 @@ func Document(ctx context.Context, version, apiVersion, kind string) (map[string
 	if cache != nil && cache.documents[file] != nil {
 		return cache.documents[file], nil
 	}
+	document, err := readDocument(file)
+	if err != nil {
+		return nil, err
+	}
+	if cache != nil && ctx.Err() == nil {
+		cache.documents[file] = document
+	}
+	return document, nil
+}
+
+func readDocument(file string) (map[string]any, error) {
 	raw, err := schemas.ReadFile("schemas/" + file)
 	if err != nil {
 		return nil, err
@@ -42,9 +53,6 @@ func Document(ctx context.Context, version, apiVersion, kind string) (map[string
 	decoder.UseNumber()
 	if err := decoder.Decode(&document); err != nil {
 		return nil, err
-	}
-	if cache != nil && ctx.Err() == nil {
-		cache.documents[file] = document
 	}
 	return document, nil
 }
@@ -94,7 +102,9 @@ func Compile(ctx context.Context, version, apiVersion, kind string) (*jsonschema
 	if cached, ok := compiledSchemas.Load(file); ok {
 		return cached.(*jsonschema.Schema), nil
 	}
-	document, err := Document(ctx, version, apiVersion, kind)
+	// Compilation only needs this decoded map once; keeping it in the
+	// invocation cache duplicates the larger compiled schema's live memory.
+	document, err := readDocument(file)
 	if err != nil {
 		return nil, err
 	}
