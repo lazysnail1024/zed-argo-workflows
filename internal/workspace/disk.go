@@ -82,8 +82,8 @@ func readDocuments(ctx context.Context, header Workspace, selected, override str
 			snapshot, err = source.New(source.URI(uri), 1, text)
 			if err == nil {
 				// Membership and exclusion were resolved before reading this file.
-				// Reuse the scope's target instead of matching every glob and hashing
-				// the full configuration again for each document.
+				// Reuse the scope's target instead of repeating the scope globs and
+				// version policy checks for every document.
 				target, ok := knownTargets[name]
 				if !ok {
 					target, err = targetForScope(header, name, override)
