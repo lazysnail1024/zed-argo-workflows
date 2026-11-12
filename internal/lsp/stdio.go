@@ -316,6 +316,12 @@ func (s *session) queryDocument(uri string) (workspace.Document, error) {
 	}
 	document, proof, err := s.catalog.document(s.context(), uri)
 	if err == nil {
+		// Symbols use the freshly read source, not indexed file contents.
+		// Preserve the configuration epoch but do not invalidate this local-only
+		// result when an asynchronous scan catches up with a missed file watch.
+		if s.method == "textDocument/documentSymbol" {
+			proof.files = nil
+		}
 		s.proofs = append(s.proofs, proof)
 	}
 	return document, err
