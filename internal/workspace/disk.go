@@ -29,6 +29,10 @@ func readDocuments(ctx context.Context, header Workspace, selected, override str
 	}
 	count := 0
 	targets := map[string]bool{}
+	knownTargets := make(map[string]Target, len(header.Targets))
+	for _, target := range header.Targets {
+		knownTargets[target.Scope] = target
+	}
 	err = filepath.WalkDir(header.Root, func(path string, d fs.DirEntry, err error) error {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -77,9 +81,16 @@ func readDocuments(ctx context.Context, header Workspace, selected, override str
 			var snapshot source.Snapshot
 			snapshot, err = source.New(source.URI(uri), 1, text)
 			if err == nil {
-				target, err := documentTarget(header, path, override)
-				if err != nil {
-					return err
+				// Membership and exclusion were resolved before reading this file.
+				// Reuse the scope's target instead of matching every glob and hashing
+				// the full configuration again for each document.
+				target, ok := knownTargets[name]
+				if !ok {
+					target, err = targetForScope(header, name, override)
+					if err != nil {
+						return err
+					}
+					knownTargets[name] = target
 				}
 				result.Documents = append(result.Documents, Document{Snapshot: snapshot, Target: target})
 				if !targets[target.ID] {

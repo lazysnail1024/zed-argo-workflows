@@ -247,19 +247,6 @@ func documentTarget(w Workspace, filename, override string) (Target, error) {
 	if err != nil {
 		return Target{}, err
 	}
-	version, from := w.Config.TargetVersion, w.Config.targetSource
-	for _, scope := range w.Config.Scopes {
-		if scope.Name == name && scope.TargetVersion != "" {
-			version, from = scope.TargetVersion, "scope"
-		}
-	}
-	if override != "" {
-		version = override
-		from = "cli"
-	}
-	if err := compat.Resolve(version); err != nil {
-		return Target{}, err
-	}
 	excluded := matches(w.Config.Exclude, relative)
 	for _, part := range strings.Split(relative, "/") {
 		if part == ".git" || part == "vendor" || part == "node_modules" || part == ".argo-ls" {
@@ -272,6 +259,25 @@ func documentTarget(w Workspace, filename, override string) (Target, error) {
 			return Target{}, err
 		}
 		name = "opened:" + address
+	}
+	return targetForScope(w, name, override)
+}
+
+// CLI discovery already resolved membership once. Editor buffers call this
+// after applying their independent excluded-file and Helm ownership rules.
+func targetForScope(w Workspace, name, override string) (Target, error) {
+	version, from := w.Config.TargetVersion, w.Config.targetSource
+	for _, scope := range w.Config.Scopes {
+		if scope.Name == name && scope.TargetVersion != "" {
+			version, from = scope.TargetVersion, "scope"
+		}
+	}
+	if override != "" {
+		version = override
+		from = "cli"
+	}
+	if err := compat.Resolve(version); err != nil {
+		return Target{}, err
 	}
 	// A streamed metadata header already carries the exact configuration
 	// identity. Reuse it rather than replacing it with an identity that omits
