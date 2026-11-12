@@ -34,9 +34,9 @@ jobs:
         REQUESTED_VERSION: ${{ inputs.release_version }}
         SOURCE_COMMIT: ${{ github.sha }}
       run: python scripts/release.py version --source-commit "$SOURCE_COMMIT" --requested-version "$REQUESTED_VERSION" >> "$GITHUB_OUTPUT"
-  native:
+  native-build:
     needs: prepare
-    name: Native / ${{ matrix.platform }}
+    name: Native build / ${{ matrix.platform }}
     strategy:
       fail-fast: false
       matrix:
@@ -95,32 +95,139 @@ jobs:
     - name: Build actual native server and record source/toolchain identity
       id: build
       run: python tests/ci/run.py build --platform "${{ matrix.platform }}" --release-version "${{ needs.prepare.outputs.version }}" --output artifacts/ci/build
-    - name: Race-check shared catalog lifecycle and file authority
-      if: matrix.platform == 'linux/amd64'
-      run: go test -mod=vendor -race -count=1 ./internal/analysis ./internal/assets ./internal/lsp ./internal/workspace
-    - name: Execute CLI and stdio LSP semantic consumers
-      if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-      run: python tests/ci/run.py suite --suite native --binary artifacts/ci/build/${{ matrix.binary }} --output artifacts/ci/native
-    - name: Generate and validate the editor-independent native archive
-      id: package
-      if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-      run: python tests/ci/run.py package --binary artifacts/ci/build/${{ matrix.binary }} --output artifacts/ci/package
-    - name: Verify native release staging and aggregate refusal controls
-      if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-      run: python tests/e2e/release-distribution.py --platform "${{ matrix.platform }}" --output artifacts/ci/release-e2e
-    - name: Prove native release works without any editor checkout
-      if: matrix.platform == 'linux/amd64'
-      run: python tests/native_isolation.py --output artifacts/native-isolation
-    - name: Ablate version compatibility mechanisms against real consumers
-      if: matrix.platform == 'linux/amd64'
-      run: python tests/e2e/wf-multi-version-ablation.py artifacts/ci/build/argo-workflows-ls artifacts/ci/multi-version-ablation
-    - name: Stage exact native release assets
-      run: python scripts/release.py stage --build artifacts/ci/build/build.json --version "${{ needs.prepare.outputs.version }}" --source-commit "${{ github.sha }}" --output artifacts/ci/release-assets
-    - name: Retain per-platform release assets
+    - name: Bind one verified native binary to its consumer lanes
+      run: python tests/ci/build_artifact.py pack --build artifacts/ci/build/build.json --source-commit "${{ github.sha }}" --version "${{ needs.prepare.outputs.version }}" --platform "${{ matrix.platform }}" --output artifacts/native-build
+    - name: Retain the same-run native build for both lanes
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
-        name: workflows-release-${{ matrix.artifact }}
+        name: workflows-build-${{ matrix.artifact }}
+        path: artifacts/native-build/
+        compression-level: 0
+        if-no-files-found: error
+        retention-days: 30
+    - name: Retain the independent producer identity for the aggregate gate
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: workflows-producer-${{ matrix.artifact }}
+        path: artifacts/native-build/producer.json
+        if-no-files-found: error
+        retention-days: 30
+    - name: Archive partial producer evidence after a failure
+      id: evidence
+      if: failure()
+      run: python tests/ci/evidence.py pack --root artifacts/ci --output artifacts/ci-evidence
+    - name: Retain failed producer evidence
+      if: ${{ always() && steps.evidence.outcome == 'success' }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: workflows-build-failure-${{ matrix.artifact }}-${{ github.sha }}
+        path: artifacts/ci-evidence/
+        compression-level: 0
+        if-no-files-found: error
+        retention-days: 30
+  native:
+    needs:
+    - prepare
+    - native-build
+    name: Native / ${{ matrix.target.platform }} / lane ${{ matrix.lane }}
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [0, 1]
+        target:
+        - runner: ubuntu-24.04
+          platform: linux/amd64
+          artifact: linux-amd64
+          binary: argo-workflows-ls
+          cc: gcc-13
+        - runner: ubuntu-24.04-arm
+          platform: linux/arm64
+          artifact: linux-arm64
+          binary: argo-workflows-ls
+          cc: gcc-13
+        - runner: macos-15-intel
+          platform: darwin/amd64
+          artifact: darwin-amd64
+          binary: argo-workflows-ls
+          cc: clang
+        - runner: macos-15
+          platform: darwin/arm64
+          artifact: darwin-arm64
+          binary: argo-workflows-ls
+          cc: clang
+        - runner: windows-2025
+          platform: windows/amd64
+          artifact: windows-amd64
+          binary: argo-workflows-ls.exe
+          cc: gcc
+    runs-on: ${{ matrix.target.runner }}
+    timeout-minutes: 35
+    env:
+      CC: ${{ matrix.target.cc }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: '3.14'
+    - name: Bind the compilation cache to the native compiler and runner image
+      run: python tests/ci/run.py cache-identity --output artifacts/ci/cache
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+      with:
+        go-version-file: go.mod
+        check-latest: false
+        cache: true
+        cache-dependency-path: |
+          go.mod
+          go.sum
+          vendor/modules.txt
+          artifacts/ci/cache/identity.json
+    - name: Download only this run's exact platform producer
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: workflows-build-${{ matrix.target.artifact }}
+        path: artifacts/native-build
+    - name: Verify archive, source, native platform and executed binary identity
+      id: restore
+      run: python tests/ci/build_artifact.py restore --inputs artifacts/native-build --source-commit "${{ github.sha }}" --version "${{ needs.prepare.outputs.version }}" --platform "${{ matrix.target.platform }}" --output artifacts/ci/relocated
+    - name: Race-check shared catalog lifecycle and file authority
+      if: matrix.target.platform == 'linux/amd64' && matrix.lane == 0
+      run: go test -mod=vendor -race -count=1 ./internal/analysis ./internal/assets ./internal/lsp ./internal/workspace
+    - name: Execute CLI and stdio LSP semantic consumers
+      if: ${{ !cancelled() && steps.restore.outcome == 'success' }}
+      run: python tests/ci/run.py suite --suite native --shard ${{ matrix.lane }}/2 --producer artifacts/native-build/producer.json --binary artifacts/ci/build/${{ matrix.target.binary }} --output artifacts/ci/native
+    - name: Generate and validate the editor-independent native archive
+      id: package
+      if: ${{ !cancelled() && steps.restore.outcome == 'success' && matrix.lane == 0 }}
+      run: python tests/ci/run.py package --binary artifacts/ci/build/${{ matrix.target.binary }} --output artifacts/ci/package
+    - name: Verify native release staging and aggregate refusal controls
+      if: ${{ !cancelled() && steps.restore.outcome == 'success' && matrix.lane == 0 }}
+      run: python tests/e2e/release-distribution.py --platform "${{ matrix.target.platform }}" --output artifacts/ci/release-e2e
+    - name: Prove native release works without any editor checkout
+      if: matrix.target.platform == 'linux/amd64' && matrix.lane == 0
+      run: python tests/native_isolation.py --output artifacts/native-isolation
+    - name: Ablate version compatibility mechanisms against real consumers
+      if: matrix.target.platform == 'linux/amd64' && matrix.lane == 0
+      run: python tests/e2e/wf-multi-version-ablation.py artifacts/ci/build/argo-workflows-ls artifacts/ci/multi-version-ablation
+    - name: Stage exact native release assets
+      if: matrix.lane == 0
+      run: python scripts/release.py stage --build artifacts/ci/relocated/build.json --version "${{ needs.prepare.outputs.version }}" --source-commit "${{ github.sha }}" --output artifacts/ci/release-assets
+    - name: Retain per-platform release assets
+      if: matrix.lane == 0
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: workflows-release-${{ matrix.target.artifact }}
         path: artifacts/ci/release-assets/
+        if-no-files-found: error
+        retention-days: 30
+    - name: Retain the exact lane coverage receipt
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: workflows-coverage-${{ matrix.target.artifact }}-${{ matrix.lane }}
+        path: artifacts/ci/native/native-lane.json
         if-no-files-found: error
         retention-days: 30
     - name: Archive and verify complete native evidence
@@ -131,7 +238,7 @@ jobs:
       if: ${{ always() && steps.evidence.outcome == 'success' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
-        name: workflows-native-${{ matrix.artifact }}-${{ github.sha }}
+        name: workflows-native-${{ matrix.target.artifact }}-${{ matrix.lane }}-${{ github.sha }}
         path: artifacts/ci-evidence/
         compression-level: 0
         if-no-files-found: error
@@ -296,6 +403,8 @@ jobs:
     name: Acceptance gate
     if: always()
     needs:
+    - prepare
+    - native-build
     - native
     - extended
     - resources
@@ -303,10 +412,50 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: '3.14'
     - name: Require every platform and mandatory gate
       env:
         RESULTS: ${{ toJSON(needs) }}
-      run: "python3 - <<'PY'\nimport json, os\nresults = json.loads(os.environ['RESULTS'])\nexpected = {'native', 'extended', 'resources', 'mutations'}\nfailures = {name: result['result'] for name, result in results.items() if result['result'] != 'success'}\nwith open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as out:\n    out.write('## Automated acceptance\\n\\n')\n    for name, result in results.items():\n        out.write(f\"- {name}: {result['result']}\\n\")\n    out.write('\\nReal Zed editor acceptance: **not executed by this workflow**.\\n')\nif set(results) != expected or failures:\n    raise SystemExit('Mandatory checks did not all succeed: ' + json.dumps(failures))\nPY\n"
+      run: |
+        python - <<'PY'
+        import json, os
+        results = json.loads(os.environ['RESULTS'])
+        expected = {'prepare', 'native-build', 'native', 'extended', 'resources', 'mutations'}
+        failures = {name: result['result'] for name, result in results.items() if result['result'] != 'success'}
+        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as out:
+            out.write('## Automated acceptance\n\n')
+            for name, result in results.items():
+                out.write(f"- {name}: {result['result']}\n")
+            out.write('\nReal Zed editor acceptance: **not executed by this workflow**.\n')
+        if set(results) != expected or failures:
+            raise SystemExit('Mandatory checks did not all succeed: ' + json.dumps(failures))
+        PY
+    - name: Download independent producer receipts from this run
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        pattern: workflows-producer-*
+        path: artifacts/coverage-inputs
+    - name: Download both consumer-lane receipts from this run
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        pattern: workflows-coverage-*
+        path: artifacts/coverage-inputs
+    - name: Reject missing, duplicated or source-mismatched native coverage
+      run: python tests/ci/native_shards.py verify --inputs artifacts/coverage-inputs --source-commit "${{ github.sha }}" --version "${{ needs.prepare.outputs.version }}" --output artifacts/coverage-gate
+    - name: Retain the complete coverage decision
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: workflows-native-coverage-${{ github.sha }}
+        path: artifacts/coverage-gate/
+        if-no-files-found: error
+        retention-days: 30
   candidate:
     name: Verify complete native distribution
     needs:

@@ -439,7 +439,14 @@ def suite(args):
         index, total = (int(value) for value in args.shard.split("/"))
         if not 0 <= index < total or total > len(names):
             raise ValueError("invalid shard; use a zero-based index/total with at least one test")
-        names = names[index::total]
+        if args.suite == "native":
+            from native_shards import selected_tests
+            require(total == 2 and args.producer is not None, "native lanes require two shards and an exact producer")
+            names = selected_tests(index, NATIVE)
+        else:
+            names = names[index::total]
+    elif args.producer is not None:
+        raise ValueError("producer receipts are only used with the two native lanes")
     rows = []
     for name in names:
         if name == "wf-multi-version":
@@ -468,7 +475,13 @@ def suite(args):
             print(row["evidenceError"], flush=True)
         rows.append(row)
         summary(args.output, rows, args.suite + " E2E")
-    return summary(args.output, rows, args.suite + " E2E")
+    passed = summary(args.output, rows, args.suite + " E2E")
+    if args.suite == "native" and args.shard:
+        from native_shards import write_report
+        report = write_report(args.output, lane=index, producer=args.producer, rows=rows,
+                              binary=args.binary, completed=True)
+        passed = passed and report["pass"] is True
+    return passed
 
 
 def package(args):
@@ -601,6 +614,7 @@ def main():
     p.add_argument("--suite", choices=("native", "extended"), required=True)
     p.add_argument("--binary", type=Path, required=True)
     p.add_argument("--shard", help="optional zero-based index/total")
+    p.add_argument("--producer", type=Path, help="exact same-run native producer receipt for the two lanes")
     p.add_argument("--tools", type=Path, help="directory with pinned offline Argo/Helm tools")
     p = sub.add_parser("package")
     p.add_argument("--binary", type=Path, required=True)
@@ -616,6 +630,8 @@ def main():
         args.binary = args.binary.resolve()
     if getattr(args, "tools", None):
         args.tools = args.tools.resolve()
+    if getattr(args, "producer", None):
+        args.producer = args.producer.resolve()
     args.output.mkdir(parents=True, exist_ok=True)
     try:
         return 0 if globals()[args.action.replace("-", "_")](args) else 1

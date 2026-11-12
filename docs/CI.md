@@ -24,7 +24,8 @@
 
 | 门禁 | 当前检查内容 |
 | --- | --- |
-| Native matrix | vendor 原生构建、`go vet`；analysis/assets/lsp/workspace 单元测试；实际 CLI/stdio 消费者、版本矩阵、原生打包与 release staging |
+| Native build，五个平台 | 每个平台只产生一份 baseline 原生 binary；vendor 构建、`go vet` 与 analysis/assets/lsp/workspace 单元测试；绑定源码/工具链/平台/二进制 hash |
+| Native consumers，每个平台两个 lane | 两个独立 runner 消费同一 producer 的 binary；完整 CLI/stdio 消费者和版本矩阵；lane 0 追加原生打包与 release staging |
 | Linux race | 同一组 Go 包的 `-race`，覆盖 catalog 生命周期和共享文件权威 |
 | Linux semantic，三个 shard | 现有模板/引用/继承/DAG/编辑/生命周期测试，来源资产，固定且校验 hash 的 Argo/Helm 工具；真实 schema 与合成查询 fixture 分开记录 |
 | Linux resources：adversarial | aggregate input、表达式、alias/merge、buffer/snapshot、子进程输出上限、取消与后代回收 |
@@ -37,6 +38,24 @@
 资源清单由 [resources.py](../tests/ci/resources.py) 维护，不复制一份易过期的测试计数。
 当前 3.5.0 与 3.6.0 都是受支持的精确 target；混合 scope 负载要求完整计数、正确版本、
 无实验性标记及实际期望的诊断/退出码。
+
+### 原生分片与产物身份
+
+五个平台的 build producer 完成后，每个平台启动两个独立的 consumer runner。
+[native_shards.py](../tests/ci/native_shards.py) 按真实套件耗时维持 17/18 的固定清单，
+lane 0 同时承担 package/release E2E；每个 runner 内消费者仍串行，原有两秒前台响应、
+五秒分析和资源门槛不变。当前 matrix 的 `needs` 会等待五个平台 producer 都完成，
+这项 barrier、额外 runner 启动/产物传输和总 runner-minutes 都要计入实际提速评估。
+
+传输 tar 仅接受普通文件和目录，接收端独立校验归档、原始 build manifest、source SHA、
+实际原生平台、二进制 SHA256，并执行 `version --json` 核对身份；下载动作本身的校验告警不能代替硬失败。
+producer 的原始绝对路径 manifest 不修改，接收端单独生成带原 manifest hash 的路径重定位版本用于 staging。
+两个 lane 仍安装 Go/C 工具链，慢 I/O 与诊断 deadline 的 overlay 构建不能用 baseline 替代。
+
+`Acceptance gate` 除要求所有任务成功，还从当前源码重算五个平台、十份 lane 收据、全部 35 个消费者、
+146 个精确版本和 1,052 个版本/资源对，拒绝缺片、重复、错源码/平台/版本/producer/binary、
+未完成命令或顶层 success 掩盖的语义失败。独立 producer 收据与两份 lane 的 binary hash 必须一致；
+完整原生分发仍额外校验五份平台包。小型收据补充原始证据，不替代同一次 workflow 的任务状态和可信源码。
 
 ### 多版本完整性
 
