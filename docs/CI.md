@@ -138,7 +138,8 @@ release-mode build 从精确 commit 的临时 worktree 构建，防止本地 ign
 链接不解引用，FIFO 不读取。证据归档不等同于可安全直接解压执行：核验器不会解压，重放前需审查链接/特殊节点并按原测试命令重建。
 归档校验失败会使 job 失败，不上传未验证的归档；job 在上传前被终止时不能承诺完整 artifact。
 
-普通编译缓存使用 `setup-go`，key 的输入还包含 C 编译器版本、runner image版本、Go依赖锁及vendored模块清单。
+普通编译缓存使用 `setup-go`，key 的输入还包含 C 编译器版本、runner image版本、Go依赖锁及vendored模块清单；
+额外指纹覆盖 vendored C、header 和 `.inc` 字节，避免嵌套 include 的修补在不改锁文件时复用旧原生对象。
 缓存只复用编译中间态，不缓存测试通过状态；`-count=1`、race、真实消费者、故障注入和干净源码边界不变。
 Python固定在 `3.14` minor，允许复用runner已安装的兼容patch，实际版本记录仍保留在构建证据中。
 

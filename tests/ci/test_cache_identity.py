@@ -1,12 +1,15 @@
 """The actual compiler/image fingerprint CLI remains deterministic and fail closed."""
 
 import json
+import importlib.util
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 
 
 class CacheIdentityTests(unittest.TestCase):
@@ -38,6 +41,27 @@ class CacheIdentityTests(unittest.TestCase):
             result, destination = self.invoke(Path(temporary), "missing", {"CC": "nonexistent-ci-compiler"})
             self.assertEqual(result.returncode, 1)
             self.assertFalse((destination / "identity.json").exists())
+
+    def test_nested_native_include_change_invalidates_without_a_lock_change(self):
+        spec = importlib.util.spec_from_file_location("cache_native_inputs", Path(__file__).with_name("run.py"))
+        ci = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ci)
+        with tempfile.TemporaryDirectory(prefix="wf-cache-native-") as temporary:
+            root = Path(temporary)
+            include = root / "vendor/example/grammar/tree_sitter/parser.c.inc"
+            include.parent.mkdir(parents=True)
+            include.write_bytes(b"first C include bytes")
+            output = root / "output"
+            compiler = SimpleNamespace(stdout="fixed compiler\n", stderr="")
+            with patch.object(ci, "ROOT", root), patch.object(ci.subprocess, "run", return_value=compiler):
+                ci.cache_identity(SimpleNamespace(output=output))
+                before = json.loads((output / "identity.json").read_bytes())
+                include.write_bytes(b"changed C include bytes")
+                ci.cache_identity(SimpleNamespace(output=output))
+                after = json.loads((output / "identity.json").read_bytes())
+            self.assertEqual(before["nativeSourceCount"], 1)
+            self.assertNotEqual(before["nativeSourcesSha256"], after["nativeSourcesSha256"])
+            self.assertEqual(before["compilerVersion"], after["compilerVersion"])
 
 
 if __name__ == "__main__":

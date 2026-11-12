@@ -329,10 +329,21 @@ def cache_identity(args):
     compiler = os.environ.get("CC", "cc")
     result = subprocess.run([compiler, "--version"], check=True, capture_output=True,
                             text=True, timeout=30)
+    # Go's package file list does not track .inc files or nested C include
+    # trees. Their content must invalidate the restored cache even when a
+    # vendored patch deliberately leaves go.sum/modules.txt unchanged.
+    native_paths = sorted({path for pattern in ("vendor/**/*.c", "vendor/**/*.h", "vendor/**/*.inc")
+                           for path in ROOT.glob(pattern)})
+    native_sources = {}
+    for path in native_paths:
+        require(path.is_file() and not path.is_symlink(), "native cache input must be a regular file")
+        native_sources[path.relative_to(ROOT).as_posix()] = sha(path)
+    native_hash = hashlib.sha256(json.dumps(native_sources, sort_keys=True).encode()).hexdigest()
     identity = {"platform": host_platform(), "compiler": compiler,
                 "compilerVersion": result.stdout, "compilerStderr": result.stderr,
                 "imageOS": os.environ.get("ImageOS", ""),
                 "imageVersion": os.environ.get("ImageVersion", ""),
+                "nativeSourcesSha256": native_hash, "nativeSourceCount": len(native_sources),
                 "cgoEnabled": os.environ.get("CGO_ENABLED", "1"),
                 "macosDeploymentTarget": os.environ.get("MACOSX_DEPLOYMENT_TARGET", "")}
     save(args.output / "identity.json", identity)
