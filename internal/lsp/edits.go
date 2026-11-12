@@ -126,6 +126,16 @@ func (s *session) resourceEditWorkspace(d workspace.Document) (workspace.Workspa
 	return scopeWorkspace(w, d.Target.ID), nil
 }
 
+func (s *session) discardIndexProofForRefusal() {
+	// A refused resource edit produces no changes. Index progress after didClose
+	// must not mask a known invalid resource scope or buffer with -32801.
+	// Keep root configuration proofs and the request's input-epoch check.
+	for i := range s.proofs {
+		s.proofs[i].states = nil
+		s.proofs[i].files = nil
+	}
+}
+
 func (s *session) requireResourceBuffers(w workspace.Workspace, files []source.URI) error {
 	documents := make(map[source.URI]workspace.Document, len(w.Documents))
 	for _, d := range w.Documents {
@@ -134,10 +144,12 @@ func (s *session) requireResourceBuffers(w workspace.Workspace, files []source.U
 	for _, uri := range files {
 		b, opened := s.buffers[string(uri)]
 		if !opened || b.unavailable != "" {
+			s.discardIndexProofForRefusal()
 			return fmt.Errorf("resource rename requires every affected file to be open and versioned")
 		}
 		d, found := documents[uri]
 		if !found || d.Snapshot.Revision() != b.snapshot.Revision() || d.Snapshot.Text() != b.snapshot.Text() || !compat.Accepted(d.Target.Version) {
+			s.discardIndexProofForRefusal()
 			return fmt.Errorf("resource rename input no longer matches an accepted buffer")
 		}
 	}
@@ -302,6 +314,7 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		if resourceName {
 			plans, err := analysis.RenameResource(ctx, w, uri, pos, p.NewName)
 			if err != nil {
+				s.discardIndexProofForRefusal()
 				return false, 0, s.failure(m.ID, -32602, err.Error())
 			}
 			files := make([]source.URI, 0, len(plans))
