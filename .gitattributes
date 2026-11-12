@@ -3,5 +3,6 @@
 * text=auto eol=lf
 # Preserve original distribution notice bytes and formatting for pinned SHA-256.
 licenses/windows-runtime/** -text -whitespace
+licenses/modules/** -text -whitespace
 # Unified-diff context lines intentionally prefix original tabs/blank lines.
 contracts/*.patch -whitespace

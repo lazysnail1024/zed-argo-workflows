@@ -86,8 +86,9 @@ WorkspaceEdit 能力约束。具体协议分支以 [stdio.go](../internal/lsp/st
 通过 [go.mod](../go.mod) 固定源码版本
 `v0.0.0-20261112033740-db4adba0093e`，完整 commit 为
 `db4adba0093ee2a709356aa1c2517e6d62644745`。
-[toolkit.lock.json](../contracts/toolkit.lock.json)记录源码/ZIP/合同 hash，`published: false`；
-依赖方式是固定源码 commit 和已提交 vendor，无需 toolkit release、兄弟仓库 checkout 或本地 `replace`。
+[toolkit.lock.json](../contracts/toolkit.lock.json)记录模块版本、完整 commit 和合同 hash，`published: false`；
+模块源码内容由 `go.sum` 的 `h1` 校验固定。依赖不要求 toolkit release、兄弟仓库 checkout 或本地 `replace`。
+不提交 vendor 源码；构建入口从已验证的模块生成忽略目录并应用两项登记补丁，Release 在精确提交快照内重新生成。
 [toolkit-design-5.md](../contracts/toolkit-design-5.md)是按 hash 校验的当前 API 合同。
 
 | 共享能力 | 本仓落点 | 留在 Workflows 的决策 |
@@ -249,7 +250,7 @@ worker 只携带证明，不重复建立证明分页或提前复核；提前检�
 | 边界 | 当前实现 |
 | --- | --- |
 | schema 生产 | [collect-catalog.py](../scripts/collect-catalog.py) 收集固定 upstream commit；[normalize-schemas.py](../scripts/normalize-schemas.py) 规范化、结构约束和内容去重；运行时只读取嵌入产物 |
-| Go vendor | [vendor-native.py](../scripts/vendor-native.py) 恢复原生 parser 源码并验证 Expr/JSON Schema 补丁 hash；合同和 notice 随产物保留 |
+| Go 构建输入 | [vendor-native.py](../scripts/vendor-native.py) 验证固定模块并生成忽略的 vendor、恢复原生 parser 源码、校验两项补丁；不修改 module cache，原始 notice 单独存档并随产物保留 |
 | 原生交付 | [release.py](../scripts/release.py)、[package-native.py](../scripts/package-native.py) 产生可独立运行的原生包、身份与校验记录；[native.yml](../.github/workflows/native.yml) 验收，[release.yml](../.github/workflows/release.yml) 发布 |
 | Zed 入口 | [adapter.rs](../editors/zed/src/adapter.rs) 转发设置并启动 `serve --stdio`；[distribution.rs](../editors/zed/src/distribution.rs) 选择显式路径→PATH→固定 release，管理下载和缓存；[identity.rs](../editors/zed/src/identity.rs) 校验协议及 release 身份 |
 | Zed 交付 | 独立 Cargo crate、WASI 组件、包脚本及 [zed.yml](../.github/workflows/zed.yml)/[zed-release.yml](../.github/workflows/zed-release.yml)；不构建 Go，也不包含领域分析或 schema |

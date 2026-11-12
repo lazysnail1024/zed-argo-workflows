@@ -43,6 +43,8 @@ def main():
             for name in sorted(set(names)-{''}):
                 path=ROOT/name
                 if not path.exists():continue
+                if name.startswith('vendor/'):
+                    continue
                 if name.startswith('editors/') or name.startswith('.github/workflows/zed'):
                     removed.append(name)
                     continue
@@ -57,6 +59,8 @@ def main():
             run('git-add',['git','-c','core.autocrlf=false','add','.'],source,env)
             run('git-commit',['git','-c','commit.gpgsign=false','commit','-m','Isolated native source fixture'],source,env)
             commit=run('source-commit',['git','rev-parse','HEAD'],source).decode().strip()
+            if (source/'vendor').exists() or run('tracked-dependencies',['git','ls-files','vendor'],source):
+                raise ValueError('Native fixture must start without dependency source copies')
             version=(source/'VERSION').read_text().strip()
             build=output/'build'
             folder='tools' if product=='argocd' else 'scripts'
@@ -84,7 +88,9 @@ def main():
                     'nativeVersion':identity['serverVersion']==version,'autoTarget':identity.get('defaultTargetVersion')=='auto',
                     'noEditorInArchive':not any('/extension/' in name or '/editors/' in name or '/Cargo.' in name for name in members),
                     'hasExecutable':any(name.endswith('/'+binary_name) for name in members),
-                    'hasOriginalLicenses':any('/licenses/go/LICENSE' in name for name in members)}
+                    'hasOriginalLicenses':any('/licenses/go/LICENSE' in name for name in members),
+                    'noCommittedVendor':not run('tracked-dependencies-after-build',['git','ls-files','vendor'],source),
+                    'generatedInputsKeepSourceClean':not run('source-after-build',['git','status','--porcelain'],source)}
             report.update(sourceCommit=commit, removedEditorFiles=len(removed), binarySha256=hashlib.sha256(raw.read_bytes()).hexdigest(),
                           archiveSha256=hashlib.sha256(archive.read_bytes()).hexdigest(),checks=checks,passed=all(checks.values()))
     except Exception as error:

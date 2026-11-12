@@ -17,7 +17,8 @@ import zipfile
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MAIN_PACKAGE = 'github.com/lazysnail1024/zed-argo-workflows/cmd/argo-workflows-ls'
 PROVENANCE_FILES = ('VERSION', 'go.mod', 'go.sum', 'contracts/toolkit.lock.json',
-                    'contracts/expr-patch.json', 'contracts/jsonschema-patch.json', 'compat/catalog.lock.json',
+                    'contracts/expr-patch.json', 'contracts/expr-linear-error.patch',
+                    'contracts/jsonschema-patch.json', 'contracts/jsonschema-indexed-queue.patch', 'compat/catalog.lock.json',
                     'scripts/windows-runtime.json')
 
 
@@ -105,9 +106,9 @@ def source_files(payload):
                 destination = name
             elif name in PROVENANCE_FILES:
                 destination = 'provenance/' + name
-            elif path.parts[:2] == ('licenses', 'windows-runtime'):
+            elif path.parts[:2] in (('licenses', 'windows-runtime'), ('licenses', 'modules')):
                 destination = name
-            elif path.parts[0] in ('vendor', 'schemas') and any(
+            elif path.parts[0] == 'schemas' and any(
                     token in path.name.upper() for token in ('LICENSE', 'NOTICE', 'COPYING', 'COPYRIGHT', 'PATENTS')):
                 destination = 'licenses/' + name
             if destination is not None:
@@ -118,7 +119,7 @@ def source_files(payload):
     for name in ('LICENSE', 'licenses/schemas/LICENSE'):
         if name not in files:
             raise ValueError('source archive is missing required file: ' + name)
-    if not any(name.startswith('licenses/vendor/') for name in files):
+    if not any(name.startswith('licenses/modules/') for name in files):
         raise ValueError('native source archive lacks required notices')
     verify_windows_notices(json.loads(files['provenance/scripts/windows-runtime.json']), files)
     return files, commit

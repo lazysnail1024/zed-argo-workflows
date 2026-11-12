@@ -64,7 +64,7 @@ def synthetic_platform(folder, platform, template, template_files, *, omit=None,
     if unsafe:
         files["../escape"] = b"unsafe"
     if changed_license:
-        vendor_notice = next(name for name in files if name.startswith("licenses/vendor/"))
+        vendor_notice = next(name for name in files if name.startswith("licenses/modules/"))
         files[vendor_notice] = b"rewritten notice despite a self-consistent checksum"
     if changed_windows_notice:
         files["licenses/windows-runtime/winpthreads/COPYING"] = b"rewritten static runtime notice"
@@ -136,6 +136,8 @@ def main():
         names = subprocess.check_output(
             ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=ROOT).decode().split("\0")
         for name in sorted(set(names) - {""}):
+            if name.startswith("vendor/"):
+                continue
             source = ROOT / name
             if not source.exists():  # A tracked deletion is absent from the tested source.
                 continue

@@ -9,7 +9,7 @@ env:
   GOTOOLCHAIN: local
   CGO_ENABLED: '1'
   GOFLAGS: ''
-  GOPROXY: 'off'
+  GOPROXY: 'https://proxy.golang.org,direct'
   PYTHONUTF8: '1'
   PYTHONIOENCODING: utf-8
   MACOSX_DEPLOYMENT_TARGET: '13.0'
@@ -104,6 +104,9 @@ jobs:
     - name: Prove native release works without any editor checkout
       if: matrix.platform == 'linux/amd64'
       run: python tests/native_isolation.py --output artifacts/native-isolation
+    - name: Verify locked module sources and dependency refusal controls
+      if: matrix.platform == 'linux/amd64'
+      run: python tests/module_sources.py --output artifacts/ci/module-sources
     - name: Ablate version compatibility mechanisms against real consumers
       if: matrix.platform == 'linux/amd64'
       run: python tests/e2e/wf-multi-version-ablation.py artifacts/ci/build/argo-workflows-ls artifacts/ci/multi-version-ablation

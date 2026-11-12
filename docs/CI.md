@@ -24,7 +24,7 @@
 
 | 门禁 | 当前检查内容 |
 | --- | --- |
-| Native matrix | vendor 原生构建、`go vet`；analysis/assets/lsp/workspace 单元测试；实际 CLI/stdio 消费者、版本矩阵、原生打包与 release staging |
+| Native matrix | 固定模块下载/校验、构建期补丁、原生构建、`go vet`；analysis/assets/lsp/workspace 单元测试；实际 CLI/stdio 消费者、版本矩阵、原生打包与 release staging |
 | Linux race | 同一组 Go 包的 `-race`，覆盖 catalog 生命周期和共享文件权威 |
 | Linux semantic，三个 shard | 现有模板/引用/继承/DAG/编辑/生命周期测试，来源资产，固定且校验 hash 的 Argo/Helm 工具；真实 schema 与合成查询 fixture 分开记录 |
 | Linux resources：adversarial | aggregate input、表达式、alias/merge、buffer/snapshot、子进程输出上限、取消与后代回收 |
