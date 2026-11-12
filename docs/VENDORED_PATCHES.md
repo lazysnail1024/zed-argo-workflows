@@ -26,7 +26,7 @@ python3 scripts/vendor-native.py
 该脚本运行 vendoring，恢复 parser 的原生源码树，并验证、应用两项补丁。
 单独执行 `go mod vendor` 不足以恢复本仓可构建输入和补丁。
 共享 toolkit 的固定源码身份另由 [toolkit.lock.json](../contracts/toolkit.lock.json)
-和 [合同](../contracts/toolkit-design-4.md)管理；不能把本仓第三方补丁当作 toolkit 变更。
+和 [合同](../contracts/toolkit-design-5.md)管理；不能把本仓第三方补丁当作 toolkit 变更。
 公共 `yamlvalue` 引入的 `gopkg.in/yaml.v3` 保持原始源码和许可证，未作本地语义补丁；
 显式 tag 的拒绝策略由插件传入 `yamlvalue.Options`，不修改 YAML 库实现。
 

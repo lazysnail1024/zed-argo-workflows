@@ -58,6 +58,16 @@
 源签名变化、当前 buffer 优先与超五秒 discovery 继续运行。
 慢 I/O 消费者单独构建有身份记录的读取延迟 overlay，不放宽生产 deadline。
 
+[wf-symbol-query-budget](../tests/e2e/wf-symbol-query-budget.py) 进入 native suite：
+10,001 个真实文件产生 20,002 个模板/参数展示符号，验证稳定的前 20,000 项、末尾低命中、
+零命中，以及取消突发与当前文件 didChange/hover 并发后的正确位置、单次终态和恢复；
+active/queued workspace 查询不得交付编辑前的位置，恢复后检查 workspace 与当前文档的相同位置。
+`catalog_symbols_test.go` 另以可控小预算验证零命中计费、锁等待取消、分页身份移除与旧位置拒绝；
+`index_queries_test.go` 验证多个候选查询共享请求预算。
+`request_consistency_test.go` 确定性复现关闭文件的旧读票被新读票替代，重试在字节不变时仍撤销旧 stamp 证明。
+audit mutation group 同时移除正确的输出上限、注入分页漏项，要求上述真实消费者报告指定语义失败，编译失败或超时不能算通过。
+这些测试不替代资源 suite 现有的 10,000 文件/20,000 符号五次冷索引验收。
+
 `internal/lsp/catalog_test.go` 的正向用例覆盖共享 Documents、队列及完整扫描的接入。
 额外的 [ablate-shared-lifecycle.py](../tests/e2e/ablate-shared-lifecycle.py) 是可重复的七项控制入口；
 它并未被当前 native workflow 自动调用，不能写成已有 CI gate。

@@ -29,12 +29,11 @@ and publishes the native assets. An exact version-tag push or a manual run on
 
 ## Shared toolkit source
 
-The toolkit dependency is pinned to source commit
-`7b0f547348cd7f28e40ebd88c26f42939e0bdd4b`, represented by Go pseudo-version
-`v0.0.0-20261110160307-7b0f547348cd`. It does not require a toolkit release tag.
+The toolkit dependency is pinned to the source commit in `contracts/toolkit.lock.json`,
+represented by the Go pseudo-version in `go.mod`. It does not require a toolkit release tag.
 The vendored `source`, `yamlview`, `yamlvalue`, `schemaquery`, `edit`, `index`, and `workspace` packages match
 that commit; builds need no sibling checkout or local `replace` directive.
-`contracts/toolkit-design-4.md` is the byte-identical API contract, with its
+`contracts/toolkit-design-5.md` is the byte-identical API contract, with its
 implementation and content identities in `contracts/toolkit.lock.json`.
 The vendor script also restores the existing Expr formatter and JSON Schema
 compiler patches, verifying their input and output hashes against

@@ -15,7 +15,7 @@
 | CI 门禁、资源约束、运行命令与证据要求 | [自动化验收](CI.md) |
 | Expr、JSON Schema 本地补丁及再生成规则 | [依赖补丁](VENDORED_PATCHES.md) |
 
-[toolkit 合同](../contracts/toolkit-design-4.md)与[实现锁文件](../contracts/toolkit.lock.json)
+[toolkit 合同](../contracts/toolkit-design-5.md)与[实现锁文件](../contracts/toolkit.lock.json)
 是依赖校验输入；[原生发布说明](native-release-notes.md)是发布 workflow 的输入。
 它们保留原路径，不作为方案历史维护。源码能力与用户安装的 release 可能不同，
 判断运行行为时应读取实际二进制的 `version --json`。

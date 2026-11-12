@@ -42,6 +42,16 @@ class Mutation:
 
 MUTATIONS = (
     Mutation(
+        "symbol-query-cap", "audit", "workspace display symbols retain their 20,000 result cap", "internal/lsp/catalog_symbols.go",
+        (("const workspaceSymbolLimit = 20000", "const workspaceSymbolLimit = 20001"),),
+        "wf-symbol-query-budget.py", (("stable-display-symbols", "same_first_20000_display_symbols"),),
+    ),
+    Mutation(
+        "symbol-query-page-skip", "audit", "paged identity traversal must not skip known display symbols", "internal/lsp/catalog_symbols.go",
+        (("\t\tcursor.next++", "\t\tcursor.next += 2"),),
+        "wf-symbol-query-budget.py", (("stable-display-symbols", "same_first_20000_display_symbols"),),
+    ),
+    Mutation(
         "resource-rename-unique", "audit", "resource Rename needs a unique declaration", "internal/analysis/externalrename.go",
         (("if declarations != 1 {", "if declarations < 1 {"),),
         "wf-resource-rename.py", (("duplicate-definition", "prepareRefused"),), ("--cases", "duplicate-definition"),

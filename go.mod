@@ -4,7 +4,7 @@ go 1.27.3
 
 require (
 	github.com/expr-lang/expr v1.16.9
-	github.com/lazysnail1024/k8s-crd-toolkit v0.0.0-20261111044740-2be4e04dc495
+	github.com/lazysnail1024/k8s-crd-toolkit v0.0.0-20261112033740-db4adba0093e
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/tliron/glsp v0.2.2
 	sigs.k8s.io/yaml v1.6.0

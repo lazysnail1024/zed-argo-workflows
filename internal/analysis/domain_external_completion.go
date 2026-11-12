@@ -3,6 +3,7 @@ package analysis
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -88,6 +89,7 @@ func completeExternalMembers(ctx context.Context, w workspace.Workspace, uri str
 }
 
 func CompleteExternalNames(ctx context.Context, w workspace.Workspace, uri string, pos source.Position, known *index.Index) ([]map[string]any, []index.Definition, error) {
+	ctx = WithInvocation(ctx)
 	result := []map[string]any{}
 	resources, _, _, _ := externalResources(ctx, w, true)
 	for _, caller := range resources {
@@ -213,9 +215,20 @@ func completeIndexedResourceNames(ctx context.Context, known *index.Index, calle
 	result := []map[string]any{}
 	used := []index.Definition{}
 	scope := index.Scope(caller.document.Target.ID)
-	rows, err := known.Symbols(scope, prefix, 1000)
+	namespace := caller.namespace
+	if cluster {
+		namespace = ""
+	} else if namespace == "" {
+		return result, used, nil
+	}
+	keyPrefix, _ := json.Marshal([2]string{wanted, namespace})
+	keyPrefix[len(keyPrefix)-1] = ','
+	rows, err := queryIndexedSymbols(ctx, known, scope, index.Key(keyPrefix), prefix, 1000)
 	if err != nil {
 		return result, used, err
+	}
+	if rows.Truncated {
+		return nil, nil, fmt.Errorf("resource completion candidates exceed 1000 matching entries")
 	}
 	seen := map[index.Key]bool{}
 	for _, row := range rows.Items {
