@@ -226,7 +226,7 @@ func (c *catalog) admitDiscovery(root *catalogRoot, epoch uint64, paths []string
 				continue
 			}
 			file = &catalogFile{root: header.Root}
-			c.files[uri] = file
+			c.addFile(uri, file)
 			root.complete = false
 		}
 		observed := root.membership.Seen(file.seen)

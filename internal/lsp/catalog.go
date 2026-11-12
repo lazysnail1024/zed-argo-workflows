@@ -54,6 +54,7 @@ type catalogFile struct {
 	symbols                                       []analysis.DomainSymbol
 	symbolBytes                                   int
 	readiness                                     catalogReadiness
+	querySlot                                     int
 }
 
 // catalog survives every request/publication worker. Its maps retain identities,
@@ -68,6 +69,8 @@ type catalog struct {
 	queue                    *shared.WorkQueue
 	roots                    map[string]*catalogRoot
 	files                    map[source.URI]*catalogFile
+	queryFiles               []source.URI
+	queryEpoch               uint64
 	events                   chan struct{}
 	publications             map[string]bool
 	logs                     map[string]string
@@ -262,7 +265,7 @@ func (c *catalog) syncInputs(s *session, m message) {
 				continue
 			}
 			file = &catalogFile{root: root}
-			c.files[uri] = file
+			c.addFile(uri, file)
 		}
 		if file.opened && file.revision == b.snapshot.Revision() && file.blocked == (b.unavailable != "") {
 			continue
@@ -336,7 +339,7 @@ func (c *catalog) diskEvent(uri source.URI, deleted bool) {
 			c.roots[root].problem = "file index exceeds 100000 entries"
 			return
 		}
-		c.files[uri] = &catalogFile{root: root}
+		c.addFile(uri, &catalogFile{root: root})
 	}
 	c.files[uri].seen = c.roots[root].membership.Observe()
 	c.documents.Invalidate(uri)
@@ -399,6 +402,7 @@ func (c *catalog) remove(uri source.URI) {
 		c.symbolBytes -= file.symbolBytes
 		c.symbolCount -= len(file.symbols)
 		file.readiness.add(-1)
+		c.removeQueryFile(uri, file)
 	}
 	delete(c.files, uri)
 }

@@ -37,7 +37,7 @@ NATIVE = (
     "wf-index-boundaries", "wf-mixed-parent-index", "wf-persistent-workspace",
     "wf-persistent-slowio",
     "wf-shared-yaml-projection", "wf-responsive-editing",
-    "wf-resource-rename", "wf-catalog-queries",
+    "wf-resource-rename", "wf-catalog-queries", "wf-symbol-query-budget",
 )
 EXTENDED = (
     "wf-audit-gaps", "wf-lifecycle", "wf-lifecycle-gaps",

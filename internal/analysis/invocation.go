@@ -30,6 +30,9 @@ type invocation struct {
 // sequential analysis. Exact text is part of identity, including simulated edits.
 func WithInvocation(ctx context.Context) context.Context {
 	ctx = assets.WithDocumentReuse(ctx)
+	if _, ok := ctx.Value(symbolQueryKey{}).(*symbolQueryBudget); !ok {
+		ctx = context.WithValue(ctx, symbolQueryKey{}, &symbolQueryBudget{remaining: symbolQueryWorkLimit})
+	}
 	if _, ok := ctx.Value(expansionKey{}).(*expansionBudget); !ok {
 		ctx = WithLogicalResult(ctx)
 	}

@@ -50,7 +50,8 @@ scope 的有效 target。`stream.go` 的 `Describe` 只读取配置元数据，`
 | [catalog.go](../internal/lsp/catalog.go) | 会话级 catalog、root/file 状态；原子接受输入并失效索引；WorkQueue 调度、两个文件 worker、`Index.Begin/Reuse/Commit`、依赖失效传播 |
 | [catalog_discovery.go](../internal/lsp/catalog_discovery.go) | 配置刷新、可恢复 Scanner、目录优先级、Membership 扫描轮次、删除确认、scope 完整性与进度日志 |
 | [catalog_readiness.go](../internal/lsp/catalog_readiness.go) | 在现有 file record 上记录对 root/scope 计数的贡献；新增、失效、重绑、拒绝、任务完成和删除同步调整，完整性检查不再遍历全部文件 |
-| [catalog_inputs.go](../internal/lsp/catalog_inputs.go) | Documents read ticket、依赖闭包物化、逆向依赖、root/scope/file proof、按摘要查 workspace symbols、诊断完成确认 |
+| [catalog_inputs.go](../internal/lsp/catalog_inputs.go) | Documents read ticket、依赖闭包物化、逆向依赖、root/scope/file proof、诊断完成确认 |
+| [catalog_symbols.go](../internal/lsp/catalog_symbols.go) | 按最多 64 个文件身份分页借用不可变 DomainSymbol 摘要；锁外可取消扫描、有界排序与位置证明；不复制全目录 URI 或在 catalog 锁内扫描全部符号 |
 | [publication.go](../internal/lsp/publication.go) | 先判断资源归属并清空无关 YAML 的诊断，再执行本地/外部诊断；区分配置不可用、真实未完成和非本产品文件 |
 | [document_workspace.go](../internal/lsp/document_workspace.go) | 为被 exclude 或内部目录隔离的 `opened:<URI>` buffer 重新获取当前输入；Quick Fix 不会误选磁盘 scope |
 | [query_cache.go](../internal/lsp/query_cache.go) | 在获取当前输入后复用完整 scope 的最终查询结果；身份包含方法/参数、文本、配置及索引候选 generation |
@@ -83,11 +84,11 @@ WorkspaceEdit 能力约束。具体协议分支以 [stdio.go](../internal/lsp/st
 ## 公共依赖与隔离边界
 
 通过 [go.mod](../go.mod) 固定源码版本
-`v0.0.0-20261111044740-2be4e04dc495`，完整 commit 为
-`2be4e04dc4955991bd937ace3abf28673d289898`。
+`v0.0.0-20261112033740-db4adba0093e`，完整 commit 为
+`db4adba0093ee2a709356aa1c2517e6d62644745`。
 [toolkit.lock.json](../contracts/toolkit.lock.json)记录源码/ZIP/合同 hash，`published: false`；
 依赖方式是固定源码 commit 和已提交 vendor，无需 toolkit release、兄弟仓库 checkout 或本地 `replace`。
-[toolkit-design-4.md](../contracts/toolkit-design-4.md)是按 hash 校验的当前 API 合同。
+[toolkit-design-5.md](../contracts/toolkit-design-5.md)是按 hash 校验的当前 API 合同。
 
 | 共享能力 | 本仓落点 | 留在 Workflows 的决策 |
 | --- | --- | --- |
@@ -99,7 +100,7 @@ WorkspaceEdit 能力约束。具体协议分支以 [stdio.go](../internal/lsp/st
 | `workspace.Documents` | `newCatalog` 创建唯一实例；`session.accept` 在 catalog 锁内接受通知并同步失效；`readSnapshot` 使用 BeginRead/PublishRead | LSP document version、资源拒绝和恢复策略，当前输入的索引失效 |
 | `workspace.Scanner/Membership` | `catalog_discovery.go` 有界枚举；open/change/close/watch 记录 observation，完整且当前轮次才能 sweep | root 归属、exclude、Helm、配置 epoch、scope 完整性与 Ready/Limited 判定 |
 | `workspace.WorkQueue` | `catalog.go` 按 URI 合并优先级和运行中后续事件；worker 等待 Wake 并保证 Complete | 当前文件/相关目录优先级、具体任务内容、两个 worker 与各项预算 |
-| `index.Index` | `analysis.Summarize` 产出符号、引用、未解析依赖和 digest；`SymbolsWithPrefix` 在候选上限前按不透明 key 前缀筛选 | key 编码、namespace/kind、依赖闭包、缺失/歧义语义和最终发布 proof；截断的修复候选不进入安全编辑 |
+| `index.Index` | `analysis.Summarize` 产出符号、引用、未解析依赖和 digest；`SymbolsWithPrefixContext` 在候选上限前按不透明 key 前缀筛选，并约束累计访问量和取消 | key 编码、namespace/kind、依赖闭包、缺失/歧义语义和最终发布 proof；截断的修复候选不进入安全编辑 |
 
 依赖方向是 Workflows → toolkit 公共包。toolkit 不回调 Workflows 的领域逻辑，不依赖 LSP、
 Zed、Argo schema 或这个仓库；Workflows 与 Argo CD 插件互不 import。
@@ -221,7 +222,9 @@ LSP 只返回带版本的 `documentChanges`；客户端如何原子应用多文�
 | YAML 投影与 schema 查询 | 每文档至多 100,000 展开/访问节点，单标量 1 MiB；alias/merge 的同一逻辑结果累计 100,000 有效节点；公共查询遵守其 work/depth 预算 |
 | 请求内解析复用 / 可选跨 worker 解析事实 | 50 MiB / 8 MiB 文本和 512,000 节点；超出可选缓存不扩大输入预算 |
 | 外部诊断事实复用 | 最多 20,000 keys / 4 MiB；候选集合参与身份 |
-| 名称候选 / workspace symbols | 1,000 / 20,000；冷索引或达到上限时不承诺全量结果 |
+| 名称候选 / workspace symbols | 1,000 / 20,000；修复/补全候选截断明确拒绝，workspace symbols 保留 URI/文件内顺序的前 20,000 项；冷索引不承诺全量结果 |
+| 符号查询工作量 | 单请求最多 1,100,000 次文件/符号访问，含零命中；覆盖既有 100,000 文件与 1,000,000 符号容量；候选查询在多个 key/scope 间累计，不因解析缓存重置而重新授予预算 |
+| 展示符号分页身份 | 最多 100,000 个 URI 槽位及 file record 中的槽号；移除 swap-delete 并撤销旧游标，追加不扩展已开始的查询；不复制第二份符号表或关闭文件全文 |
 | 冷 schema 编译 | 一个可取消等待的许可；暖命中直接使用不可变缓存，失败不缓存 |
 | LSP Go 软内存目标 | 288 MiB；保留更低的调用方限制，结束恢复原值；不等于进程 RSS 上限 |
 
@@ -230,6 +233,14 @@ LSP 只返回带版本的 `documentChanges`；客户端如何原子应用多文�
 资源或容量拒收会标记 unavailable，不能退回旧 buffer 或磁盘并声称成功；完整替换或 close/reopen 可恢复，条目数耗尽也不会终止服务。
 旧 version 或非法 UTF-16 更新则被忽略，已接受快照保持有效，这与资源拒收不同。
 内存预算覆盖的是明确对象，C parser、编译临时图、嵌入数据和 Go heap headroom 仍需要实际进程测量。
+
+展示符号包含模板、参数等领域声明，不等于共享 Index 中只记录资源身份的绑定符号。
+查询 worker 在初始取样和分页时可取消等待 catalog 锁，逐文件/逐符号计费；
+失败不返回可被误作完整结果的候选。输出仍受 20,000 项上限，最终由协议所有者按既有
+root epoch、文件 stamp/hash 证明交付；这不宣称所有 catalog writer 或协议交付步骤已经改成可取消。
+worker 只携带证明，不重复建立证明分页或提前复核；提前检查无法替代交付时的唯一 fence。
+资源修复与补全使用 Toolkit 的 `SymbolsWithPrefixContext`，只接受无错误的完整扫描；
+领域 namespace/kind 过滤与候选唯一性仍由本仓解释。
 [实现预算](../internal/workspace/budget.go)、[LSP 内存策略测试](../internal/lsp/memory_test.go)、
 [CI 资源验收](CI.md)
 

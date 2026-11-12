@@ -201,6 +201,7 @@ func (c *catalog) document(ctx context.Context, uri string) (workspace.Document,
 // Reverse traversal is only needed for references/edits, not ordinary caller
 // diagnostics or definition lookup into a widely used template library.
 func (c *catalog) closure(ctx context.Context, header workspace.Workspace, selected, focus string, reverse, all, repair bool) ([]source.URI, error) {
+	ctx = analysis.WithInvocation(ctx)
 	seen := map[source.URI]bool{}
 	queue := []source.URI{}
 	add := func(uri source.URI) {
@@ -266,7 +267,7 @@ func (c *catalog) closure(ctx context.Context, header workspace.Workspace, selec
 			definitions, _ := c.index.Definitions(file.Scope, key)
 			if repair && string(uri) == focus && len(definitions) == 0 {
 				var err error
-				definitions, err = analysis.ResourceAlternatives(c.index, file.Scope, key)
+				definitions, err = analysis.ResourceAlternatives(ctx, c.index, file.Scope, key)
 				if err != nil {
 					return nil, err
 				}
@@ -427,49 +428,4 @@ func (c *catalog) workspace(ctx context.Context, root, selected, focus string, r
 		w.Documents = append(w.Documents, document)
 	}
 	return w, proof, nil
-}
-
-func (c *catalog) workspaceSymbols(query string) ([]map[string]any, []catalogProof) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	result := []map[string]any{}
-	byRoot := map[string]*catalogProof{}
-	uris := make([]source.URI, 0, len(c.files))
-	for uri := range c.files {
-		uris = append(uris, uri)
-	}
-	sort.Slice(uris, func(a, b int) bool { return uris[a] < uris[b] })
-	for _, uri := range uris {
-		file := c.files[uri]
-		if file.invalidated || file.blocked || file.problem != "" {
-			continue
-		}
-		for _, symbol := range file.symbols {
-			if !strings.Contains(symbol.Name, query) {
-				continue
-			}
-			result = append(result, map[string]any{"name": symbol.Name, "kind": symbol.Kind, "location": symbol.Location, "containerName": symbol.Container})
-			proof := byRoot[file.root]
-			if proof == nil {
-				root := c.roots[file.root]
-				if root == nil {
-					continue
-				}
-				proof = &catalogProof{root: file.root, epoch: root.epoch, files: map[source.URI]catalogInput{}}
-				byRoot[file.root] = proof
-			}
-			proof.files[uri] = catalogInput{file.stamp, file.hash}
-			if len(result) >= 20000 {
-				break
-			}
-		}
-		if len(result) >= 20000 {
-			break
-		}
-	}
-	proofs := make([]catalogProof, 0, len(byRoot))
-	for _, proof := range byRoot {
-		proofs = append(proofs, *proof)
-	}
-	return result, proofs
 }

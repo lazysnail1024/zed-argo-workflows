@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/lazysnail1024/k8s-crd-toolkit/index"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	shared "github.com/lazysnail1024/k8s-crd-toolkit/workspace"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
@@ -512,7 +513,14 @@ func (s *session) handle(m message) (bool, int, error) {
 		if err := json.Unmarshal(m.Params, &p); err != nil {
 			return false, 0, s.failure(m.ID, -32602, err.Error())
 		}
-		items, proofs := s.catalog.workspaceSymbols(p.Query)
+		items, proofs, err := s.catalog.workspaceSymbols(s.context(), p.Query, workspaceSymbolWorkLimit)
+		if err != nil {
+			code := -32803
+			if errors.Is(err, index.ErrQueryChanged) {
+				code = -32801
+			}
+			return false, 0, s.failure(m.ID, code, err.Error())
+		}
 		s.proofs = append(s.proofs, proofs...)
 		return false, 0, s.reply(m.ID, items)
 	case "textDocument/completion", "textDocument/hover":

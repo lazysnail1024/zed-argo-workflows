@@ -24,14 +24,14 @@ type FileSummary struct {
 // ResourceAlternatives supplies a bounded set for the existing safe quick-fix
 // evaluator. Keys encode this product's kind/namespace/name identity; the shared
 // index itself never interprets these fields.
-func ResourceAlternatives(known *index.Index, scope index.Scope, missing index.Key) ([]index.Definition, error) {
+func ResourceAlternatives(ctx context.Context, known *index.Index, scope index.Scope, missing index.Key) ([]index.Definition, error) {
 	var wanted [3]string
 	if json.Unmarshal([]byte(missing), &wanted) != nil {
 		return nil, nil
 	}
 	prefix, _ := json.Marshal(wanted[:2])
 	prefix[len(prefix)-1] = ','
-	candidates, err := known.SymbolsWithPrefix(scope, index.Key(prefix), "", 1000)
+	candidates, err := queryIndexedSymbols(ctx, known, scope, index.Key(prefix), "", 1000)
 	if err != nil {
 		return nil, err
 	}

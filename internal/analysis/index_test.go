@@ -36,12 +36,12 @@ func TestRepairCandidatesFilterBeforeTheirBudget(t *testing.T) {
 	}
 	add("file:///a-unrelated.yaml", "other", 1001)
 	add("file:///z-selected.yaml", "argo", 1)
-	got, err := ResourceAlternatives(idx, "scope", resourceIndexKey("WorkflowTemplate", "argo", "typo"))
+	got, err := ResourceAlternatives(context.Background(), idx, "scope", resourceIndexKey("WorkflowTemplate", "argo", "typo"))
 	if err != nil || len(got) != 1 || got[0].URI != "file:///z-selected.yaml" {
 		t.Fatalf("unrelated namespaces consumed the candidate budget: got=%v, err=%v", got, err)
 	}
 	add("file:///z-selected.yaml", "argo", 1001)
-	if got, err := ResourceAlternatives(idx, "scope", resourceIndexKey("WorkflowTemplate", "argo", "typo")); err == nil || len(got) != 0 {
+	if got, err := ResourceAlternatives(context.Background(), idx, "scope", resourceIndexKey("WorkflowTemplate", "argo", "typo")); err == nil || len(got) != 0 {
 		t.Fatal("a truncated matching set was accepted as a complete repair candidate set")
 	}
 }
