@@ -324,6 +324,22 @@ def summary(output, rows, classification):
     return result["pass"]
 
 
+def cache_identity(args):
+    """Partition compilation caches by the actual C toolchain and runner image."""
+    compiler = os.environ.get("CC", "cc")
+    result = subprocess.run([compiler, "--version"], check=True, capture_output=True,
+                            text=True, timeout=30)
+    identity = {"platform": host_platform(), "compiler": compiler,
+                "compilerVersion": result.stdout, "compilerStderr": result.stderr,
+                "imageOS": os.environ.get("ImageOS", ""),
+                "imageVersion": os.environ.get("ImageVersion", ""),
+                "cgoEnabled": os.environ.get("CGO_ENABLED", "1"),
+                "macosDeploymentTarget": os.environ.get("MACOSX_DEPLOYMENT_TARGET", "")}
+    save(args.output / "identity.json", identity)
+    print(json.dumps(identity, sort_keys=True), flush=True)
+    return True
+
+
 def build(args):
     output = args.output
     output.mkdir(parents=True, exist_ok=True)
@@ -577,6 +593,7 @@ def schema(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
+    sub.add_parser("cache-identity")
     p = sub.add_parser("build")
     p.add_argument("--platform")
     p.add_argument("--release-version", default="", help="Build the pinned clean stable release from its exact source commit")
@@ -601,7 +618,7 @@ def main():
         args.tools = args.tools.resolve()
     args.output.mkdir(parents=True, exist_ok=True)
     try:
-        return 0 if globals()[args.action](args) else 1
+        return 0 if globals()[args.action.replace("-", "_")](args) else 1
     except Exception:
         save(args.output / "fatal.json", {"pass": False, "error": traceback.format_exc()})
         traceback.print_exc()

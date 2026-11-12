@@ -110,9 +110,18 @@ release-mode build 从精确 commit 的临时 worktree 构建，防止本地 ign
 法律文本都必须一致。包消费测试实际解压并运行 native identity，独立检查文件库存、hash、权限和拒绝路径。
 这是来源校验，不是声明 Go 二进制可逐字节复现。
 
-各 job 以 `always()` 上传 `artifacts/ci/` 等证据，通常保留 30 天：原始 stdout/stderr、
+各 job 以 `always()` 将 `artifacts/ci/` 等完整证据预归档，通常保留 30 天：原始 stdout/stderr、
 命令/timeout 回执、JSON 断言、协议流量、源码/二进制 hash、工具链、实际资源限制和产物。
-job 在上传前被终止时不能承诺完整 artifact；该次 GitHub job log 仍需检查。
+`tests/ci/evidence.py` 仅接受 checkout 的 `artifacts/` 下生成目录，使用 gzip level 1 打包，
+再流式核验所有成员及内嵌 JSONL inventory；上传层设 `compression-level: 0`，避免对大量小文件
+逐个处理和重复压缩。`evidence.json` 保留归档 SHA256、inventory SHA256、文件字节数及打包/核验耗时。
+原始 fixture 不删除，隐藏的 synthetic Git history、执行权限、符号链接目标和 FIFO 类型均保留；
+链接不解引用，FIFO 不读取。证据归档不等同于可安全直接解压执行：核验器不会解压，重放前需审查链接/特殊节点并按原测试命令重建。
+归档校验失败会使 job 失败，不上传未验证的归档；job 在上传前被终止时不能承诺完整 artifact。
+
+普通编译缓存使用 `setup-go`，key 的输入还包含 C 编译器版本、runner image版本、Go依赖锁及vendored模块清单。
+缓存只复用编译中间态，不缓存测试通过状态；`-count=1`、race、真实消费者、故障注入和干净源码边界不变。
+Python固定在 `3.14` minor，允许复用runner已安装的兼容patch，实际版本记录仍保留在构建证据中。
 
 ## 运行入口
 

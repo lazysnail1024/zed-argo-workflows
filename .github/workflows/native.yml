@@ -27,7 +27,7 @@ jobs:
         ref: ${{ github.sha }}
     - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
       with:
-        python-version: 3.14.0
+        python-version: '3.14'
     - name: Validate the independent LSP VERSION and clean source
       id: version
       env:
@@ -75,14 +75,21 @@ jobs:
       with:
         persist-credentials: false
         ref: ${{ github.sha }}
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: '3.14'
+    - name: Bind the compilation cache to the native compiler and runner image
+      run: python tests/ci/run.py cache-identity --output artifacts/ci/cache
     - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
       with:
         go-version-file: go.mod
         check-latest: false
-        cache: false
-    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
-      with:
-        python-version: 3.14.0
+        cache: true
+        cache-dependency-path: |
+          go.mod
+          go.sum
+          vendor/modules.txt
+          artifacts/ci/cache/identity.json
     - name: Reject incomplete version shards and fabricated success evidence
       run: python -m unittest discover -s tests/ci -p 'test_*.py' -v
     - name: Build actual native server and record source/toolchain identity
@@ -116,13 +123,17 @@ jobs:
         path: artifacts/ci/release-assets/
         if-no-files-found: error
         retention-days: 30
-    - name: Retain native logs, failed fixtures and packages
+    - name: Archive and verify complete native evidence
+      id: evidence
       if: always()
+      run: python tests/ci/evidence.py pack --root artifacts/ci --optional-root artifacts/native-isolation --output artifacts/ci-evidence
+    - name: Retain native logs, failed fixtures and packages
+      if: ${{ always() && steps.evidence.outcome == 'success' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: workflows-native-${{ matrix.artifact }}-${{ github.sha }}
-        path: artifacts/ci/
-        include-hidden-files: true
+        path: artifacts/ci-evidence/
+        compression-level: 0
         if-no-files-found: error
         retention-days: 30
   extended:
@@ -144,13 +155,21 @@ jobs:
       with:
         persist-credentials: false
         ref: ${{ github.sha }}
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: '3.14'
+    - name: Bind the compilation cache to the native compiler and runner image
+      run: python tests/ci/run.py cache-identity --output artifacts/ci/cache
     - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
       with:
         go-version-file: go.mod
-        cache: false
-    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
-      with:
-        python-version: 3.14.0
+        check-latest: false
+        cache: true
+        cache-dependency-path: |
+          go.mod
+          go.sum
+          vendor/modules.txt
+          artifacts/ci/cache/identity.json
     - name: Build actual native server
       id: build
       run: python tests/ci/run.py build --platform linux/amd64 --release-version "${{ needs.prepare.outputs.version }}" --output artifacts/ci/build
@@ -161,13 +180,17 @@ jobs:
     - name: Verify actual and synthetic schema query boundaries separately
       if: ${{ !cancelled() && steps.build.outcome == 'success' && matrix.shard == 0 }}
       run: python tests/ci/run.py schema --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/schema
-    - name: Retain semantic evidence including failed runs
+    - name: Archive and verify complete semantic evidence
+      id: evidence
       if: always()
+      run: python tests/ci/evidence.py pack --root artifacts/ci --output artifacts/ci-evidence
+    - name: Retain semantic evidence including failed runs
+      if: ${{ always() && steps.evidence.outcome == 'success' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: workflows-semantic-${{ matrix.shard }}-${{ github.sha }}
-        path: artifacts/ci/
-        include-hidden-files: true
+        path: artifacts/ci-evidence/
+        compression-level: 0
         if-no-files-found: error
         retention-days: 30
   resources:
@@ -189,24 +212,36 @@ jobs:
       with:
         persist-credentials: false
         ref: ${{ github.sha }}
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: '3.14'
+    - name: Bind the compilation cache to the native compiler and runner image
+      run: python tests/ci/run.py cache-identity --output artifacts/ci/cache
     - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
       with:
         go-version-file: go.mod
-        cache: false
-    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
-      with:
-        python-version: 3.14.0
+        check-latest: false
+        cache: true
+        cache-dependency-path: |
+          go.mod
+          go.sum
+          vendor/modules.txt
+          artifacts/ci/cache/identity.json
     - name: Build outside measured cgroups
       run: python tests/ci/run.py build --platform linux/amd64 --release-version "${{ needs.prepare.outputs.version }}" --output artifacts/ci/build
     - name: Execute existing consumers with enforced CPU, memory and swap limits
       run: python tests/ci/resources.py --suite ${{ matrix.suite }} --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/resources
-    - name: Retain resource measurements, limits, raw traffic and failed inputs
+    - name: Archive and verify complete resource evidence
+      id: evidence
       if: always()
+      run: python tests/ci/evidence.py pack --root artifacts/ci --output artifacts/ci-evidence
+    - name: Retain resource measurements, limits, raw traffic and failed inputs
+      if: ${{ always() && steps.evidence.outcome == 'success' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: workflows-resources-${{ matrix.suite }}-${{ github.sha }}
-        path: artifacts/ci/
-        include-hidden-files: true
+        path: artifacts/ci-evidence/
+        compression-level: 0
         if-no-files-found: error
         retention-days: 30
   mutations:
@@ -227,22 +262,34 @@ jobs:
       with:
         persist-credentials: false
         ref: ${{ github.sha }}
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: '3.14'
+    - name: Bind the compilation cache to the native compiler and runner image
+      run: python tests/ci/run.py cache-identity --output artifacts/ci/cache
     - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
       with:
         go-version-file: go.mod
-        cache: false
-    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
-      with:
-        python-version: 3.14.0
+        check-latest: false
+        cache: true
+        cache-dependency-path: |
+          go.mod
+          go.sum
+          vendor/modules.txt
+          artifacts/ci/cache/identity.json
     - name: Require passing baselines and specific semantic mutation detection
       run: python tests/ci/run.py mutations --group ${{ matrix.group }} --output artifacts/ci/mutations
-    - name: Retain mutation diffs, binaries, baseline and mutant evidence
+    - name: Archive and verify complete mutation evidence
+      id: evidence
       if: always()
+      run: python tests/ci/evidence.py pack --root artifacts/ci --output artifacts/ci-evidence
+    - name: Retain mutation diffs, binaries, baseline and mutant evidence
+      if: ${{ always() && steps.evidence.outcome == 'success' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: workflows-mutations-${{ matrix.group }}-${{ github.sha }}
-        path: artifacts/ci/
-        include-hidden-files: true
+        path: artifacts/ci-evidence/
+        compression-level: 0
         if-no-files-found: error
         retention-days: 30
   acceptance:
@@ -274,7 +321,7 @@ jobs:
         ref: ${{ github.sha }}
     - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
       with:
-        python-version: 3.14.0
+        python-version: '3.14'
     - name: Download native assets from this exact workflow run
       uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
       with:
