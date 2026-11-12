@@ -24,7 +24,9 @@ class EvidenceTests(unittest.TestCase):
         self.root = self.workspace / "artifacts/ci"
         self.root.mkdir(parents=True)
         (self.root / "fixture/.git").mkdir(parents=True)
-        (self.root / "fixture/.git/config").write_text("synthetic source history\n")
+        # Archive raw bytes unchanged; text-mode newline conversion differs on Windows.
+        self.history = b"synthetic source history\r\nline without terminator"
+        (self.root / "fixture/.git/config").write_bytes(self.history)
         (self.root / "failed.stdout").write_bytes(b"failed raw protocol\n\x00")
         self.executable = self.root / "server"
         self.executable.write_bytes(b"synthetic executable fixture, not a native LSP\n")
@@ -58,7 +60,7 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(evidence.verify(self.receipt)["entryCount"], 6)
         with tarfile.open(self.output / "evidence.tar.gz", "r:gz") as archive:
             self.assertEqual(archive.extractfile("artifacts/ci/fixture/.git/config").read(),
-                             b"synthetic source history\n")
+                             self.history)
             self.assertEqual(archive.getmember("artifacts/ci/server").mode, stat.S_IMODE(before.st_mode))
         self.assertEqual(self.executable.stat().st_mtime_ns, before.st_mtime_ns)
         self.assertTrue((self.root / "failed.stdout").exists())
@@ -80,11 +82,13 @@ class EvidenceTests(unittest.TestCase):
             link.symlink_to(sentinel)
         except OSError as error:
             self.skipTest("host cannot create symlink: " + str(error))
+        # Windows may store a \\?\ extended path rather than the input spelling.
+        stored_target = os.readlink(link)
         self.pack()
         with tarfile.open(self.output / "evidence.tar.gz", "r:gz") as archive:
             info = archive.getmember("artifacts/ci/external")
             self.assertTrue(info.issym())
-            self.assertEqual(info.linkname, str(sentinel))
+            self.assertEqual(info.linkname, stored_target)
             for member in archive.getmembers():
                 if member.isfile():
                     self.assertNotIn(sentinel.read_bytes(), archive.extractfile(member).read())
