@@ -14,7 +14,7 @@ def first_party_tests():
         paths.update((ROOT / directory).rglob('*_test.go'))
     paths.update(path for path in (ROOT / 'editors/zed/src').rglob('*.rs')
                  if '#[test]' in path.read_text(encoding='utf-8'))
-    return {str(path.relative_to(ROOT)) for path in paths}
+    return {path.relative_to(ROOT).as_posix() for path in paths}
 
 
 class InventoryTests(unittest.TestCase):
