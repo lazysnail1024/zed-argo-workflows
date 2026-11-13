@@ -39,7 +39,7 @@ type workerResult struct {
 // Serve owns mutable state and all transport writes. One local query, one heavy
 // request and one background publication worker run on immutable snapshots.
 // Publication is accepted per URI, so a later timeout cannot discard progress.
-func Serve(in io.Reader, out, log io.Writer) int {
+func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 	// Leave room for native YAML parsing, embedded mappings and the client.
 	// This controls Go's heap headroom, not RSS or the explicit input limits.
 	previousLimit := debug.SetMemoryLimit(-1)
@@ -48,6 +48,9 @@ func Serve(in io.Reader, out, log io.Writer) int {
 		defer debug.SetMemoryLimit(previousLimit)
 	}
 	s := session{out: out, log: log, buffers: map[string]buffer{}, actions: map[string]pendingAction{}, pending: map[string]bool{}}
+	if len(render) > 0 {
+		s.render = render[0]
+	}
 	var err error
 	s.catalog, err = newCatalog()
 	if err != nil {
@@ -139,7 +142,11 @@ func Serve(in io.Reader, out, log io.Writer) int {
 		}
 	}()
 	launch := func(request *queuedRequest, uris []string) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		duration := 5 * time.Second
+		if request != nil && request.message.Method == "workspace/executeCommand" {
+			duration = 30 * time.Second
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), duration)
 		ctx = analysis.WithInvocation(workspace.WithSnapshotBudget(ctx, s.catalog.documents.OpenBytes()))
 		state := snapshot(ctx)
 		background := request == nil
@@ -289,6 +296,9 @@ func Serve(in io.Reader, out, log io.Writer) int {
 				}
 				continue
 			}
+			if m.Method == "" {
+				continue
+			} // Responses to server-initiated showDocument requests.
 			if len(m.ID) > 0 && m.Method != "initialize" && m.Method != "shutdown" {
 				lane := &lanes[laneFor(m.Method)]
 				if s.shutdown {

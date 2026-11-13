@@ -132,9 +132,6 @@ func candidatePath(root, filename string, roots []string) (string, error) {
 			return "", nil
 		}
 	}
-	if HelmTemplate(root, absolute) {
-		return "", nil
-	}
 	return filepath.ToSlash(relative), nil
 }
 

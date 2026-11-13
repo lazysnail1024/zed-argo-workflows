@@ -12,6 +12,7 @@ import (
 	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/lsp"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -31,8 +32,23 @@ func run(args []string) int {
 }
 
 func runContext(parent context.Context, args []string) int {
+	return runWithIO(parent, args, os.Stdout, os.Stderr)
+}
+func runWithIO(parent context.Context, args []string, stdout, stderr io.Writer) (code int) {
+	var outputErr error
+	defer func() {
+		if outputErr != nil {
+			code = 2
+		}
+	}()
+	emit := func(v any) {
+		if err := json.NewEncoder(stdout).Encode(v); err != nil {
+			outputErr = err
+			fmt.Fprintln(stderr, err)
+		}
+	}
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: argo-workflows-ls version --json | check | serve --stdio | help")
+		fmt.Fprintln(stderr, "usage: argo-workflows-ls version --json | check | serve --stdio | help")
 		return 2
 	}
 	switch args[0] {
@@ -40,18 +56,18 @@ func runContext(parent context.Context, args []string) int {
 		if len(args) != 1 {
 			return 2
 		}
-		fmt.Println("argo-workflows-ls: version --json; check --root <dir> --format json|human; serve --stdio\nAutomatic compatibility across the embedded supported releases is enabled by default; exact version pins remain available.")
+		fmt.Fprintln(stdout, "argo-workflows-ls: version --json; check --root <dir> --format json|human; serve --stdio\nAutomatic compatibility across the embedded supported releases is enabled by default; exact version pins remain available.")
 		return 0
 	case "version":
 		if len(args) != 2 || args[1] != "--json" {
-			fmt.Fprintln(os.Stderr, "usage: version --json")
+			fmt.Fprintln(stderr, "usage: version --json")
 			return 2
 		}
 		emit(map[string]any{"product": "argo-workflows", "serverVersion": buildinfo.ServerVersion, "adapterContractVersion": 1, "analysisReady": true, "defaultTargetVersion": compat.DefaultVersion, "acceptedTargetVersions": compat.SupportedVersions(), "supportedTargetVersions": compat.SupportedVersions(), "supportedMajors": compat.SupportedMajors(), "supportedVersionRange": compat.SupportedRange(), "automaticVersionSupport": true, "configSchemaVersions": []int{1}, "reportSchemaVersions": []int{1}, "toolkitVersion": buildinfo.ToolkitVersion(), "catalogHash": compat.Hash(), "sourceCommit": buildinfo.Commit(), "dirty": buildinfo.IsDirty(), "buildMode": buildinfo.BuildMode})
 		return 0
 	case "check":
 		flags := flag.NewFlagSet("check", flag.ContinueOnError)
-		flags.SetOutput(os.Stderr)
+		flags.SetOutput(stderr)
 		root := flags.String("root", ".", "workspace root")
 		format := flags.String("format", "human", "json or human")
 		scope := flags.String("scope", "", "scope")
@@ -62,7 +78,7 @@ func runContext(parent context.Context, args []string) int {
 			return 2
 		}
 		if *format != "json" && *format != "human" {
-			fmt.Fprintln(os.Stderr, "invalid format")
+			fmt.Fprintln(stderr, "invalid format")
 			return 2
 		}
 		started := time.Now()
@@ -178,10 +194,10 @@ func runContext(parent context.Context, args []string) int {
 			emit(map[string]any{"reportSchemaVersion": 1, "product": "argo-workflows", "toolVersion": buildinfo.ServerVersion, "catalogHash": compat.Hash(), "inputSource": "disk", "validationScope": "local-editing-contract", "analysisComplete": complete, "notEvaluated": notEvaluated, "filesAnalyzed": filesAnalyzed, "resourcesAnalyzed": resourcesAnalyzed, "targets": targets, "diagnostics": diagnostics, "configurationErrors": configurationErrors, "elapsedMilliseconds": time.Since(started).Milliseconds()})
 		} else {
 			for _, d := range diagnostics {
-				fmt.Printf("%s:%d:%d: %s %s\n", d.URI, d.Range.Start.Line+1, d.Range.Start.Character+1, d.Code, d.Message)
+				fmt.Fprintf(stdout, "%s:%d:%d: %s %s\n", d.URI, d.Range.Start.Line+1, d.Range.Start.Character+1, d.Code, d.Message)
 			}
 			if !complete {
-				fmt.Fprintln(os.Stderr, "analysis incomplete:", notEvaluated, configurationErrors)
+				fmt.Fprintln(stderr, "analysis incomplete:", notEvaluated, configurationErrors)
 			}
 		}
 		if analysisErr != nil {
@@ -198,30 +214,30 @@ func runContext(parent context.Context, args []string) int {
 		return 0
 	case "serve":
 		if len(args) != 2 || args[1] != "--stdio" {
-			fmt.Fprintln(os.Stderr, "usage: serve --stdio")
+			fmt.Fprintln(stderr, "usage: serve --stdio")
 			return 2
 		}
-		return lsp.Serve(os.Stdin, os.Stdout, os.Stderr)
+		return lsp.Serve(os.Stdin, stdout, stderr, renderForEditor)
 	case "render-check":
 		return renderCheck(args[1:])
 	case "lint-official":
 		return lintOfficial(args[1:])
 	case "explain-config":
 		flags := flag.NewFlagSet("explain-config", flag.ContinueOnError)
-		flags.SetOutput(os.Stderr)
+		flags.SetOutput(stderr)
 		root := flags.String("root", ".", "workspace root")
 		if flags.Parse(args[1:]) != nil || flags.NArg() != 0 {
 			return 2
 		}
 		input, err := workspace.Load(*root, "", "")
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(stderr, err)
 			return 2
 		}
 		emit(map[string]any{"product": "argo-workflows", "schemaVersion": 1, "root": input.Root, "configuration": input.Config, "targets": input.Targets, "analysisReady": true, "notEvaluated": input.NotEvaluated})
 		return 0
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", args[0])
+		fmt.Fprintf(stderr, "unknown command: %s\n", args[0])
 		return 2
 	}
 }

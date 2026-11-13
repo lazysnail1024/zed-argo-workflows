@@ -30,6 +30,8 @@
         "tests/e2e/wf-bounded-completion.py",
         "tests/e2e/wf-toolkit-budget.py",
         "tests/e2e/wf-remediation-helm-boundary.py",
+        "tests/e2e/wf-helm-navigation.py",
+        "tests/e2e/wf-helm-identity.py",
         "tests/e2e/wf-reaudit-rename.py",
         "tests/e2e/wf-reaudit-actions.py",
         "tests/e2e/wf-reaudit-queries.py",
@@ -112,7 +114,9 @@
         "tests/e2e/wf5-official.py",
         "tests/e2e/wf5-render.py",
         "tests/e2e/wf-remediation-render.py",
-        "tests/e2e/wf-reaudit-query-io.py"
+        "tests/e2e/wf-reaudit-query-io.py",
+        "tests/e2e/wf-render-discovery.py",
+        "tests/e2e/wf-render-cancel.py"
       ]
     },
     {

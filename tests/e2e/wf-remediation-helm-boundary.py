@@ -29,9 +29,7 @@ def check_state(name, path, disk_bytes, diagnostics, response, owned, broken=Fal
     checks = {'source_unchanged': path.read_bytes() == disk_bytes}
     if not owned:
         checks['chart_source_excluded'] = diagnostics == []
-        error = response.get('error', {})
-        checks['hover_refuses_chart_source'] = ('result' not in response and error.get('code') == -32803
-                                               and error.get('message') == 'Helm template source is excluded')
+        checks['hover_declines_chart_source'] = not response.get('error') and not response.get('result')
     else:
         checks['hover_ownership'] = 'error' not in response and bool(response.get('result'))
         if broken:
@@ -58,7 +56,7 @@ def language_case(language_id, next_language_id):
                    for path in work.rglob('*') if path.is_file()})
     client = m.LSP(dest, work)
     try:
-        for relative, owned in [('chart/templates/workflow.yaml', False),
+        for relative, owned in [('chart/templates/workflow.yaml', True),
                                 ('templates/plain.yaml', True), ('ordinary.yaml', True)]:
             path = work / relative
             disk_bytes = path.read_bytes()
@@ -75,10 +73,10 @@ def language_case(language_id, next_language_id):
             check_state(name + '/unsaved-recovery', path, disk_bytes, diagnostics,
                         hover(client, path, text), owned)
 
-            if not owned:
+            if relative.startswith('chart/'):
                 diagnostics = client.change(path, template, 4)
                 check_state(name + '/helm-expression', path, disk_bytes, diagnostics,
-                            hover(client, path, template), owned)
+                            hover(client, path, template), False)
 
             # Language changes are close/open lifetimes, not didChange fields.
             # Observe the unversioned close publication before resetting to 1,

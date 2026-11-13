@@ -21,11 +21,14 @@ def main():
     # Published checksums, not values calculated from the downloaded payload:
     # https://github.com/argoproj/argo-workflows/releases/tag/v3.6.0
     # https://github.com/helm/helm/releases/tag/v3.19.0
+    # https://get.helm.sh/helm-v4.3.1-linux-amd64.tar.gz.sha256sum
     tools = [
         ("argo", "3.6.0", "https://github.com/argoproj/argo-workflows/releases/download/v3.6.0/argo-linux-amd64.gz",
          "fa527acfeebc3a8c74a015883ff0ad97ac1114796389289eea631f5073a93343", None),
         ("helm", "3.19.0", "https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz",
          "a7f81ce08007091b86d8bd696eb4d86b8d0f2e1b9f6c714be62f82f96a594496", "linux-amd64/helm"),
+        ("helm4", "4.3.1", "https://get.helm.sh/helm-v4.3.1-linux-amd64.tar.gz",
+         "0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b", "linux-amd64/helm"),
     ]
     manifest = []
     for name, version, url, expected, member in tools:
@@ -38,7 +41,8 @@ def main():
                 executable = archive.extractfile(member).read()
         else:
             executable = gzip.decompress(payload)
-        target = args.output / name
+        target = args.output / name if name != "helm4" else args.output / "helm4" / "helm"
+        target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(executable)
         target.chmod(0o755)
         manifest.append({"tool": name, "version": version, "url": url, "archiveSha256": expected,

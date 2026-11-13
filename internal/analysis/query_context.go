@@ -151,7 +151,15 @@ func queryField(ctx context.Context, snapshot source.Snapshot, version string, p
 				if key {
 					activePath = append(append([]string{}, path...), marker)
 				}
+				originalSchema := schema
 				schema, err = queryAutomatic(ctx, schema, value, activePath)
+				documentationPath := path
+				if key {
+					documentationPath = append(append([]string{}, path...), actualName)
+				}
+				if errors.Is(err, schemaquery.ErrUnsupported) && templateNameDocumentation(originalSchema, documentationPath) != nil {
+					schema, err = originalSchema, nil
+				}
 				if err != nil {
 					return fieldContext{}, err
 				}
@@ -179,6 +187,9 @@ func queryField(ctx context.Context, snapshot source.Snapshot, version string, p
 				}
 				// A first sequence token can be either an object key or a scalar item.
 				query, err := schemaquery.Lookup(ctx, schema, path, value, schemaquery.Limits{})
+				if errors.Is(err, schemaquery.ErrUnsupported) && templateNameDocumentation(schema, append(append([]string{}, path...), field.name)) != nil {
+					err = nil
+				}
 				if err != nil {
 					return fieldContext{}, err
 				}

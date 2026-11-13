@@ -271,7 +271,7 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 	}
 	if !compat.Accepted(d.Target.Version) {
 		if m.Method == "textDocument/codeAction" {
-			return false, 0, s.reply(m.ID, []any{})
+			return false, 0, s.reply(m.ID, s.withRenderAction(uri, nil))
 		}
 		return false, 0, s.failure(m.ID, -32602, "experimental target edits are disabled")
 	}
@@ -355,14 +355,14 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 			}
 		}
 		if len(result) != 0 {
-			return false, 0, s.reply(m.ID, result)
+			return false, 0, s.reply(m.ID, s.withRenderAction(uri, result))
 		}
 		w, err := s.workspace(s.root(uri), "")
 		if err != nil {
 			return false, 0, s.failure(m.ID, -32803, err.Error())
 		}
 		if w.IncompleteScopes[d.Target.ID] {
-			return false, 0, s.reply(m.ID, result)
+			return false, 0, s.reply(m.ID, s.withRenderAction(uri, result))
 		}
 		fixes := analysis.FieldFixes(analysis.WithLogicalResult(ctx), b.snapshot, d.Target.Version, p.Range)
 		fixes = append(fixes, analysis.ValueFixes(analysis.WithLogicalResult(ctx), w, d, p.Range)...)
@@ -374,7 +374,7 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 			}
 			result = append(result, s.rememberFix(d, requestFingerprint, fix, false))
 		}
-		return false, 0, s.reply(m.ID, result)
+		return false, 0, s.reply(m.ID, s.withRenderAction(uri, result))
 	}
 	return false, 0, s.failure(m.ID, -32601, "unknown edit method")
 }

@@ -31,6 +31,7 @@ NATIVE = (
     "wf-schema-query-targets", "wf-domain-queries", "wf-quickfixes",
     "wf-local-rename", "wf-bounded-scalars", "wf-bounded-completion",
     "wf-toolkit-budget", "wf-remediation-helm-boundary",
+    "wf-helm-navigation", "wf-helm-identity",
     "wf-reaudit-rename", "wf-reaudit-actions", "wf-reaudit-queries",
     "wf-reaudit-reconciliation", "wf-report-deadline",
     "wf-diagnostic-ownership", "wf-diagnostic-deadline",
@@ -64,7 +65,7 @@ EXTENDED = (
     "wf-preflight-budget", "wf-expr-error-text", "wf-schema-query-sibling",
     "wf-remediation-matrix", "wf-remediation-graph",
     "wf2-assets", "wf5-official", "wf5-render", "wf-remediation-render",
-     "wf-reaudit-query-io",
+     "wf-reaudit-query-io", "wf-render-discovery", "wf-render-cancel",
 )
 AGGREGATED = {
     "wf-argument-supply": "case", "wf-inheritance-family": "version",
@@ -545,6 +546,10 @@ def suite(args):
         env = os.environ.copy()
         if args.tools:
             env["WF_TEST_ARGO_BINARY"] = str(args.tools / "argo")
+        if name == "wf-render-discovery":
+            if not args.tools:
+                raise ValueError("Helm discovery integration requires --tools")
+            argv += [args.tools / "helm", args.tools / "helm4" / "helm"]
         if name in ("wf5-official", "wf5-render", "wf-remediation-render"):
             if not args.tools:
                 raise ValueError("explicit offline integration tools are required")

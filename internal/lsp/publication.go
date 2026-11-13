@@ -9,6 +9,7 @@ import (
 
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/analysis"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/helmsource"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
 )
 
@@ -28,7 +29,7 @@ func (s *session) ownsPublication(uri string) bool {
 	if filepath.Base(name) == ".argo-workflows-ls.yaml" {
 		return true
 	}
-	if workspace.HelmTemplate(root, name) {
+	if workspace.HelmTemplate(root, name) && helmsource.HasActions(b.snapshot.Text()) {
 		return false
 	}
 	if b.unavailable != "" {

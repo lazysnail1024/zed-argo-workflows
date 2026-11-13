@@ -9,6 +9,7 @@ import (
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/helmsource"
 	"io"
 	"os"
 	"path"
@@ -230,6 +231,9 @@ func OpenDocument(w Workspace, snapshot source.Snapshot, override string) (Docum
 	if err != nil {
 		return Document{}, err
 	}
+	if HelmTemplate(w.Root, filename) && helmsource.HasActions(snapshot.Text()) {
+		snapshot, _ = source.New(snapshot.URI(), snapshot.Revision(), "")
+	}
 	target, err := documentTarget(w, filename, override)
 	return Document{Snapshot: snapshot, Target: target}, err
 }
@@ -240,9 +244,6 @@ func documentTarget(w Workspace, filename, override string) (Target, error) {
 		return Target{}, fmt.Errorf("buffer is outside root")
 	}
 	relative := filepath.ToSlash(rel)
-	if HelmTemplate(w.Root, filename) {
-		return Target{}, fmt.Errorf("Helm template source is excluded")
-	}
 	name, err := scopeName(w.Config, relative)
 	if err != nil {
 		return Target{}, err

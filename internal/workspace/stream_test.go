@@ -162,16 +162,6 @@ func TestCandidatePreservesDiskMembership(t *testing.T) {
 	if ok, err := Candidate(w, filepath.Join(filepath.Dir(root), "outside.yaml"), nil); err != nil || ok {
 		t.Fatalf("outside root admitted: %v %v", ok, err)
 	}
-	chart := filepath.Join(root, "chart")
-	if err := os.MkdirAll(filepath.Join(chart, "templates"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(chart, "Chart.yaml"), []byte("apiVersion: v2\nname: demo\nversion: 0.1.0\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if ok, err := Candidate(w, filepath.Join(chart, "templates", "workflow.yaml"), nil); err != nil || ok {
-		t.Fatalf("Helm source admitted: %v %v", ok, err)
-	}
 	t.Run("symlinked-directory-watch", func(t *testing.T) {
 		link := filepath.Join(root, "linked")
 		if err := os.Symlink(t.TempDir(), link); err != nil {
