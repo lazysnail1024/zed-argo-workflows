@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import traceback
+from mutation_support import classify_results, read_results
 
 ROOT = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser(description=__doc__)
@@ -33,9 +34,7 @@ def command(folder, label, argv, cwd=ROOT):
 
 
 def cases(path):
-    rows = json.loads(path.read_text())
-    assert rows and all(isinstance(row.get('assertions'), dict) and row['assertions'] for row in rows), rows
-    return {row['name']: row for row in rows}
+    return read_results(path.parent)
 
 
 baseline = OUT / 'baseline'
@@ -46,7 +45,7 @@ rows = [{'id': 'baseline', 'passed': run.returncode == 0 and all(row['pass'] is 
 variants = [
     ('lane-isolation', 'case "textDocument/hover", "textDocument/completion", "textDocument/documentSymbol":\n\t\treturn 0',
      'case "textDocument/hover", "textDocument/completion", "textDocument/documentSymbol":\n\t\treturn 1',
-     'lanes', 'light_capacity_reserved_under_heavy_saturation'),
+     'lanes', 'light_result_precedes_heavy_result'),
     ('unrelated-input-isolation', 'if !input.readOnly {', 'if true {',
      'churn', 'every_unrelated_edit_preserves_useful_hover'),
     ('buffer-fence', 'if opened != input.opened || opened && (b.snapshot.Revision() != input.revision || b.version != input.version || b.unavailable != input.unavailable) {',
@@ -81,9 +80,9 @@ if rows[0]['passed']:
                 probe = command(folder, 'probe', [sys.executable, CONSUMER, binary, folder / 'e2e', '--cases', case])
                 after = cases(folder / 'e2e/results.json')
                 row['probeExit'] = probe.returncode
-                row['namedFailure'] = before[case]['assertions'].get(required) is True and after.get(case, {}).get('assertions', {}).get(required) is False
-                row['completeAssertions'] = set(after.get(case, {}).get('assertions', {})) == set(before[case]['assertions'])
-                row['passed'] = probe.returncode == 1 and row['namedFailure'] and row['completeAssertions']
+                classification = classify_results(((case, required),), {case: before[case]}, after, {'exitCode': probe.returncode})
+                row.update(classification)
+                row['passed'] = classification['detected']
         except Exception:
             row['error'] = traceback.format_exc()
         rows.append(row)

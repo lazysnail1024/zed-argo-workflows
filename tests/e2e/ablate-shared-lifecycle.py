@@ -25,8 +25,8 @@ VARIANTS = {
         AUTHORITY, "configuration's 1 MiB limit was lost"),
     'obsolete-root-sweep': (
         'catalog_discovery.go',
-        'if c.roots[root.header.Root] != root || root.scanEpoch != root.epoch || !root.done || root.reported {',
-        'if !root.done || root.reported {',
+        'if c.roots[root.header.Root] != root || root.scanEpoch != root.epoch || !root.done || root.reported || root.pending != 0 {',
+        'if !root.done || root.reported || root.pending != 0 {',
         'TestCatalogObsoletePassCannotSweepCurrentRoot',
         'superseded root completion deleted current-root input or published readiness'),
     'refusal-without-input-fence': (
@@ -38,7 +38,7 @@ VARIANTS = {
         'file.opened, file.blocked = false, false\n\t\t\tfile.seen = c.roots[root].membership.Observe()',
         'file.opened, file.blocked = false, false',
         'TestCatalogObservesSavedBufferAfterScannedDirectory',
-        'scan completion deleted a closed authoritative input before its disk read'),
+        'completed close reconciliation deleted a file observed by the saved buffer'),
     'incomplete-scan-sweep': (
         'catalog_discovery.go',
         'root.membership.Finish(root.scanPass, root.problem == "" && root.scanProblem == "")',

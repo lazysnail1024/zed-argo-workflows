@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Independent black-box CLI/LSP audit. No production imports or expected-value derivation."""
-import hashlib, json, pathlib, queue, subprocess, sys, threading, time, traceback, shutil
+import hashlib, json, os, pathlib, queue, subprocess, sys, threading, time, traceback, shutil
 
 HERE = pathlib.Path(__file__).resolve().parent
 BINARY = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else HERE / 'argo-workflows-ls').resolve()
@@ -8,6 +8,7 @@ OUT = pathlib.Path(sys.argv[2] if len(sys.argv) > 2 else HERE.parent.parent / 'a
 OVERRIDE = ''
 OUT.mkdir(parents=True, exist_ok=True)
 RESULTS = []
+SELECTED = set(filter(None, os.environ.get('WF_QUICKFIX_CASES', '').split(',')))
 CONFIG = 'schemaVersion: 1\ntargetVersion: "3.6.0"\nreferencePolicy: closed\n'
 
 def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -169,6 +170,7 @@ def edits(client, response, text, path, version=1):
     return outputs
 
 def scalar_case(name, text, needle, expected, files=None, config=CONFIG, stale=False, incomplete=False):
+    if SELECTED and name not in SELECTED: return
     dest, work = setup(name, {'case.yaml': text, **(files or {})}, config)
     client = LSP(dest, work)
     try:
@@ -176,6 +178,11 @@ def scalar_case(name, text, needle, expected, files=None, config=CONFIG, stale=F
         response = actions(client,path,text,needle,ds)
         got = edits(client,response,text,path)
         assertions = {'request_succeeded':isinstance(response.get('result'),list),'exact_candidate_bytes': sorted(got)==sorted(expected), 'disk_unchanged':path.read_bytes().decode()==text}
+        if expected:
+            assertions['incomplete_peer_still_reported' if incomplete else 'cli_after_contract'] = False
+            assertions['target_removed'] = False
+            if stale:
+                assertions.update(independent_peer_keeps_local_edit=False, stale_rejected=False)
         if expected and got:
             if stale:
                 dependency=work/'new.yaml'
@@ -200,6 +207,7 @@ def scalar_case(name, text, needle, expected, files=None, config=CONFIG, stale=F
     finally:client.close()
 
 def pin_case(name,config,needle,expected,override='',change=False,closed=False,expected_version='3.6.0'):
+    if SELECTED and name not in SELECTED: return
     global OVERRIDE
     OVERRIDE=override
     dest,work=setup(name,{'dev/case.yaml':BASE.replace('missing','first')},config)
@@ -227,9 +235,11 @@ def pin_case(name,config,needle,expected,override='',change=False,closed=False,e
         response=actions(client,path,config,needle)
         got=edits(client,response,config,path,7) if not closed else []
         assertions={'request_succeeded':closed or isinstance(response.get('result'),list),'exact_pin_bytes':got==expected,'disk_unchanged':{p.relative_to(work):p.read_bytes() for p in work.rglob('*') if p.is_file()}==disk_before}
+        if expected:
+            assertions.update(persisted_without_override=False, stale_rejected=False, target_preserved=False)
         if not expected and not closed:assertions['no_pin_action']=response.get('result')==[]
         if closed:assertions['closed_refused']='error' in response or response.get('result')==[]
-        if got:
+        if expected and got:
             persisted=dest/'persisted-input'
             if persisted.exists(): shutil.rmtree(persisted)
             shutil.copytree(work,persisted)
@@ -253,6 +263,7 @@ try:
     scalar_case('enum-candidates',ENUM,'Bogus',[ENUM.replace('Bogus',v) for v in EXPECTED['enum']],stale=True)
     scalar_case('enum-valid',ENUM.replace('Bogus','Never'),'Never',[])
     scalar_case('enum-block-scalar',ENUM.replace('artifactGC: {strategy: Bogus}','artifactGC:\n    strategy: |-\n      Bogus'),'Bogus',[])
+    scalar_case('reference-block-scalar',BASE.replace('entrypoint: missing', 'entrypoint: |-\n    missing'),'missing',[])
     scalar_case('enum-foreign-gvk',ENUM.replace('argoproj.io/v1alpha1','foreign.io/v1'),'Bogus',[])
     external='''apiVersion: argoproj.io/v1alpha1
 kind: Workflow
@@ -294,4 +305,5 @@ finally:
     files={str(p.relative_to(OUT)):sha(p) for p in OUT.rglob('*') if p.is_file() and p.name not in ('manifest.json','results.json')}
     save(OUT/'manifest.json',{'command':[sys.executable,str(pathlib.Path(__file__).resolve()),str(BINARY),str(OUT)],'pythonVersion':sys.version,'binarySha256':sha(BINARY),'testSha256':sha(pathlib.Path(__file__)),'expectedSha256':sha(HERE/'wf-quickfixes.expected.json'),'files':files})
     (OUT/'rerun.txt').write_text(f'python3 {pathlib.Path(__file__).resolve()} {BINARY} {OUT}\n')
-    sys.exit(0 if len(RESULTS)==31 and all(r['pass'] for r in RESULTS) else 1)
+    complete = {row['case'] for row in RESULTS} == SELECTED if SELECTED else len(RESULTS) == 32
+    sys.exit(0 if complete and RESULTS and all(r['pass'] for r in RESULTS) else 1)

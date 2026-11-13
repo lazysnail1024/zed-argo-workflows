@@ -40,6 +40,7 @@ NATIVE = (
     "wf-resource-rename", "wf-catalog-queries", "wf-symbol-query-budget",
 )
 EXTENDED = (
+    "wf2-targets", "wf3-yaml", "wf4-external-lsp",
     "wf-audit-gaps", "wf-lifecycle", "wf-lifecycle-gaps",
     "wf-shutdown-active", "wf-bounded-config", "wf-bounded-input-files",
     "wf-bounded-scope-identity", "wf-bounded-schema-lifetime",
@@ -70,6 +71,24 @@ AGGREGATED = {
     "wf-inheritance-family-boundaries": "case", "wf-aggregate-family": "version",
     "wf-dag-dependency-family": "version", "wf-dag-dependency-boundaries": "case",
 }
+AGGREGATED_CASES = {
+    "wf-argument-supply": ["path-without-literal", "path-literal-control", "configmap-supply-control"],
+    "wf-inheritance-family-boundaries": [
+        "admission", "forwarding", "template-empty", "default-clearing", "public-globals",
+        "exit-context", "visited-bodies", "forms-34", "forms-35", "absent-marker",
+        "base-winning-empty-3.2.3", "base-winning-override-3.2.3",
+        "base-winning-empty-3.2.4", "base-winning-override-3.2.4",
+        "base-winning-empty-3.6.0", "base-winning-override-3.6.0", "independent-errors",
+    ],
+    "wf-dag-dependency-boundaries": [
+        "omitted-before", "omitted-after", "skipped-rename", "AnySucceeded-then-bare",
+        "bare-then-AnySucceeded", "AllFailed-then-bare", "bare-then-AllFailed",
+        "two-items-results-one-error", "loop-two-occurrences", "two-forbidden-fields",
+        "duplicate-loop-second", "duplicate-loop-first", "projected-loop", "alias-depends-no-token",
+    ],
+}
+AGGREGATED_VERSION_COUNTS = {"wf-inheritance-family": 44, "wf-aggregate-family": 28,
+                             "wf-dag-dependency-family": 28}
 MULTI_VERSION_SHARDS = 4
 
 
@@ -141,16 +160,25 @@ def checked(argv, evidence, **kwargs):
     return (evidence / "stdout.log").read_text(encoding="utf-8")
 
 
-def validate_results(path, *, pass_key="pass", assertion_key="assertions", require_assertions=False):
+def validate_results(path, *, pass_key="pass", assertion_key="assertions", require_assertions=True):
     """Never accept exit zero, missing evidence, empty rows, or truthy strings."""
     rows = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(rows, dict):
         rows = [rows]
     if not isinstance(rows, list) or not rows:
         raise ValueError("expected nonempty semantic results")
+    identities = set()
     for row in rows:
         if not isinstance(row, dict) or row.get(pass_key) is not True:
             raise ValueError(f"failed semantic result: {row}")
+        identity = tuple((key, str(row[key])) for key in ("case", "name", "version", "assertion", "sample", "tool") if key in row)
+        if not identity and len(rows) != 1:
+            raise ValueError("multiple semantic results require distinct case identities")
+        if identity and identity in identities:
+            raise ValueError(f"duplicate semantic result: {identity}")
+        identities.add(identity)
+        if any(row.get(key) for key in ("fatal", "error", "timedOut", "harnessKilled")):
+            raise ValueError(f"consumer infrastructure failure: {row}")
         if require_assertions or assertion_key in row:
             assertions = row.get(assertion_key)
             if not isinstance(assertions, dict) or not assertions or not all(v is True for v in assertions.values()):
@@ -158,16 +186,76 @@ def validate_results(path, *, pass_key="pass", assertion_key="assertions", requi
     return len(rows)
 
 
-def consumer_results(name, destination):
-    if name in ("wf-mixed-parent-index", "wf-persistent-workspace"):
-        return validate_results(destination / "results.json", assertion_key="checks", require_assertions=True)
+RESULT_ID_KEYS = ("case", "name", "version", "assertion", "sample", "tool")
+
+
+def verify_result_contract(name, path):
+    """Compare against the parent-owned selection, never the child's declaration."""
+    contracts = json.loads((ROOT / "tests/ci/contracts.json").read_text(encoding="utf-8"))["consumers"]
+    expected = contracts[name]
+    actual = json.loads(path.read_text(encoding="utf-8"))
+    actual = actual if isinstance(actual, list) else [actual]
+    if expected.get("selection") == "catalog-assets":
+        catalog = json.loads((ROOT / "compat/catalog.lock.json").read_text(encoding="utf-8"))
+        identities = [{"assertion": value} for value in (
+            "every final version tag in the latest two majors exactly once", "automatic default", "all official CRD kinds")]
+        identities += [{"version": version["version"], "assertion": "source hash " + source["path"]}
+                       for version in catalog["versions"] for source in version["sources"]]
+        identities += [{"version": version, "assertion": "CronWorkflow schedules availability"}
+                       for version in ("3.5.0", "3.6.0", "4.1.6")]
+        expected = {"assertionKey": "assertions", "rows": [
+            {"id": identity, "assertions": [identity["assertion"]]} for identity in identities]}
+    if expected.get("linuxAssertions") and platform.system() != "Linux":
+        # /proc-backed memory observations belong to the existing Linux contract.
+        # The portable semantic and timing assertions remain mandatory elsewhere.
+        expected["rows"] = [{**row, "assertions": [key for key in row["assertions"]
+                            if key not in expected["linuxAssertions"]]} for row in expected["rows"]]
+    identities = [{key: row[key] for key in RESULT_ID_KEYS if key in row} for row in actual]
+    if "identities" in expected:
+        observed, required = identities, expected["identities"]
+    else:
+        assertion_key = expected["assertionKey"]
+        observed = [{"id": identity, "assertions": sorted(row[assertion_key])}
+                    for identity, row in zip(identities, actual)]
+        required = expected["rows"]
+    canonical = lambda values: sorted(json.dumps(value, sort_keys=True) for value in values)
+    if canonical(observed) != canonical(required):
+        raise ValueError(f"{name}: incomplete or changed case/assertion selection")
+
+
+def verify_consumer_identity(name, destination, binary):
+    """Bind each result to the actual executable and consumer selected by CI."""
+    records = []
+    for filename in ("manifest.json", "provenance.json", "results.json", "report.json"):
+        path = destination / filename
+        if path.is_file():
+            value = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(value, dict):
+                records.append(value)
+    binary_keys = ("binarySha256", "binarySHA256", "nativeSha256")
+    test_keys = ("testSha256", "testSHA256", "consumerSha256", "consumerSHA256")
+    for keys, expected, label in ((test_keys, sha(E2E / (name + ".py")), "consumer"),
+                                   (binary_keys, sha(binary), "native binary")):
+        if label == "native binary" and name == "wf2-assets":
+            continue  # This source-asset oracle deliberately does not execute a server.
+        values = [record[key] for record in records for key in keys if key in record]
+        if not values or any(value != expected for value in values):
+            raise ValueError(f"{name}: evidence does not match the selected {label}")
+
+
+def consumer_results(name, destination, binary=None):
+    if binary is not None:
+        verify_consumer_identity(name, destination, binary)
     if name not in AGGREGATED:
-        return validate_results(destination / "results.json")
+        key = "checks" if name in ("wf-mixed-parent-index", "wf-persistent-workspace") else "assertions"
+        count = validate_results(destination / "results.json", assertion_key=key)
+        verify_result_contract(name, destination / "results.json")
+        return count
     key = AGGREGATED[name]
     rows = json.loads((destination / "results.json").read_text(encoding="utf-8"))
     manifest = json.loads((destination / "manifest.json").read_text(encoding="utf-8"))
-    expected = manifest["expectedTargets" if key == "version" else "expectedCases"]
-    if not rows or not expected or [row[key] for row in rows] != expected:
+    expected = ["3.6.0"] if key == "version" else AGGREGATED_CASES[name]
+    if manifest.get("expectedTargets" if key == "version" else "expectedCases") != expected or not rows or [row[key] for row in rows] != expected:
         raise ValueError("worker selection is empty or incomplete")
     count = 0
     for row in rows:
@@ -175,8 +263,12 @@ def consumer_results(name, destination):
             raise ValueError("worker did not execute successfully")
         folder = destination / row[key]
         count += validate_results(folder / "result.json", assertion_key="checks", require_assertions=True)
-        if (folder / "case-results.json").exists():
-            count += validate_results(folder / "case-results.json", assertion_key="checks")
+        if key == "version":
+            result = json.loads((folder / "result.json").read_text(encoding="utf-8"))
+            case_count = validate_results(folder / "case-results.json", assertion_key="checks")
+            if result.get("caseCount") != AGGREGATED_VERSION_COUNTS[name] or case_count != AGGREGATED_VERSION_COUNTS[name]:
+                raise ValueError("missing or incomplete family member results")
+            count += case_count
     return count
 
 
@@ -289,6 +381,8 @@ def verify_multi_version_shards(destination, binary, shard_count=MULTI_VERSION_S
 
 def multi_version_consumer(args):
     destination = args.output / "wf-multi-version"
+    if destination.exists():
+        raise ValueError(f"refusing stale version evidence: {destination}")
     shard_rows = []
     for index in range(MULTI_VERSION_SHARDS):
         name = f"wf-multi-version-shard-{index}"
@@ -431,6 +525,8 @@ def suite(args):
             summary(args.output, rows, args.suite + " E2E")
             continue
         destination = args.output / name
+        if destination.exists():
+            raise ValueError(f"refusing stale consumer evidence: {destination}")
         argv = [sys.executable, E2E / (name + ".py"), args.binary, destination]
         if name in ("wf-inheritance-family", "wf-aggregate-family", "wf-dag-dependency-family"):
             argv += ["--targets", "3.6.0"]
@@ -444,9 +540,9 @@ def suite(args):
         row = command(argv, args.output / "logs" / name, timeout=300, env=env)
         row["name"] = name
         try:
-            row["caseCount"] = consumer_results(name, destination)
+            row["caseCount"] = consumer_results(name, destination, args.binary)
             row["resultsSha256"] = sha(destination / "results.json")
-        except (OSError, ValueError, TypeError):
+        except (OSError, ValueError, TypeError, KeyError, IndexError):
             row["pass"] = False
             row["evidenceError"] = traceback.format_exc()
             print(row["evidenceError"], flush=True)
@@ -482,8 +578,36 @@ def package(args):
     return True
 
 
+def mutation_selection(group):
+    """The current source registry, rather than a child report, selects the gate."""
+    sys.path.insert(0, str(E2E))
+    try:
+        driver = "legacy_mutations.py" if group == "legacy" else "mutation_support.py"
+        namespace = runpy.run_path(str(E2E / driver))
+    finally:
+        sys.path.pop(0)
+    registry = namespace["LEGACY_MUTATIONS" if group == "legacy" else "MUTATIONS"]
+    return [value.name for value in registry if value.group == group]
+
+
+def verify_mutation_contract(group, report):
+    expected = mutation_selection(group)
+    variants = report.get("variants", [])
+    names = [row.get("variant") for row in variants]
+    if (not expected or report.get("selected") != expected or len(names) != len(expected)
+            or len(set(names)) != len(names) or set(names) != set(expected)):
+        raise ValueError("incomplete or duplicate mutation selection for " + group)
+    if report.get("pass") is not True or not all(
+            row.get("status") == "killed" and row.get("detected") is True for row in variants):
+        raise ValueError("every selected mutation must be semantically detected")
+    return len(expected)
+
+
 def mutations(args):
-    argv = [sys.executable, E2E / "ablate-ci.py", args.group, args.output / "gate"]
+    driver = "legacy_mutations.py" if args.group == "legacy" else "ablate-ci.py"
+    argv = [sys.executable, E2E / driver, "all" if args.group == "legacy" else args.group, args.output / "gate"]
+    if args.tools:
+        argv += ["--tools", args.tools]
     if args.group == "resources":
         if platform.system() != "Linux":
             raise ValueError("resource mutation gate requires Linux")
@@ -496,41 +620,21 @@ def mutations(args):
     row = command(argv, args.output / "driver", timeout=1200)
     row["name"] = args.group + " mutations"
     report_path = args.output / "gate/results.json"
-    if report_path.exists():
+    try:
         report = json.loads(report_path.read_text(encoding="utf-8"))
-        variants = report.get("variants", [])
-        row["pass"] = row["pass"] and report.get("pass") is True and bool(variants)
-        row["pass"] = row["pass"] and len(variants) == len(report.get("selected", []))
-        row["pass"] = row["pass"] and all(v.get("status") == "killed" and v.get("detected") is True for v in variants)
-        row["caseCount"] = len(variants)
-    else:
+        row["caseCount"] = verify_mutation_contract(args.group, report)
+    except (OSError, ValueError, KeyError, TypeError):
         row["pass"] = False
+        row["evidenceError"] = traceback.format_exc()
     rows = [row]
     if args.group == "audit" and row["pass"]:
         baseline = args.output / "gate/baseline" / ("server.exe" if os.name == "nt" else "server")
         for name, count in (("shared-yaml-projection", 2), ("catalog-queries", 7), ("responsive-editing", 4)):
             destination = args.output / name
             script = E2E / ("ablate-" + name + ".py")
-            passing_baseline = None
-            if name == "shared-yaml-projection":
-                baseline_output = args.output / "shared-yaml-baseline"
-                passing_baseline = command([sys.executable, E2E / "wf-shared-yaml-projection.py", baseline, baseline_output],
-                                           args.output / "shared-yaml-baseline-driver", timeout=180)
-                passing_baseline["name"] = "shared YAML baseline"
-                try:
-                    passing_baseline["caseCount"] = validate_results(baseline_output / "results.json", require_assertions=True)
-                    passing_baseline["pass"] = passing_baseline["pass"] and passing_baseline["caseCount"] == 4
-                except (OSError, ValueError, TypeError):
-                    passing_baseline["pass"] = False
-                    passing_baseline["evidenceError"] = traceback.format_exc()
-                if not passing_baseline["pass"]:
-                    rows.append(passing_baseline)
-                    continue
-            command_args = [sys.executable, script, destination] if name == "shared-yaml-projection" else [sys.executable, script, baseline, destination]
+            command_args = [sys.executable, script, destination, "--binary", baseline] if name == "shared-yaml-projection" else [sys.executable, script, baseline, destination]
             extra = command(command_args, args.output / (name + "-driver"), timeout=600)
             extra["name"] = name + " mutations"
-            if passing_baseline is not None:
-                extra["baseline"] = passing_baseline
             try:
                 report_file = destination / ("results.json" if name == "shared-yaml-projection" else "report.json")
                 evidence = json.loads(report_file.read_text(encoding="utf-8"))
@@ -548,6 +652,21 @@ def mutations(args):
                 extra["evidenceError"] = traceback.format_exc()
             rows.append(extra)
             summary(args.output, rows, args.group + " semantic mutation gate")
+    if args.group == "audit" and row["pass"]:
+        destination = args.output / "shared-lifecycle"
+        extra = command([sys.executable, E2E / "ablate-shared-lifecycle.py", destination],
+                        args.output / "shared-lifecycle-driver", timeout=600)
+        extra["name"] = "shared-lifecycle mutations"
+        try:
+            evidence = json.loads((destination / "results.json").read_text(encoding="utf-8"))
+            values = evidence.get("results", [])
+            extra["pass"] = extra["pass"] and evidence.get("positive") is True and len(values) == 7 and all(
+                value.get("compiled") is True and value.get("detected") is True for value in values)
+            extra["caseCount"] = len(values)
+        except (OSError, ValueError, TypeError):
+            extra["pass"] = False
+            extra["evidenceError"] = traceback.format_exc()
+        rows.append(extra)
     return summary(args.output, rows, args.group + " semantic mutation gate")
 
 
@@ -563,10 +682,13 @@ def schema(args):
     rows = []
     for name, script, binary, extra in cases:
         destination = args.output / name
+        if destination.exists():
+            raise ValueError(f"refusing stale schema evidence: {destination}")
         row = command([sys.executable, E2E / (script + ".py"), binary, destination, *extra],
                       args.output / "logs" / name, timeout=300)
         row["name"] = name
         try:
+            verify_consumer_identity(script, destination, binary)
             row["caseCount"] = validate_results(destination / "results.json")
         except (OSError, ValueError, TypeError) as error:
             row.update({"pass": False, "evidenceError": str(error)})
@@ -588,7 +710,8 @@ def main():
     p = sub.add_parser("package")
     p.add_argument("--binary", type=Path, required=True)
     p = sub.add_parser("mutations")
-    p.add_argument("--group", choices=("core", "audit", "resources"), required=True)
+    p.add_argument("--group", choices=("core", "audit", "contracts", "legacy", "resources"), required=True)
+    p.add_argument("--tools", type=Path, help="directory with pinned offline Argo/Helm tools")
     p = sub.add_parser("schema")
     p.add_argument("--binary", type=Path, required=True)
     for p in sub.choices.values():

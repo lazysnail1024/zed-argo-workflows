@@ -208,22 +208,30 @@ def run_rename(name, text):
         ds = lsp.open(file, text)
         position = pos(text, 'name: cleanup', offset=7)
         response = lsp.request('textDocument/rename', {'textDocument': {'uri': uri}, 'position': position, 'newName': 'tidy'})
+        checks = {'baseline_official_valid': before == 0, 'all_static_references_updated': False,
+                  'official_remains_valid': False, 'disk_unchanged': file.read_bytes() == text.encode()}
         if 'error' in response:
-            result(name, {'baseline_official_valid': before == 0, 'safe_refusal': response['error'].get('code') == -32602 and bool(response['error'].get('message')) and 'result' not in response}, response)
+            result(name, checks, response)
         else:
             changed = apply(text, response['result'], uri, 1)
             after_path = dest / 'after.yaml'; after_path.write_bytes(changed.encode('utf-8'))
             after = official(dest, after_path, 'official-after')
             after_ds = lsp.change(file, changed, 2)
             expected = text.replace('onExit: cleanup', 'onExit: tidy').replace('name: cleanup', 'name: tidy')
-            result(name, {'baseline_official_valid': before == 0, 'all_static_references_updated': changed == expected, 'official_remains_valid': after == 0, 'disk_unchanged': file.read_text() == text}, {'beforeDiagnostics': ds, 'afterDiagnostics': after_ds, 'response': response, 'officialAfterExit': after})
+            checks.update(all_static_references_updated=changed == expected, official_remains_valid=after == 0)
+            result(name, checks, {'beforeDiagnostics': ds, 'afterDiagnostics': after_ds, 'response': response, 'officialAfterExit': after})
     finally: lsp.close()
 
-def run_fix(incomplete=False):
-    name = 'incomplete-scope-field-fix' if incomplete else 'fieldfix-external'
+def run_fix(incomplete=False, complete_control=False):
+    name = 'complete-scope-field-fix' if complete_control else 'incomplete-scope-field-fix' if incomplete else 'fieldfix-external'
     text = CALLER.replace('template: work}', 'template: work, clusterScop: true}')
     files = {'case.yaml': text, 'base.yaml': BASE}
-    if incomplete: files['broken.yaml'] = 'apiVersion: [\n'
+    if incomplete:
+        # The corrected reference resolves a real cluster library. Its edit is
+        # otherwise safe; only the incomplete scope prevents this semantic fix.
+        files['base.yaml'] = BASE.replace('kind: WorkflowTemplate', 'kind: ClusterWorkflowTemplate')
+        if not complete_control:
+            files['broken.yaml'] = 'apiVersion: argoproj.io/v1alpha1\nkind: Workflow\nmetadata: {name: broken}\nspec: [\n'
     dest, work = setup(name, files)
     before_code, before = cli(dest, work, 'check-before', 'case.yaml')
     file = work / 'case.yaml'; uri = file.as_uri(); lsp = LSP(dest, work)
@@ -232,16 +240,22 @@ def run_fix(incomplete=False):
         p = pos(text, 'clusterScop')
         response = lsp.request('textDocument/codeAction', {'textDocument': {'uri': uri}, 'range': {'start': p, 'end': p}, 'context': {'diagnostics': ds}})
         choices = [a for a in response.get('result', []) if 'clusterScope' in a['title']]
-        if incomplete:
-            result(name, {'semantic_fix_withheld_while_scope_incomplete': isinstance(response.get('result'), list) and not choices and 'error' not in response}, {'beforeDiagnostics': ds, 'actionResponse': response})
-        elif not choices:
-            result(name, {'unsafe_fix_withheld': isinstance(response.get('result'), list) and 'error' not in response, 'baseline_has_no_external_error': not any(c == 'WF_TEMPLATE_REF_UNRESOLVED' and s == 'Error' for c, s in wf(before['diagnostics']))}, response)
+        if complete_control:
+            checks = {'one_safe_fix': len(choices) == 1 and 'error' not in response, 'exact_fix_bytes': False}
+            if len(choices) == 1:
+                resolved = lsp.request('codeAction/resolve', choices[0])
+                if 'edit' in resolved.get('result', {}):
+                    changed = apply(text, resolved['result']['edit'], uri, 1)
+                    checks['exact_fix_bytes'] = changed == text.replace('clusterScop:', 'clusterScope:')
+            result(name, checks, {'beforeDiagnostics': ds, 'actionResponse': response})
+        elif incomplete:
+            result(name, {'scope_incomplete_observed': before_code == 2 and before['analysisComplete'] is False and bool(before['notEvaluated']),
+                          'semantic_fix_withheld_while_scope_incomplete': isinstance(response.get('result'), list) and not choices and 'error' not in response}, {'beforeDiagnostics': ds, 'actionResponse': response})
         else:
-            resolved = lsp.request('codeAction/resolve', choices[0])
-            changed = apply(text, resolved['result']['edit'], uri, 1)
-            (dest / 'after.yaml').write_bytes(changed.encode('utf-8'))
-            ds_after = lsp.change(file, changed, 2)
-            result(name, {'baseline_has_no_external_error': not any(c == 'WF_TEMPLATE_REF_UNRESOLVED' and s == 'Error' for c, s in wf(before['diagnostics'])), 'exact_fix_bytes': changed == text.replace('clusterScop:', 'clusterScope:'), 'fix_adds_no_error': not any(d['severity'] == 1 for d in ds_after)}, {'beforeDiagnostics': ds, 'afterDiagnostics': ds_after, 'resolved': resolved})
+            # This independently constructed namespaced library cannot resolve
+            # as a cluster resource. Offering the correction is itself unsafe.
+            result(name, {'unsafe_fix_withheld': isinstance(response.get('result'), list) and not choices and 'error' not in response,
+                          'baseline_has_no_external_error': not any(c == 'WF_TEMPLATE_REF_UNRESOLVED' and s == 'Error' for c, s in wf(before['diagnostics']))}, response)
     finally: lsp.close()
 
 def run_scopes():
@@ -323,6 +337,7 @@ def main():
         run_rename('rename-step-onexit', steps)
         run_fix()
         run_fix(incomplete=True)
+        run_fix(incomplete=True, complete_control=True)
         run_scopes()
         run_unsupported()
         run_alias()
@@ -331,6 +346,6 @@ def main():
         result('runner-error', {'completed': False}, {'error': repr(e), 'traceback': traceback.format_exc()})
     finally:
         save(OUT / 'manifest.json', {'command': sys.argv, 'pythonVersion': sys.version, 'binary': str(BINARY), 'binarySha256': sha(BINARY), 'officialArgoBinary': str(ARGO), 'officialArgoSha256': sha(ARGO), 'testSha256': sha(pathlib.Path(__file__)), 'expectationsSha256': sha(HERE/'wf-audit-gaps.expected.json'), 'inputs': {str(p.relative_to(OUT)):sha(p) for p in OUT.rglob('*') if p.is_file() and ('/input/' in str(p) or p.name=='after.yaml')}, 'cases': len(RESULTS), 'passed': sum(r['pass'] for r in RESULTS), 'scope': 'CLI and standard LSP, no GUI or release acceptance'})
-    return 0 if len(RESULTS) == 11 and all(r['pass'] for r in RESULTS) else 1
+    return 0 if len(RESULTS) == 12 and all(r['pass'] for r in RESULTS) else 1
 
 if __name__ == '__main__': sys.exit(main())

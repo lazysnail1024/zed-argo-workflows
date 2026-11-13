@@ -38,9 +38,72 @@ class Mutation:
     args: tuple[str, ...] = ()
     env: dict[str, str] = field(default_factory=dict)
     timeout: int = 240
+    tool: str = ""
 
 
 MUTATIONS = (
+    Mutation(
+        "toolkit-depth-boundary", "contracts", "ablate-toolkit-budget.py",
+        "vendor/github.com/lazysnail1024/k8s-crd-toolkit/yamlview/internal/parser/parser.go",
+        (("if depth > 256 {", "if depth >= 256 {"),),
+        "wf-toolkit-budget.py", (("cli-depth-at-limit", "complete"),),
+    ),
+    Mutation(
+        "schema-validator", "contracts", "ablate-wf3.py", "internal/analysis/schema.go",
+        (("if err = schema.Validate(value); err != nil {", "if err = schema.Validate(value); err != nil && false {"),),
+        "wf3-schema.py", (("mixed", "type_error"),),
+    ),
+    Mutation(
+        "yaml-explicit-tag", "contracts", "ablate-yaml.py", "internal/analysis/projection.go",
+        (("RejectExplicitTags: true", "RejectExplicitTags: false"),),
+        "wf-shared-yaml-projection.py", (("explicit-standard-tag", "cliRefusal"),),
+    ),
+    Mutation(
+        "field-existing-key", "contracts", "ablate-fields.py", "internal/analysis/queries.go",
+        (("!field.existing[name] &&", "true &&"),),
+        "wf3-lsp.py", (("stdio-buffer-lifecycle", "field_completion"),),
+    ),
+    Mutation(
+        "scope-overlap", "contracts", "ablate-workspace.py", "internal/workspace/config.go",
+        (("if count > 1 {", "if count > 1 && false {"),),
+        "wf3-workspace.py", (("overlap", "reject"),),
+    ),
+    Mutation(
+        "external-namespace", "contracts", "ablate-external.py", "internal/analysis/external.go",
+        (("externalIdentity{candidate.document.Target.ID, candidate.kind, namespace, candidate.name}",
+          "externalIdentity{candidate.document.Target.ID, candidate.kind, namespace[:0], candidate.name}"),
+         ("externalIdentity{caller.document.Target.ID, wantedKind, namespace, name}",
+          "externalIdentity{caller.document.Target.ID, wantedKind, namespace[:0], name}")),
+        "wf4-external.py", (("wrong-namespace", "externalResolution"),),
+    ),
+    Mutation(
+        "inherited-arguments", "contracts", "ablate-inheritance.py", "internal/analysis/external.go",
+        (('args = append(args, workflowMember(callee.semanticSpec, "arguments").value)',
+          '// inherited argument supply removed'),),
+        "wf4-inheritance.py", (("inherited", "diagnostics"),),
+    ),
+    Mutation(
+        "reference-visibility", "contracts", "ablate-references.py", "internal/analysis/references.go",
+        (('if !ok {\n\t\t\t\t\t\t\temit(node, "WF_REFERENCE_SCOPE"',
+          'if !ok && false {\n\t\t\t\t\t\t\temit(node, "WF_REFERENCE_SCOPE"'),),
+        "wf4-local.py", (("dagscope", "domainCodes"), ("stepscope", "domainCodes")),
+    ),
+    Mutation(
+        "official-version", "contracts", "ablate-official.py", "cmd/argo-workflows-ls/tools.go",
+        (('if toolVersion != "argo: v"+version {', 'if false && toolVersion != "argo: v"+version {'),),
+        "wf5-official.py", (("mismatch", "exit"),), tool="argo",
+    ),
+    Mutation(
+        "render-capabilities", "contracts", "ablate-render.py", "cmd/argo-workflows-ls/tools.go",
+        ((', "--kube-version", *kube', ''),),
+        "wf5-render.py", (("real-helm-render", "actual_capabilities"),), tool="helm",
+    ),
+    Mutation(
+        "closed-uri-pending", "contracts", "closed documents must receive an empty publication", "internal/lsp/publication.go",
+        (("func (s *session) publishEmpty(uri string) error {",
+          "func (s *session) publishEmpty(uri string) error {\n\tif _, opened := s.buffers[uri]; !opened { return nil }"),),
+        "wf-lifecycle-gaps.py", (("close-clear-interrupted-1", "closed_uri_cleared"),),
+    ),
     Mutation(
         "symbol-query-cap", "audit", "workspace display symbols retain their 20,000 result cap", "internal/lsp/catalog_symbols.go",
         (("const workspaceSymbolLimit = 20000", "const workspaceSymbolLimit = 20001"),),
@@ -328,7 +391,7 @@ def read_results(dest: Path) -> dict[str, dict]:
     return indexed
 
 
-def run_consumer(mutation: Mutation, binary: Path, dest: Path, env: dict[str, str], prefix: list[str]):
+def run_consumer(mutation: Mutation, binary: Path, dest: Path, env: dict[str, str], prefix: list[str], tools_dir=None):
     run = dest / "run"
     if run.exists():
         raise GateError(f"refusing to reuse old consumer evidence: {run}")
@@ -339,7 +402,8 @@ def run_consumer(mutation: Mutation, binary: Path, dest: Path, env: dict[str, st
     forwarded.update(mutation.env)
     selected_env = (["env", *(key + "=" + value for key, value in forwarded.items())]
                     if prefix and forwarded else [])
-    command = prefix + selected_env + [sys.executable, str(E2E / mutation.suite), str(binary), str(run), *mutation.args]
+    tool = [str(tools_dir / mutation.tool)] if mutation.tool else []
+    command = prefix + selected_env + [sys.executable, str(E2E / mutation.suite), str(binary), *tool, str(run), *mutation.args]
     receipt = execute(command, dest, env | mutation.env, ROOT, mutation.timeout)
     if receipt["timedOut"] or receipt["exitCode"] not in (0, 1):
         raise GateError(f"consumer infrastructure failure: {receipt}")
@@ -347,7 +411,14 @@ def run_consumer(mutation: Mutation, binary: Path, dest: Path, env: dict[str, st
 
 
 def classify(mutation: Mutation, baseline: dict[str, dict], actual: dict[str, dict], receipt: dict):
-    if not mutation.required or not baseline or not all(row["pass"] for row in baseline.values()):
+    return classify_results(mutation.required, baseline, actual, receipt)
+
+
+def classify_results(required, baseline: dict[str, dict], actual: dict[str, dict], receipt: dict):
+    """Classify named semantic changes after read_results rejected broken runs."""
+    if receipt.get("timedOut") or type(receipt.get("exitCode")) is not int or receipt["exitCode"] not in (0, 1):
+        raise GateError("consumer infrastructure failure cannot kill a mutation")
+    if not required or not baseline or not all(row["pass"] for row in baseline.values()):
         raise GateError("a nonempty passing baseline and explicit semantic requirements are mandatory")
     if set(actual) != set(baseline):
         raise GateError("baseline/mutant case sets differ; incomplete runs cannot kill a mutant")
@@ -355,7 +426,7 @@ def classify(mutation: Mutation, baseline: dict[str, dict], actual: dict[str, di
         if set(row["assertions"]) != set(actual[name]["assertions"]):
             raise GateError(f"{name}: baseline/mutant assertion sets differ")
     expected = []
-    for case, assertion in mutation.required:
+    for case, assertion in required:
         before = baseline.get(case, {}).get("assertions", {}).get(assertion)
         after = actual.get(case, {}).get("assertions", {}).get(assertion)
         if before is not True:
@@ -381,11 +452,12 @@ def build(go: str, source: Path, binary: Path, env: dict[str, str], timeout: int
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("group", choices=("core", "audit", "resources", "all"))
+    parser.add_argument("group", choices=("core", "audit", "contracts", "legacy", "resources", "all"))
     parser.add_argument("output", type=Path, help="new output directory (must not already exist)")
     parser.add_argument("--variants", nargs="+", help="exact names from the selected group; unknown names fail")
     parser.add_argument("--test-prefix-json", default="[]", help="JSON command prefix for consumers only; builds remain outside a memory cgroup")
     parser.add_argument("--build-timeout", type=int, default=600)
+    parser.add_argument("--tools", type=Path, help="explicit directory with checksum-pinned Argo/Helm tools")
     args = parser.parse_args(argv)
     candidates = [m for m in MUTATIONS if args.group == "all" or m.group == args.group]
     if args.variants:
@@ -395,6 +467,10 @@ def main(argv=None) -> int:
         candidates = [m for m in candidates if m.name in args.variants]
     if not candidates:
         parser.error("at least one mutation is required")
+    tools_dir = args.tools.resolve() if args.tools else None
+    for mutation in candidates:
+        if mutation.tool and (tools_dir is None or not (tools_dir / mutation.tool).is_file()):
+            parser.error("--tools must contain the pinned " + mutation.tool + " binary")
     prefix = json.loads(args.test_prefix_json)
     if not isinstance(prefix, list) or any(not isinstance(x, str) for x in prefix):
         parser.error("--test-prefix-json must be a JSON array of strings")
@@ -428,7 +504,7 @@ def main(argv=None) -> int:
                 key = (mutation.suite, mutation.args, tuple(sorted(mutation.env.items())))
                 if key not in baselines:
                     dest = out / "baseline" / mutation.name
-                    receipt, result = run_consumer(mutation, baseline_binary, dest, env, prefix)
+                    receipt, result = run_consumer(mutation, baseline_binary, dest, env, prefix, tools_dir)
                     if receipt["exitCode"] != 0 or not all(row["pass"] for row in result.values()):
                         raise GateError(f"baseline failed: {mutation.suite}; no mutation is accepted")
                     baselines[key] = result
@@ -461,7 +537,7 @@ def main(argv=None) -> int:
                     path.write_text(mutated, encoding="utf-8")
                     binary = dest / ("server.exe" if os.name == "nt" else "server")
                     row["build"] = build(go, source, binary, env, args.build_timeout)
-                    receipt, actual = run_consumer(mutation, binary, dest / "consumer", env, prefix)
+                    receipt, actual = run_consumer(mutation, binary, dest / "consumer", env, prefix, tools_dir)
                     row["consumer"] = receipt
                     row.update(classify(mutation, baselines[key], actual, receipt))
                 except Exception as error:
@@ -478,9 +554,7 @@ def main(argv=None) -> int:
     return 0 if report["pass"] else 1
 
 
-def legacy_main(variants: list[str], default_output: str):
+def legacy_main(variants: list[str], default_output: str, group="core"):
     """Keep selected historical entry points while using the same strict gate."""
     output = sys.argv[1] if len(sys.argv) > 1 else str(ROOT / "artifacts" / default_output)
-    if len(sys.argv) > 2:
-        raise SystemExit("usage: " + Path(sys.argv[0]).name + " [NEW_OUTPUT_DIRECTORY]")
-    return main(["core", output, "--variants", *variants])
+    return main([group, output, "--variants", *variants, *sys.argv[2:]])

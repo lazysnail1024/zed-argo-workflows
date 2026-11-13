@@ -81,7 +81,7 @@ def worker(version):
   code,report=m.cli(dest,work);checks=report_checks(code,report,expected,envelope,work,version);outcomes=[]
   for case in records:
    first=case['range']['start']['line'];last=case['range']['end']['line'];actual=[d for d in report['diagnostics'] if first<=d['range']['start']['line']<last]
-   keys=['uri','range','code','message','severity','source','positionKind','targetId'];outcomes.append({'case':case['case'],'pass':norm([{k:d[k] for k in keys} for d in actual])==norm(case['diagnostics'])})
+   keys=['uri','range','code','message','severity','source','positionKind','targetId'];matched=norm([{k:d[k] for k in keys} for d in actual])==norm(case['diagnostics']);outcomes.append({'case':case['case'],'checks':{'completeDiagnostics':matched},'pass':matched})
   checks['bytes']=path.read_bytes()==text.encode();m.save(dest/'case-results.json',outcomes)
  except Exception:fatal=traceback.format_exc();(dest/'error.txt').write_text(fatal)
  result={'version':version,'checks':checks,'caseCount':len(records),'pass':bool(checks) and all(checks.values()) and fatal is None,'fatal':fatal,'seconds':time.monotonic()-start};m.save(dest/'result.json',result);m.save(dest/'manifest.json',{'command':sys.argv,'nativeSha256':m.sha(m.BINARY),'consumerSha256':m.sha(Path(__file__)),'helperSha256':m.sha(HERE/'wf-audit-gaps.py'),'expectedSha256':m.sha(dest/'expected.json'),'inputSha256':m.sha(path),'configSha256':m.sha(work/'.argo-workflows-ls.yaml')});return 3 if fatal else 0 if result['pass'] else 1

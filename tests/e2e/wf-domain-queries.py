@@ -87,7 +87,7 @@ for name,marked,label in [('template','entrypoint: wo<CURSOR>','worker'),('param
  else:marked=head+'  templates:\n    - name: worker\n      inputs: {parameters: [{name: message, default: hello}]}\n      '+marked+' # keep\n'
  at=marked.index('<CURSOR>');text=marked.replace('<CURSOR>','');prefix='wo' if name=='template' else 'me';expected=text[:at-len(prefix)]+label+text[at:];dest,work=m.setup('completion-'+name,{'case.yaml':text});path=work/'case.yaml';client=m.LSP(dest,work)
  try:
-  client.open(path,text);r=client.request('textDocument/completion',{'textDocument':{'uri':path.as_uri()},'position':position(text,at)});items=[x for x in r.get('result',[]) if x['label']==label];checks={'unique':len(items)==1}
+  client.open(path,text);r=client.request('textDocument/completion',{'textDocument':{'uri':path.as_uri()},'position':position(text,at)});items=[x for x in r.get('result',[]) if x['label']==label];checks={'unique':len(items)==1,'exactBytes':False,'fullCLI':False}
   if len(items)==1:
    actual=m.apply(text,{'documentChanges':[{'textDocument':{'uri':path.as_uri(),'version':1},'edits':[items[0]['textEdit']]}]},path.as_uri(),1);checks['exactBytes']=actual==expected;(dest/'expected.yaml').write_bytes(expected.encode());(dest/'actual.yaml').write_bytes(actual.encode());path.write_bytes(actual.encode());run=m.command(dest,'check',[m.BINARY,'check','--root',work,'--format','json']);report=json.loads(run.stdout);checks['fullCLI']=run.returncode==0 and report['diagnostics']==[] and report['filesAnalyzed']==1 and report['resourcesAnalyzed']==1 and report['analysisComplete'] is True and not report['configurationErrors']
   m.result('completion-'+name,checks,{'response':r})

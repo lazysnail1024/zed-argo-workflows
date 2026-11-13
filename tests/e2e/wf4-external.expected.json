@@ -30,11 +30,19 @@
       "Warning"
     ]
   ],
-  "exitCode": 2,
   "unknown-namespace": [
     [
       "WF_TEMPLATE_REF_UNRESOLVED",
       "Information"
     ]
-  ]
+  ],
+  "exitCodes": {
+    "resolved": 0,
+    "missing-open": 0,
+    "missing-closed": 1,
+    "wrong-namespace": 0,
+    "missing-template": 1,
+    "ambiguous": 0,
+    "unknown-namespace": 0
+  }
 }

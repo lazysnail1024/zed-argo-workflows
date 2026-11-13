@@ -1,0 +1,416 @@
+{
+  "schemaVersion": 1,
+  "groups": [
+    {
+      "name": "native",
+      "role": "consumer",
+      "gate": "five native platforms",
+      "via": [
+        ".github/workflows/native.yml",
+        "tests/ci/run.py"
+      ],
+      "contract": "Actual CLI/stdio behavior, compatibility inventory, lifecycle, semantic edits and unchanged timing contracts.",
+      "files": [
+        "tests/e2e/wf1.py",
+        "tests/e2e/wf-multi-version.py",
+        "tests/e2e/wf3-lsp.py",
+        "tests/e2e/wf5-edits.py",
+        "tests/e2e/wf-delivery.py",
+        "tests/e2e/wf-remediation-semantics.py",
+        "tests/e2e/wf-remediation-lifecycle.py",
+        "tests/e2e/wf-remediation-rename.py",
+        "tests/e2e/wf-remediation-targets.py",
+        "tests/e2e/wf-default-target-provenance.py",
+        "tests/e2e/wf-schema-queries.py",
+        "tests/e2e/wf-schema-query-targets.py",
+        "tests/e2e/wf-domain-queries.py",
+        "tests/e2e/wf-quickfixes.py",
+        "tests/e2e/wf-local-rename.py",
+        "tests/e2e/wf-bounded-scalars.py",
+        "tests/e2e/wf-bounded-completion.py",
+        "tests/e2e/wf-toolkit-budget.py",
+        "tests/e2e/wf-remediation-helm-boundary.py",
+        "tests/e2e/wf-reaudit-rename.py",
+        "tests/e2e/wf-reaudit-actions.py",
+        "tests/e2e/wf-reaudit-queries.py",
+        "tests/e2e/wf-reaudit-reconciliation.py",
+        "tests/e2e/wf-report-deadline.py",
+        "tests/e2e/wf-diagnostic-ownership.py",
+        "tests/e2e/wf-diagnostic-deadline.py",
+        "tests/e2e/wf-index-boundaries.py",
+        "tests/e2e/wf-mixed-parent-index.py",
+        "tests/e2e/wf-persistent-workspace.py",
+        "tests/e2e/wf-persistent-slowio.py",
+        "tests/e2e/wf-shared-yaml-projection.py",
+        "tests/e2e/wf-responsive-editing.py",
+        "tests/e2e/wf-resource-rename.py",
+        "tests/e2e/wf-catalog-queries.py",
+        "tests/e2e/wf-symbol-query-budget.py"
+      ]
+    },
+    {
+      "name": "semantic",
+      "role": "consumer",
+      "gate": "Linux semantic shards",
+      "via": [
+        ".github/workflows/native.yml",
+        "tests/ci/run.py"
+      ],
+      "contract": "Independent behavior dimensions and pinned real Argo/Helm integration.",
+      "files": [
+        "tests/e2e/wf2-targets.py",
+        "tests/e2e/wf3-yaml.py",
+        "tests/e2e/wf4-external-lsp.py",
+        "tests/e2e/wf-audit-gaps.py",
+        "tests/e2e/wf-lifecycle.py",
+        "tests/e2e/wf-lifecycle-gaps.py",
+        "tests/e2e/wf-shutdown-active.py",
+        "tests/e2e/wf-bounded-config.py",
+        "tests/e2e/wf-bounded-input-files.py",
+        "tests/e2e/wf-bounded-scope-identity.py",
+        "tests/e2e/wf-bounded-schema-lifetime.py",
+        "tests/e2e/wf-bounded-external-counts.py",
+        "tests/e2e/wf-bounded-baseline.py",
+        "tests/e2e/wf-argument-supply.py",
+        "tests/e2e/wf-inheritance-family.py",
+        "tests/e2e/wf-inheritance-family-boundaries.py",
+        "tests/e2e/wf-aggregate-family.py",
+        "tests/e2e/wf-aggregate-transitions.py",
+        "tests/e2e/wf-dag-dependency-family.py",
+        "tests/e2e/wf-dag-dependency-boundaries.py",
+        "tests/e2e/wf-call-queries.py",
+        "tests/e2e/wf-inheritance-calls.py",
+        "tests/e2e/wf-inherited-workflow-parameters.py",
+        "tests/e2e/wf-domain-boundaries.py",
+        "tests/e2e/wf-domain-repair.py",
+        "tests/e2e/wf-domain-role-cardinality.py",
+        "tests/e2e/wf-domain-role-resources.py",
+        "tests/e2e/wf-domain-inexact-cardinality.py",
+        "tests/e2e/wf-domain-overlap.py",
+        "tests/e2e/wf-domain-ambiguous-references.py",
+        "tests/e2e/wf-domain-completion-context.py",
+        "tests/e2e/wf-domain-external-completion.py",
+        "tests/e2e/wf-domain-external-outputs.py",
+        "tests/e2e/wf-domain-external-references.py",
+        "tests/e2e/wf-external-candidates.py",
+        "tests/e2e/wf-semantic-origins.py",
+        "tests/e2e/wf-semantic-external-origins.py",
+        "tests/e2e/wf-semantic-external-arguments.py",
+        "tests/e2e/wf-semantic-shared-edits.py",
+        "tests/e2e/wf-projected-reference-diagnostics.py",
+        "tests/e2e/wf-projected-query-context.py",
+        "tests/e2e/wf-projected-lexical-bindings.py",
+        "tests/e2e/wf-query-fact-handoff.py",
+        "tests/e2e/wf-query-marker-collision.py",
+        "tests/e2e/wf-scope-glob-boundaries.py",
+        "tests/e2e/wf-preflight-budget.py",
+        "tests/e2e/wf-expr-error-text.py",
+        "tests/e2e/wf-schema-query-sibling.py",
+        "tests/e2e/wf-remediation-matrix.py",
+        "tests/e2e/wf-remediation-graph.py",
+        "tests/e2e/wf2-assets.py",
+        "tests/e2e/wf5-official.py",
+        "tests/e2e/wf5-render.py",
+        "tests/e2e/wf-remediation-render.py",
+        "tests/e2e/wf-reaudit-query-io.py"
+      ]
+    },
+    {
+      "name": "resources",
+      "role": "consumer",
+      "gate": "Linux adversarial/load/index/queries cgroups",
+      "via": [
+        ".github/workflows/native.yml",
+        "tests/ci/resources.py"
+      ],
+      "contract": "Enforced CPU/memory/no-swap envelopes, full workload counts, latency, process cleanup and retention.",
+      "files": [
+        "tests/e2e/wf-bounded-aggregate-input.py",
+        "tests/e2e/wf-bounded-expressions.py",
+        "tests/e2e/wf-bounded-expression-lsp.py",
+        "tests/e2e/wf-bounded-process.py",
+        "tests/e2e/wf-bounded-render-deadline.py",
+        "tests/e2e/wf-bounded-snapshot-budget.py",
+        "tests/e2e/wf-semantic-origin-budget.py",
+        "tests/e2e/wf-bounded-full.py",
+        "tests/e2e/wf-bounded-cancel.py",
+        "tests/e2e/wf-bounded-lsp-cold.py",
+        "tests/e2e/wf-bounded-lsp-load.py",
+        "tests/e2e/wf-bounded-active-latency.py",
+        "tests/e2e/wf-bounded-tool-scan.py",
+        "tests/e2e/wf-schema-query-load.py",
+        "tests/e2e/wf-domain-external-load.py",
+        "tests/e2e/wf-bounded-lsp-probe.py",
+        "tests/e2e/wf-external-candidate-density.py",
+        "tests/e2e/wf-inherited-parameter-density.py",
+        "tests/e2e/wf-exit-query-density.py",
+        "tests/e2e/wf-remediation-load.py",
+        "tests/e2e/wf-remediation-retention.py",
+        "tests/e2e/wf-query-handoff-retention.py"
+      ]
+    },
+    {
+      "name": "schema-contracts",
+      "role": "consumer",
+      "gate": "Linux actual/synthetic schema gate",
+      "via": [
+        ".github/workflows/native.yml",
+        "tests/ci/run.py"
+      ],
+      "contract": "Actual release schemas and deliberately synthetic schema query contracts have distinct binaries and evidence.",
+      "files": [
+        "tests/e2e/wf-schema-query-boundaries.py",
+        "tests/e2e/wf-schema-query-contract.py"
+      ]
+    },
+    {
+      "name": "mutation-baseline-consumers",
+      "role": "consumer",
+      "gate": "Linux mutation passing baselines",
+      "via": [
+        ".github/workflows/native.yml",
+        "tests/ci/run.py",
+        "tests/e2e/mutation_support.py"
+      ],
+      "contract": "Current implementation must pass before the same complete assertion set rejects a named single fault.",
+      "files": [
+        "tests/e2e/wf3-schema.py",
+        "tests/e2e/wf3-workspace.py",
+        "tests/e2e/wf4-local.py",
+        "tests/e2e/wf4-external.py",
+        "tests/e2e/wf4-inheritance.py",
+        "tests/e2e/wf-index-publication.py",
+        "tests/e2e/wf-domain-scope-budget.py"
+      ]
+    },
+    {
+      "name": "distribution",
+      "role": "consumer",
+      "gate": "five native platforms and Linux source isolation",
+      "via": [
+        ".github/workflows/native.yml",
+        "tests/ci/run.py"
+      ],
+      "contract": "Actual native archive extraction, identity, release inventory and editor-independent source boundaries.",
+      "files": [
+        "tests/e2e/native-package.py",
+        "tests/e2e/release-distribution.py",
+        "tests/native_isolation.py"
+      ]
+    },
+    {
+      "name": "compatibility-mutations",
+      "role": "consumer",
+      "gate": "Linux native negative controls",
+      "via": [
+        ".github/workflows/native.yml"
+      ],
+      "contract": "Real compatibility selectors and unknown-target refusal, with passing control.",
+      "files": [
+        "tests/e2e/wf-multi-version-ablation.py"
+      ]
+    },
+    {
+      "name": "supplemental-mutations",
+      "role": "driver",
+      "gate": "Linux audit mutations",
+      "via": [
+        ".github/workflows/native.yml",
+        "tests/ci/run.py"
+      ],
+      "contract": "Complete positive baseline and one named consumer assertion failure; compile errors/crashes/timeouts cannot count.",
+      "files": [
+        "tests/e2e/ablate-catalog-queries.py",
+        "tests/e2e/ablate-responsive-editing.py",
+        "tests/e2e/ablate-shared-yaml-projection.py",
+        "tests/e2e/ablate-shared-lifecycle.py"
+      ]
+    },
+    {
+      "name": "mutation-drivers",
+      "role": "driver",
+      "gate": "Linux core/audit/contracts/legacy/resources mutations",
+      "via": [
+        ".github/workflows/native.yml",
+        "tests/ci/run.py"
+      ],
+      "contract": "Unique current source selectors, isolated builds, stable case/assertion sets and named counterfactual failures.",
+      "files": [
+        "tests/e2e/ablate-ci.py",
+        "tests/e2e/mutation_support.py",
+        "tests/e2e/legacy_mutations.py"
+      ]
+    },
+    {
+      "name": "historical-aliases",
+      "role": "alias",
+      "gate": "compatibility aliases of mandatory mutation drivers",
+      "via": [
+        ".github/workflows/native.yml",
+        "tests/e2e/mutation_support.py",
+        "tests/e2e/legacy_mutations.py"
+      ],
+      "contract": "Old filenames select current strict contracts; they add no independent test credit and never accept compilation alone or arbitrary exit 1.",
+      "files": [
+        "tests/e2e/ablate-audit-gaps.py",
+        "tests/e2e/ablate-bounded.py",
+        "tests/e2e/ablate-domain-queries.py",
+        "tests/e2e/ablate-domain-repair.py",
+        "tests/e2e/ablate-domain-role-cardinality.py",
+        "tests/e2e/ablate-domain-scope.py",
+        "tests/e2e/ablate-edits.py",
+        "tests/e2e/ablate-external-candidates.py",
+        "tests/e2e/ablate-external.py",
+        "tests/e2e/ablate-fields.py",
+        "tests/e2e/ablate-inheritance.py",
+        "tests/e2e/ablate-lifecycle-fixes.py",
+        "tests/e2e/ablate-lifecycle.py",
+        "tests/e2e/ablate-local-rename.py",
+        "tests/e2e/ablate-local.py",
+        "tests/e2e/ablate-lsp.py",
+        "tests/e2e/ablate-official.py",
+        "tests/e2e/ablate-query-facts.py",
+        "tests/e2e/ablate-quickfixes.py",
+        "tests/e2e/ablate-references.py",
+        "tests/e2e/ablate-render.py",
+        "tests/e2e/ablate-resource-rename.py",
+        "tests/e2e/ablate-schema-queries.py",
+        "tests/e2e/ablate-schema-query-boundaries.py",
+        "tests/e2e/ablate-schema-query-sibling.py",
+        "tests/e2e/ablate-toolkit-budget.py",
+        "tests/e2e/ablate-wf2.py",
+        "tests/e2e/ablate-wf3.py",
+        "tests/e2e/ablate-workspace.py",
+        "tests/e2e/ablate-yaml.py"
+      ]
+    },
+    {
+      "name": "fixture-builders",
+      "role": "builder",
+      "gate": "Linux schema/resources inputs",
+      "via": [
+        ".github/workflows/native.yml",
+        "tests/ci/run.py",
+        "tests/ci/resources.py"
+      ],
+      "contract": "Produce synthetic schemas or exact workload bytes consumed by behavioral gates; successful generation is not semantic acceptance.",
+      "files": [
+        "tests/e2e/build-wf-query-contract.py",
+        "tests/e2e/wf-bounded-workload.py"
+      ]
+    },
+    {
+      "name": "go-unit",
+      "role": "unit",
+      "gate": "five native platforms; additional Linux race check",
+      "via": [
+        ".github/workflows/native.yml",
+        "tests/ci/run.py"
+      ],
+      "contract": "Deterministic schema/index/catalog/request consistency, cancellation, budgets and stream boundaries.",
+      "files": [
+        "internal/analysis/index_queries_test.go",
+        "internal/analysis/index_test.go",
+        "internal/assets/schema_test.go",
+        "internal/lsp/catalog_query_repair_test.go",
+        "internal/lsp/catalog_readiness_test.go",
+        "internal/lsp/catalog_symbols_test.go",
+        "internal/lsp/catalog_test.go",
+        "internal/lsp/memory_test.go",
+        "internal/lsp/request_consistency_test.go",
+        "internal/workspace/stream_test.go"
+      ]
+    },
+    {
+      "name": "ci-harness",
+      "role": "unit",
+      "gate": "five native platforms before build",
+      "via": [
+        ".github/workflows/native.yml"
+      ],
+      "contract": "Reject empty/partial/duplicate/truthy/stale evidence and keep every first-party entry classified.",
+      "files": [
+        "tests/ci/test_effectiveness.py",
+        "tests/ci/test_inventory.py",
+        "tests/ci/test_multi_version.py"
+      ]
+    },
+    {
+      "name": "ci-orchestration",
+      "role": "driver",
+      "gate": "native acceptance jobs",
+      "via": [
+        ".github/workflows/native.yml"
+      ],
+      "contract": "Build and tool identity, process status, result validation, bounded cgroups and aggregation.",
+      "files": [
+        "tests/ci/run.py",
+        "tests/ci/resources.py",
+        "tests/ci/install-tools.py"
+      ]
+    },
+    {
+      "name": "zed-native-installer",
+      "role": "unit",
+      "gate": "Linux/macOS/Windows Rust tests",
+      "via": [
+        ".github/workflows/zed.yml"
+      ],
+      "contract": "Injected host boundary: checksum/identity/cache/rollback protocol, each negative condition independent.",
+      "files": [
+        "editors/zed/src/distribution/tests.rs"
+      ]
+    },
+    {
+      "name": "zed-wasi-runtime",
+      "role": "consumer",
+      "gate": "Linux/Windows real WASI runtime",
+      "via": [
+        ".github/workflows/zed.yml"
+      ],
+      "contract": "Actual guest installer and native probe with controlled HTTP/cache/Windows-handle behavior.",
+      "files": [
+        "editors/zed/src/distribution/tests/runtime.rs",
+        "editors/zed/tests/cache_runtime_e2e.py"
+      ]
+    },
+    {
+      "name": "zed-package",
+      "role": "consumer",
+      "gate": "Linux adapter package and negative controls",
+      "via": [
+        ".github/workflows/zed.yml"
+      ],
+      "contract": "Actual packaged WASM/source/legal inventory and targeted independent distribution failures.",
+      "files": [
+        "editors/zed/tests/package_e2e.py",
+        "editors/zed/tests/ablate_distribution.py"
+      ]
+    },
+    {
+      "name": "zed-filesystem-install",
+      "role": "consumer",
+      "gate": "three-OS published release installer",
+      "via": [
+        ".github/workflows/zed-install.yml"
+      ],
+      "contract": "Pinned published alpha.4 release installation, upgrade, rollback and filesystem integrity; distinct from candidate GUI validation.",
+      "files": [
+        "editors/zed/tests/install_e2e.py"
+      ]
+    },
+    {
+      "name": "shipped-snippets",
+      "role": "consumer",
+      "gate": "Linux native shipped-content negative control",
+      "via": [
+        ".github/workflows/native.yml"
+      ],
+      "contract": "Expand exact shipped snippet bytes into actual CLI resources, then remove only Workflow spec and require that sole snippet to fail.",
+      "files": [
+        "editors/zed/tests/snippets_e2e.py",
+        "editors/zed/tests/ablate_snippets.py"
+      ]
+    }
+  ]
+}

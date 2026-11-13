@@ -24,7 +24,9 @@ with tempfile.TemporaryDirectory(prefix='wf-external-lsp-') as d:
  def wait(predicate):
   end=time.monotonic()+15
   while True:
-   v=q.get(timeout=max(.01,end-time.monotonic()))
+   remaining=end-time.monotonic()
+   if remaining<=0:raise TimeoutError('absolute LSP response deadline exceeded')
+   v=q.get(timeout=remaining)
    if isinstance(v,Exception):raise v
    if predicate(v):return v
  def diagnosis():return wait(lambda x:x.get('method')=='textDocument/publishDiagnostics' and x['params']['uri']==uri)['params']['diagnostics']

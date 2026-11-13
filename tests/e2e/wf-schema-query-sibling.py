@@ -32,6 +32,9 @@ for name, strategy, diagnostics in [('unrelated-invalid-enum-key','Maybe',[('SCH
         response = client.request('textDocument/completion',{'textDocument':{'uri':path.as_uri()},'position':m.pos(marked,'<CURSOR>')})
         items = response.get('result') or []
         checks = {'textEditPresent':len(items)==1 and 'textEdit' in items[0], 'noProtocolError':'error' not in response,'exactLabels':[x['label'] for x in items]==['forceFinalizerRemoval']}
+        checks['exactUnrelatedBytes'] = False
+        for check in ('exitCounts', 'exactDiagnostics', 'noConfigurationErrors', 'honestIncomplete'):
+            checks['actual-' + check] = False
         actual = None
         if len(items)==1 and 'textEdit' in items[0]:
             actual = m.apply(text,{'documentChanges':[{'textDocument':{'uri':path.as_uri(),'version':1},'edits':[items[0]['textEdit']]}]},path.as_uri(),1)

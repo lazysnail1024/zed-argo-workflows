@@ -224,6 +224,8 @@ def run_case(name,text,needle,newname,expected,files=None,config=CONFIG,occurren
         else:
             checks['prepare_succeeds']='range' in prepare.get('result',{})
             checks['exact_bytes']=actual==expected
+            checks.update(no_new_errors=False, undo_restores_diagnostics=False)
+            if stale: checks.update(old_version_ignored=False, changed_reference_not_old_binding=False)
             if actual is not None:
                 after=client.change(path,actual,2);checks['no_new_errors']=not any(d['severity']==1 for d in after)
                 undo=client.change(path,text,3);checks['undo_restores_diagnostics']=undo==ds

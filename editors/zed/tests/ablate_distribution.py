@@ -115,6 +115,11 @@ def main():
                                                 and f"test {qualified} ... FAILED" in lines)
                     row["runtimeAssertionFailed"] = "test result: FAILED. 0 passed; 1 failed; 0 ignored;" in result.stdout
                     row["detectedByExpectedCheck"] = assertion in result.stdout + result.stderr
+                    if label == "restore-cargo-server-version-coupling":
+                        diagnostic = result.stdout + result.stderr
+                        row["detectedByExpectedCheck"] = (row["detectedByExpectedCheck"]
+                            and 'left: "9.9.9-alpha.1"' in diagnostic
+                            and f'right: "{report["nativePin"]}"' in diagnostic)
                     row["passed"] = (row["passed"] and row["exactTestExecuted"]
                                      and row["runtimeAssertionFailed"] and row["detectedByExpectedCheck"])
                     assert row["passed"], f"{label}: intended runtime assertion did not fail: {result.stdout[-2000:]} {result.stderr[-2000:]}"
@@ -125,6 +130,11 @@ def main():
 
             package = tree / "package.py"
             original_package = package.read_text()
+            baseline = out / "standalone-package-baseline"
+            run("standalone-package-baseline", [sys.executable, str(tree / "tests/package_e2e.py"),
+                "--wasm", str(wasm), "--output", str(baseline)])
+            baseline_report = json.loads((baseline / "report.json").read_text())
+            assert baseline_report["passed"] is True and baseline_report["cases"], "Missing unmodified package baseline"
             mutations = [
                 ("remove-wasm-release-identity-guard", 'if release != [manifest["id"], manifest["version"], native]:', "if False:", "stale-native-pin"),
                 ("remove-original-dependency-notices", "    files.update(dependency_notices())", "    # Test mutation: omit original dependency notices.", "licenses/THIRD_PARTY.json"),

@@ -12,8 +12,8 @@ with tempfile.TemporaryDirectory(prefix='wf-external-') as d:
   if not name.startswith('missing-') or name=='missing-template':
    text=external.replace('namespace: argo','namespace: elsewhere') if name=='wrong-namespace' else external.replace('name: run','name: other') if name=='missing-template' else external.replace(', namespace: argo','') if name=='unknown-namespace' else external;(work/'external.yaml').write_text(text)
   if name=='ambiguous':(work/'external2.yaml').write_text(external)
-  cmd=[str(binary),'check','--root',str(work),'--file',str(work/'consumer.yaml'),'--format','json'];p=subprocess.run(cmd,capture_output=True,timeout=15);(out/(name+'.stdout')).write_bytes(p.stdout);(out/(name+'.stderr')).write_bytes(p.stderr);checks={'exit':p.returncode==e['exitCode']}
-  try:v=json.loads(p.stdout);checks['externalResolution']=sorted([[d['code'],d['severity']] for d in v['diagnostics'] if d['code'].startswith('WF_TEMPLATE_REF')])==e[name]
+  cmd=[str(binary),'check','--root',str(work),'--file',str(work/'consumer.yaml'),'--format','json'];p=subprocess.run(cmd,capture_output=True,timeout=15);(out/(name+'.stdout')).write_bytes(p.stdout);(out/(name+'.stderr')).write_bytes(p.stderr);checks={'exit':p.returncode==e['exitCodes'][name]}
+  try:v=json.loads(p.stdout);checks['completeEnvelope']=v['analysisComplete'] is True and v['notEvaluated']==[] and v['configurationErrors']==[];checks['externalResolution']=sorted([[d['code'],d['severity']] for d in v['diagnostics'] if d['code'].startswith('WF_TEMPLATE_REF')])==e[name]
   except Exception as err:checks['parse']=str(err)
   results.append({'name':name,'command':cmd,'exitCode':p.returncode,'assertions':checks,'pass':all(x is True for x in checks.values())})
  for p in work.glob('external*.yaml'):p.unlink()

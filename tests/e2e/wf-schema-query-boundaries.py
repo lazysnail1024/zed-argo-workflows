@@ -43,6 +43,8 @@ def query(name, marked, method='completion', labels=None, excluded=(), applied=N
             checks['excluded'] = not (set(got) & set(excluded))
             if no_result: checks['empty'] = items == []
             for index, (label, old, new) in enumerate(applied or []):
+                for check in ('textEdit', 'exactBytes', 'actual-complete-resource', 'actual-no-diagnostics', 'actual-honest-incomplete', 'expected-complete-resource', 'expected-no-diagnostics', 'expected-honest-incomplete'):
+                    checks[check + '-' + str(index)] = False
                 matches = [x for x in items if x['label'] == label]
                 checks['uniqueCandidate-' + str(index)] = len(matches) == 1
                 if len(matches) != 1: continue

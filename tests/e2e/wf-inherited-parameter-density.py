@@ -82,6 +82,8 @@ finally:
     report['maximumRSSKiB']=max([int(r['VmRSS'].split()[0]) for r in rss if 'VmRSS' in r] or [0])
     report['allWithinQueryBudget']=report['allQueries'] and all(r['withinQueryBudget'] for r in rows)
     report['behaviorPass']=report['allExact'] and bool(checks) and all(checks.values()) and report['serverExit']==0
+    checks.update({'allQueries':report['allQueries'],'allExact':report['allExact'],'allWithinQueryBudget':report['allWithinQueryBudget'],'cleanShutdown':report['serverExit']==0})
+    report['assertions']=checks
     report['pass']=report['behaviorPass'] and report['allWithinQueryBudget']
     m.save(m.OUT/'results.json',report)
     m.save(m.OUT/'manifest.json',{'command':sys.argv,'binarySha256':m.sha(m.BINARY),'testSha256':m.sha(pathlib.Path(__file__)),'helperSha256':m.sha(HERE/'wf-audit-gaps.py'),'expectedSha256':m.sha(WORK.parent/'expected.json'),'fixtureManifestSha256':m.sha(WORK.parent/'fixture-manifest.json')})

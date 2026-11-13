@@ -103,7 +103,10 @@ jobs:
       run: python tests/e2e/release-distribution.py --platform "${{ matrix.platform }}" --output artifacts/ci/release-e2e
     - name: Prove native release works without any editor checkout
       if: matrix.platform == 'linux/amd64'
-      run: python tests/native_isolation.py --output artifacts/native-isolation
+      run: python tests/native_isolation.py --output artifacts/ci/native-isolation
+    - name: Validate shipped snippet bytes and their single-fault negative control
+      if: matrix.platform == 'linux/amd64'
+      run: python editors/zed/tests/ablate_snippets.py artifacts/ci/build/argo-workflows-ls artifacts/ci/snippet-contract
     - name: Ablate version compatibility mechanisms against real consumers
       if: matrix.platform == 'linux/amd64'
       run: python tests/e2e/wf-multi-version-ablation.py artifacts/ci/build/argo-workflows-ls artifacts/ci/multi-version-ablation
@@ -182,6 +185,7 @@ jobs:
         - adversarial
         - load
         - index
+        - queries
     env:
       CC: gcc-13
     steps:
@@ -219,6 +223,8 @@ jobs:
         group:
         - core
         - audit
+        - contracts
+        - legacy
         - resources
     env:
       CC: gcc-13
@@ -234,8 +240,11 @@ jobs:
     - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
       with:
         python-version: 3.14.0
+    - name: Install checksum-pinned tools for integration contract controls
+      if: matrix.group == 'contracts' || matrix.group == 'legacy'
+      run: python tests/ci/install-tools.py --output artifacts/ci/tools
     - name: Require passing baselines and specific semantic mutation detection
-      run: python tests/ci/run.py mutations --group ${{ matrix.group }} --output artifacts/ci/mutations
+      run: python tests/ci/run.py mutations --group ${{ matrix.group }} --output artifacts/ci/mutations --tools artifacts/ci/tools
     - name: Retain mutation diffs, binaries, baseline and mutant evidence
       if: always()
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
