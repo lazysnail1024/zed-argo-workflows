@@ -16,7 +16,7 @@ import sys
 import tempfile
 
 import mutation_support as support
-from mutation_support import Mutation
+from mutation_support import GoTestOracle, Mutation
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_ASSET = "internal/assets/schemas/96631f9b6d683112ccd0dd0dd7c28b3a59310400e3b2550e8cadb0a370410ac7.json"
@@ -136,7 +136,10 @@ LEGACY_MUTATIONS = (
            ("workflow-reserved-json",), "rename_refused"),
     Mutation("query-snapshot-bytes", "legacy", "ablate-query-facts.py", "internal/analysis/invocation.go",
              (('return snapshotIdentity{s.URI(), s.Revision(), s.Text()}', 'return snapshotIdentity{s.URI(), s.Revision(), ""}'),),
-             "wf-query-fact-handoff.py", (("warm", "definitions"), ("repeat-fresh-context", "definitions"))),
+             "internal/analysis/facts_store_test.go",
+             (("TestFactStoreRestoresOnlyFreshIdentityAndRelease/text", "fresh_snapshot_identity"),),
+             go_test=GoTestOracle("./internal/analysis", "TestFactStoreRestoresOnlyFreshIdentityAndRelease/text",
+                                  "unexpected restored identity/release: views=1 projections=1")),
     Mutation("quickfix-pin-document-boundary", "legacy", "ablate-quickfixes.py", "internal/analysis/pin.go",
              (("at = start", "at = len(text)"),), "wf-quickfixes.py",
              (("pin-root-document-end", "exact_pin_bytes"), ("pin-root-document-end-crlf", "exact_pin_bytes")),

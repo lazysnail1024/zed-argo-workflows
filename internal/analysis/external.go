@@ -207,6 +207,16 @@ func external(ctx context.Context, w workspace.Workspace, query *externalQuery) 
 					if key.kind != "workflow.parameters" {
 						continue
 					}
+					declarationSelected := false
+					for _, declaration := range b.declarations[key] {
+						declarationSelected = declarationSelected || declaration.span == span
+					}
+					// Inheritance resolves parameter uses, never a declaration's
+					// own definition. External entry/exit input roles are handled
+					// independently below and still include every candidate.
+					if query.definitions && declarationSelected {
+						continue
+					}
 					parameters = &inheritedParameterQuery{name: key.name, uses: map[Location]*inheritedParameterUse{}, localDefinitions: map[Location]bool{}}
 					for _, d := range b.declarations[key] {
 						parameters.localDefinitions[spanLocation(r.document.Snapshot, d.span)] = true
@@ -217,13 +227,15 @@ func external(ctx context.Context, w workspace.Workspace, query *externalQuery) 
 	}
 	resourceHashes := make(map[resourcePosition][32]byte, len(resources))
 	snapshotHashes := map[source.URI][32]byte{}
-	for _, r := range resources {
-		digest, ok := snapshotHashes[r.document.Snapshot.URI()]
-		if !ok {
-			digest = sha256.Sum256([]byte(r.document.Snapshot.Text()))
-			snapshotHashes[r.document.Snapshot.URI()] = digest
+	if query == nil {
+		for _, r := range resources {
+			digest, ok := snapshotHashes[r.document.Snapshot.URI()]
+			if !ok {
+				digest = sha256.Sum256([]byte(r.document.Snapshot.Text()))
+				snapshotHashes[r.document.Snapshot.URI()] = digest
+			}
+			resourceHashes[resourcePosition{r.document.Snapshot.URI(), r.root.Span().Start}] = resourceDigest(r, digest)
 		}
-		resourceHashes[resourcePosition{r.document.Snapshot.URI(), r.root.Span().Start}] = resourceDigest(r, digest)
 	}
 	for _, caller := range resources {
 		finish := func() {
@@ -236,6 +248,12 @@ func external(ctx context.Context, w workspace.Workspace, query *externalQuery) 
 			done.Resources[caller.root.Span()] = true
 			done.Completed = remaining[uri] == 0
 			progress[uri] = done
+		}
+		// Definitions return bindings from the selected document. Only an
+		// inherited workflow-parameter use needs other callers' environments.
+		if query != nil && query.definitions && parameters == nil && string(caller.document.Snapshot.URI()) != query.uri {
+			finish()
+			continue
 		}
 		var cacheKey [32]byte
 		diagnosticStart := len(diagnostics)
@@ -259,10 +277,6 @@ func external(ctx context.Context, w workspace.Workspace, query *externalQuery) 
 				finish()
 				continue
 			}
-		}
-		var local *localRenameBindings
-		if query != nil {
-			local = localFor(caller)
 		}
 		if ctx.Err() != nil {
 			return diagnostics, bindings, complete, progress
@@ -599,7 +613,7 @@ func external(ctx context.Context, w workspace.Workspace, query *externalQuery) 
 								}
 							}
 						}
-						if local != nil {
+						if local := localFor(caller); local != nil {
 							for _, ref := range local.externalOutputs {
 								decl := local.declarations[ref.producer]
 								if len(decl) != 1 || decl[0].span.Start < call.Span().Start || decl[0].span.End > call.Span().End {

@@ -44,7 +44,6 @@ type session struct {
 	queryBytes        int
 	queryKey          string
 	externalFacts     *analysis.ExternalFacts
-	facts             *analysis.Facts
 	factInput         *workspace.Workspace
 	factBoundary      string
 	factMixed         bool
@@ -188,7 +187,7 @@ func (s *session) workspace(root, selected string) (workspace.Workspace, error) 
 			s.factMixed, s.factInput = true, nil
 		}
 		if !s.factMixed && s.factInput == nil {
-			analysis.RestoreFacts(s.context(), s.facts, w)
+			s.catalog.facts.Restore(s.context(), w)
 			s.factBoundary, s.factInput = boundary, &w
 		}
 	}
@@ -316,12 +315,6 @@ func (s *session) queryDocument(uri string) (workspace.Document, error) {
 	}
 	document, proof, err := s.catalog.document(s.context(), uri)
 	if err == nil {
-		// Symbols use the freshly read source, not indexed file contents.
-		// Keep its content proof, while allowing an index scan to catch up
-		// to precisely these same bytes after a missed file watch.
-		if s.method == "textDocument/documentSymbol" {
-			proof.allowIndexCatchUp = true
-		}
 		s.proofs = append(s.proofs, proof)
 	}
 	return document, err
@@ -736,7 +729,7 @@ func (s *session) handle(m message) (bool, int, error) {
 			}
 			s.queryResults = map[string]json.RawMessage{}
 			s.queryBytes = 0
-			s.facts = nil
+			s.catalog.facts.Clear()
 			s.externalFacts = nil
 			roots := []string{}
 			for _, root := range s.roots {

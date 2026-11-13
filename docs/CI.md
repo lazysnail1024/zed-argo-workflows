@@ -65,13 +65,28 @@
 active/queued workspace 查询不得交付编辑前的位置，恢复后检查 workspace 与当前文档的相同位置。
 `catalog_symbols_test.go` 另以可控小预算验证零命中计费、锁等待取消、分页身份移除与旧位置拒绝；
 `index_queries_test.go` 验证多个候选查询共享请求预算。
-`request_consistency_test.go` 确定性复现关闭文件的旧读票被新读票替代，重试在字节不变时仍撤销旧 stamp 证明。
+`catalog_query_race_test.go` 用真实 Documents/WorkQueue/Index 票据与显式屏障复现双向读取交错：
+旧 worker 的被动重排不能撤销新读取，新的字节观测必须撤销旧解析，真实后续 watch 即使同字节
+也必须拒绝旧 proof。同 URI 只串行读取/发布窗口；取消、其他 URI、删除重建与 didOpen 独立验证。
 audit mutation group 同时移除正确的输出上限、注入分页漏项，要求上述真实消费者报告指定语义失败，编译失败或超时不能算通过。
 这些测试不替代资源 suite 现有的 10,000 文件/20,000 符号五次冷索引验收。
 
 `internal/lsp/catalog_test.go` 的正向用例覆盖共享 Documents、队列及完整扫描的接入。
 [ablate-shared-lifecycle.py](../tests/e2e/ablate-shared-lifecycle.py) 的七项控制由 audit mutation lane 调用；
 必须先看到所有指定 Go 测试通过，再以实际测试名和断言消息确认故障，panic 或编译失败不能算检测。
+
+三个 density 消费者在计时第一条查询前，被动观察当前 root、精确文件数、空队列及当前打开文本
+字节数匹配的 `Ready` 回执；第一条诊断通知可能只有本地分析，不能当成完整索引证明。
+外部歧义场景还要求实际的跨文件诊断；无诊断场景分别记录当前版本诊断与索引就绪，不把空数组
+声称为完整诊断 worker 的完成证明。原查询列表、精确返回内容及每请求 100 ms 保持原值；
+不发送预热查询、不重试失败查询，缺就绪回执会超时失败。CLI 完整性与计数继续单独断言。
+[就绪观察](../tests/e2e/query_density_support.py)、[密集候选](../tests/e2e/wf-external-candidate-density.py)
+
+100 scope 的保留测试同样先被动观察 10,000 文件、空队列和零打开字节的初始 `Ready`，
+再执行原来的 20/100/20 阶段、140 对请求与 1.10 增长比例。索引就绪的 60 秒包含 initialize，
+原有 RSS 采样覆盖这段等待，等待期间样本仍计入峰值；没有额外查询或调整中位数窗口。
+因此对比的是索引完成后的查询保留，不把目录尚在增长的中间状态当成稳定基线。
+父级同时核对四个消费者使用的协议 helper 和就绪 helper 的源码 hash。
 
 ## 全部测试家族与正交分工
 
@@ -139,6 +154,13 @@ family 测试验证子 worker 的结果，不能仅相信父进程记录。LSP �
 其中 43 个历史 selector 归并为 38 项登记观察、37 种源代码故障配方；
 模板/资源基数共用一个 guard 的两种独立资源场景，其余重复 selector 复用已有合同。
 父 runner 从当前 registry 独立取得完整变体集合，子 driver 自报的成功前缀不能通过。
+`query-snapshot-bytes` 直接使用 `facts_store_test.go` 中同 URI、同 revision、不同字节的
+独立边界；外层 catalog 的 hash/revision 校验不能让旧 LSP 失效路径冒充该 guard 的证据。
+该变体分别编译同源正常和单故障 Go 测试二进制，以结构化事件核对精确测试/子测试选择、
+正常 PASS 和指定断言 FAIL；编译失败、panic、timeout、缺测试或额外选择均不算 kill。
+原生测试进程单独执行并保留退出码，再把原始流转换为 JSON；转换器不能把信号或退出码 2
+归一成普通断言失败。只有 `OutputType=error` 的指定断言计入检测，普通同文日志不算。
+原来的 23 项 `wf-query-fact-handoff` CLI/LSP 用例仍由 semantic lane 独立执行。
 过去只编译优化候选的 bounded 入口现在运行实际进程输出与子进程回收合同；
 依赖历史源码包并把任意 signal 当作检测的 toolkit 入口改为当前 256 层 YAML 的边界控制。
 源码修改只发生在临时副本，发布依赖和产品预算不变。

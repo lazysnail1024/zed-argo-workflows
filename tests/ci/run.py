@@ -241,6 +241,16 @@ def verify_consumer_identity(name, destination, binary):
         values = [record[key] for record in records for key in keys if key in record]
         if not values or any(value != expected for value in values):
             raise ValueError(f"{name}: evidence does not match the selected {label}")
+    if name in ("wf-external-candidate-density", "wf-inherited-parameter-density", "wf-exit-query-density",
+                "wf-query-handoff-retention"):
+        # These consumers share framing and the readiness precondition. Bind
+        # both helpers as well as the timing/assertion entrypoint above.
+        for key, helper in (("helperSha256", "wf-audit-gaps.py"),
+                            ("queryReadinessHelperSha256", "query_density_support.py")):
+            values = [record[key] for record in records if key in record]
+            expected = sha(E2E / helper)
+            if not values or any(value != expected for value in values):
+                raise ValueError(f"{name}: evidence does not match the selected query helper {helper}")
 
 
 def consumer_results(name, destination, binary=None):

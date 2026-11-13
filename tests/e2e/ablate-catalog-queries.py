@@ -44,8 +44,8 @@ rows = [{"id": "baseline", "consumerExit": baseline_run.returncode, "stateExit":
 variants = [
     ("closed-read-stamp", "internal/lsp/catalog_inputs.go",
      "proof.files[source.URI(uri)] = catalogInput{file.stamp, hash}",
-     "proof.files[source.URI(uri)] = catalogInput{stamp, file.hash}",
-     "repair", "closed-current-file-repair", "no_self_content_modified"),
+     "proof.files[source.URI(uri)] = catalogInput{stamp, hash}",
+     "repair", "closed-idle-file-repair", "no_self_content_modified"),
     ("self-repair-scope-proof", "internal/lsp/catalog_inputs.go",
      "if observed.repaired {", "if false && observed.repaired {",
      "repair", "closed-read-repair", "no_self_content_modified"),
@@ -101,7 +101,7 @@ if rows[0]["passed"]:
                 else:
                     probe = run(folder, "probe", [sys.executable, consumer, binary, folder / "e2e", "--cases", case])
                     actual = read_results(folder / "e2e")
-                    selected = {"repair": ("closed-read-repair", "closed-current-file-repair"),
+                    selected = {"repair": ("closed-read-repair", "closed-current-file-repair", "closed-idle-file-repair"),
                                 "candidates": ("candidate-prefix-budget",), "truncation": ("candidate-matching-budget",)}[case]
                     classified = classify_results(((required_case, required_assertion),),
                                                   {key: baseline_cases[key] for key in selected}, actual,

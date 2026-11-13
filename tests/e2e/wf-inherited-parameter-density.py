@@ -4,6 +4,7 @@ Run under an independent 90-second watchdog and 4 CPU / 8 GiB constraints.
 """
 import importlib.util,json,pathlib,sys,time,threading,traceback,hashlib
 HERE=pathlib.Path(__file__).resolve().parent
+from query_density_support import wait_for_query_ready
 spec=importlib.util.spec_from_file_location('wire',HERE/'wf-audit-gaps.py');m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 OUT=m.OUT;WORK=OUT/'input';WORK.mkdir(parents=True,exist_ok=False)
 (WORK/'.argo-workflows-ls.yaml').write_text('schemaVersion: 1\ntargetVersion: "3.6.0"\nreferencePolicy: closed\n')
@@ -51,9 +52,12 @@ def sample(pid):
 started=time.monotonic()
 try:
     client=Client(m.OUT,WORK);thread=threading.Thread(target=sample,args=(client.p.pid,),daemon=True);thread.start()
-    path=WORK/'caller-00.yaml';begin=time.monotonic();ds=client.open(path,path.read_text());report['coldPublicationSeconds']=time.monotonic()-begin
+    path=WORK/'caller-00.yaml';begin=time.monotonic();client.open(path,path.read_text());report['firstPublicationSeconds']=time.monotonic()-begin
     want=[{k:d[k] for k in ('range','code','source')}|{'severity':2} for d in EXPECTED['diagnostics'] if d['uri']==path.as_uri()]
-    checks['initialFullDiagnostics']=norm([{k:d[k] for k in ('range','code','severity','source')} for d in ds])==norm(want)
+    ds,report['readiness']=wait_for_query_ready(client,WORK,path,path.read_text(),want,51)
+    report['coldPublicationSeconds']=time.monotonic()-begin
+    checks['indexReady']=True
+    checks['initialDiagnostics']=norm([{k:d[k] for k in ('range','code','severity','source')} for d in ds])==norm(want)
     for query in EXPECTED['queries']:
         name=query['name'];selected=query['selected'];params={'textDocument':{'uri':selected['uri']},'position':selected['range']['start']};method=query['method']
         if method=='references':params['context']={'includeDeclaration':query['includeDeclaration']}
@@ -86,5 +90,5 @@ finally:
     report['assertions']=checks
     report['pass']=report['behaviorPass'] and report['allWithinQueryBudget']
     m.save(m.OUT/'results.json',report)
-    m.save(m.OUT/'manifest.json',{'command':sys.argv,'binarySha256':m.sha(m.BINARY),'testSha256':m.sha(pathlib.Path(__file__)),'helperSha256':m.sha(HERE/'wf-audit-gaps.py'),'expectedSha256':m.sha(WORK.parent/'expected.json'),'fixtureManifestSha256':m.sha(WORK.parent/'fixture-manifest.json')})
+    m.save(m.OUT/'manifest.json',{'command':sys.argv,'binarySha256':m.sha(m.BINARY),'testSha256':m.sha(pathlib.Path(__file__)),'helperSha256':m.sha(HERE/'wf-audit-gaps.py'),'queryReadinessHelperSha256':m.sha(HERE/'query_density_support.py'),'expectedSha256':m.sha(WORK.parent/'expected.json'),'fixtureManifestSha256':m.sha(WORK.parent/'fixture-manifest.json')})
 raise SystemExit(0 if report['pass'] else 1)

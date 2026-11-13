@@ -563,6 +563,7 @@
       "rows": [
         {"id": {"case": "closed-read-repair"}, "assertions": ["baseline_definition_exact", "first_query_repairs_position", "no_self_content_modified"]},
         {"id": {"case": "closed-current-file-repair"}, "assertions": ["first_query_has_fresh_symbol", "no_self_content_modified"]},
+        {"id": {"case": "closed-idle-file-repair"}, "assertions": ["first_query_has_fresh_symbol", "no_self_content_modified"]},
         {"id": {"case": "candidate-prefix-budget"}, "assertions": ["applied_fix_clears_missing_reference", "disk_input_unchanged", "no_protocol_error", "unrelated_namespaces_do_not_hide_candidate"]},
         {"id": {"case": "candidate-matching-budget"}, "assertions": ["matching_overflow_explicit", "no_partial_candidate_edit"]}
       ]
@@ -1290,7 +1291,7 @@
     "wf-query-handoff-retention": {
       "assertionKey": "assertions",
       "rows": [
-        {"id": {}, "assertions": ["all100Scopes", "all140CurrentResponsePairs", "cleanExit", "diskInputsRemainUnchanged", "singleServerRSSWithinPairBudget", "steadyGrowthWithin10Percent"]}
+        {"id": {}, "assertions": ["all100Scopes", "indexReady", "all140CurrentResponsePairs", "cleanExit", "diskInputsRemainUnchanged", "singleServerRSSWithinPairBudget", "steadyGrowthWithin10Percent"]}
       ]
     },
     "wf-bounded-expressions": {
@@ -1348,19 +1349,19 @@
     "wf-external-candidate-density": {
       "assertionKey": "assertions",
       "rows": [
-        {"id": {}, "assertions": ["allExact", "allQueries", "allWithinQueryBudget", "cleanShutdown", "completeCLIDiagnostics", "countsCompletenessExit", "initialFullDiagnostics", "unknownEnvelope"]}
+        {"id": {}, "assertions": ["allExact", "allQueries", "allWithinQueryBudget", "cleanShutdown", "completeCLIDiagnostics", "countsCompletenessExit", "indexReady", "initialFullDiagnostics", "unknownEnvelope"]}
       ]
     },
     "wf-inherited-parameter-density": {
       "assertionKey": "assertions",
       "rows": [
-        {"id": {}, "assertions": ["allExact", "allQueries", "allWithinQueryBudget", "cleanShutdown", "completeCLIDiagnostics", "countsCompletenessExit", "initialFullDiagnostics", "unchangedBytes", "unknownEnvelope"]}
+        {"id": {}, "assertions": ["allExact", "allQueries", "allWithinQueryBudget", "cleanShutdown", "completeCLIDiagnostics", "countsCompletenessExit", "indexReady", "initialDiagnostics", "unchangedBytes", "unknownEnvelope"]}
       ]
     },
     "wf-exit-query-density": {
       "assertionKey": "assertions",
       "rows": [
-        {"id": {}, "assertions": ["allExact", "allQueries", "allWithinQueryBudget", "cleanShutdown", "completeCLIDiagnostics", "countsCompletenessExit", "initialFullDiagnostics", "unchangedBytes", "unknownEnvelope"]}
+        {"id": {}, "assertions": ["allExact", "allQueries", "allWithinQueryBudget", "cleanShutdown", "completeCLIDiagnostics", "countsCompletenessExit", "indexReady", "initialDiagnostics", "unchangedBytes", "unknownEnvelope"]}
       ]
     },
     "wf-remediation-load": {

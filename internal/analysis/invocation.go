@@ -17,13 +17,23 @@ type projectionIdentity struct {
 	version string
 	span    source.Span
 }
+type projectionContentIdentity struct {
+	text, version string
+	span          source.Span
+}
+
+func (k projectionIdentity) content() projectionContentIdentity {
+	return projectionContentIdentity{k.text, k.version, k.span}
+}
+
 type invocationKey struct{}
 type invocation struct {
-	imported    *Facts
-	views       map[snapshotIdentity]yamlview.View
-	sharedViews map[string]yamlview.View
-	projections map[projectionIdentity]projectedDocument
-	bytes       int
+	imported          *Facts
+	views             map[snapshotIdentity]yamlview.View
+	sharedViews       map[string]yamlview.View
+	projections       map[projectionIdentity]projectedDocument
+	sharedProjections map[projectionContentIdentity]projectedDocument
+	bytes             int
 }
 
 // WithInvocation reuses immutable parsing/projection results only inside one
@@ -39,7 +49,18 @@ func WithInvocation(ctx context.Context) context.Context {
 	if _, ok := ctx.Value(invocationKey{}).(*invocation); ok {
 		return ctx
 	}
-	return context.WithValue(ctx, invocationKey{}, &invocation{views: map[snapshotIdentity]yamlview.View{}, sharedViews: map[string]yamlview.View{}, projections: map[projectionIdentity]projectedDocument{}})
+	return context.WithValue(ctx, invocationKey{}, &invocation{views: map[snapshotIdentity]yamlview.View{}, sharedViews: map[string]yamlview.View{}, projections: map[projectionIdentity]projectedDocument{}, sharedProjections: map[projectionContentIdentity]projectedDocument{}})
+}
+
+// Projection values and source-sharing spans depend only on exact document
+// bytes, the document span and the release. URI/revision remain in each logical
+// result's admission key; no previous admission or source location is reused.
+func (s *invocation) projection(key projectionIdentity) (projectedDocument, bool) {
+	if value, ok := s.projections[key]; ok {
+		return value, true
+	}
+	value, ok := s.sharedProjections[key.content()]
+	return value, ok
 }
 func snapshotKey(s source.Snapshot) snapshotIdentity {
 	return snapshotIdentity{s.URI(), s.Revision(), s.Text()}

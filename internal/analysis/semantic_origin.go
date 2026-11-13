@@ -51,8 +51,28 @@ func (n workflowValue) Kind() yamlview.NodeKind {
 func (n workflowValue) Elements() []workflowValue {
 	values, _ := n.value.([]any)
 	result := make([]workflowValue, 0, len(values))
+	// Node.Elements returns a detached slice. Fetch it once, not once per
+	// semantic item through location/at: dense parameter arrays must take
+	// linear work and allocation while keeping each item's source origin.
+	sequence := n.node.Kind() == yamlview.Sequence
+	var nodes []yamlview.Node
+	if sequence {
+		nodes = n.node.Elements()
+	}
 	for i, value := range values {
-		node, origin := location(n.node, []string{strconv.Itoa(i)})
+		var node yamlview.Node
+		var origin string
+		if sequence {
+			node, origin = n.node, "ambiguous"
+			if i < len(nodes) && nodes[i].Span() != n.node.Span() {
+				node, origin = nodes[i], "exact"
+				if node.Kind() == yamlview.Alias {
+					origin = "derived"
+				}
+			}
+		} else {
+			node, origin = location(n.node, []string{strconv.Itoa(i)})
+		}
 		if n.origin != "exact" {
 			origin = n.origin
 		}

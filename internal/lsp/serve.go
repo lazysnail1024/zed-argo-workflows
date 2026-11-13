@@ -31,6 +31,7 @@ type workerResult struct {
 	foreign     bool
 	final       bool
 	proofs      []catalogProof
+	facts       *analysis.Facts
 	local       bool
 	lane        int
 }
@@ -218,14 +219,14 @@ func Serve(in io.Reader, out, log io.Writer) int {
 			if background {
 				state.externalFacts = analysis.CaptureExternalFacts(state.context())
 			}
-			state.facts = nil
+			var facts *analysis.Facts
 			if err == nil && state.factInput != nil && ctx.Err() == nil {
-				state.facts = analysis.CaptureFacts(ctx, *state.factInput)
+				facts = analysis.CaptureFacts(ctx, *state.factInput)
 			}
 			// The owner accepts detached caches and actions only. Do not carry
 			// worker parsing contexts or borrowed input through the result queue.
 			state.ctx, state.factInput, state.workspaces, state.buffers = nil, nil, nil, nil
-			send(workerResult{output: append([]byte(nil), output.Bytes()...), log: logs.Bytes(), state: state, err: err, canceled: ctx.Err() != nil, epoch: state.epoch, background: background, final: true, proofs: state.proofs, lane: laneID})
+			send(workerResult{output: append([]byte(nil), output.Bytes()...), log: logs.Bytes(), state: state, facts: facts, err: err, canceled: ctx.Err() != nil, epoch: state.epoch, background: background, final: true, proofs: state.proofs, lane: laneID})
 		}()
 	}
 	for {
@@ -380,8 +381,8 @@ func Serve(in io.Reader, out, log io.Writer) int {
 				if sameEpoch && result.state.externalFacts != nil {
 					s.externalFacts = result.state.externalFacts
 				}
-				if sameEpoch && result.state.facts != nil {
-					s.facts = result.state.facts
+				if sameEpoch && result.facts != nil {
+					s.catalog.retainFacts(result.facts, result.proofs)
 				}
 			} else if lane != nil && !lane.canceled {
 				code, reason := -32800, "request timed out or cancelled"
@@ -390,6 +391,9 @@ func Serve(in io.Reader, out, log io.Writer) int {
 				}
 				_ = s.failure(lane.active.message.ID, code, reason)
 			}
+			// No request/session retains a second persistent batch beside the
+			// catalog's aggregate fact store, including rejected worker results.
+			result.facts = nil
 			if result.background && current && result.canceled {
 				// A stable input that exhausts its budget terminates visibly. New input,
 				// an explicit save or the next reconciliation may retry; no hot retry loop.

@@ -150,6 +150,22 @@
       ]
     },
     {
+      "name": "query-readiness-support",
+      "role": "helper",
+      "gate": "Linux query resource consumers; identity checked by their parent gate",
+      "via": [
+        "tests/e2e/wf-external-candidate-density.py",
+        "tests/e2e/wf-inherited-parameter-density.py",
+        "tests/e2e/wf-exit-query-density.py",
+        "tests/e2e/wf-query-handoff-retention.py",
+        "tests/ci/run.py"
+      ],
+      "contract": "Observe exact index readiness and latest versioned diagnostics before measured queries or retention phases; no independent behavioral-test credit, hidden queries, or retries.",
+      "files": [
+        "tests/e2e/query_density_support.py"
+      ]
+    },
+    {
       "name": "schema-contracts",
       "role": "consumer",
       "gate": "Linux actual/synthetic schema gate",
@@ -309,9 +325,13 @@
       ],
       "contract": "Deterministic schema/index/catalog/request consistency, cancellation, budgets and stream boundaries.",
       "files": [
+        "internal/analysis/facts_store_test.go",
         "internal/analysis/index_queries_test.go",
         "internal/analysis/index_test.go",
+        "internal/analysis/projection_cache_test.go",
         "internal/assets/schema_test.go",
+        "internal/lsp/catalog_facts_test.go",
+        "internal/lsp/catalog_query_race_test.go",
         "internal/lsp/catalog_query_repair_test.go",
         "internal/lsp/catalog_readiness_test.go",
         "internal/lsp/catalog_symbols_test.go",

@@ -2,19 +2,22 @@
 """Compile selected fault injections and require their expected semantic failures.
 
 The selected mutations include historical ablate-* recipes and targeted re-audit
-regressions. Behavior belongs to the real E2E consumers; this module validates the
-baseline, compilation, complete evidence and the particular assertion each
-mutation is supposed to invalidate. A crash or an incomplete run is never a kill.
+regressions. Behavior belongs to real consumers or explicitly named Go tests;
+this module validates the baseline, compilation, complete evidence and the
+particular assertion each mutation must invalidate. A crash or an incomplete run
+is never a kill.
 """
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, field
+from contextlib import nullcontext
+from dataclasses import asdict, dataclass, field
 import difflib
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import subprocess
@@ -24,6 +27,13 @@ import time
 
 ROOT = Path(__file__).resolve().parents[2]
 E2E = ROOT / "tests/e2e"
+
+
+@dataclass(frozen=True)
+class GoTestOracle:
+    package: str
+    test: str
+    failure: str
 
 
 @dataclass(frozen=True)
@@ -39,6 +49,7 @@ class Mutation:
     env: dict[str, str] = field(default_factory=dict)
     timeout: int = 240
     tool: str = ""
+    go_test: GoTestOracle | None = None
 
 
 MUTATIONS = (
@@ -319,14 +330,17 @@ def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def execute(command: list[str], dest: Path, env: dict[str, str], cwd: Path, timeout: int):
+def execute(command: list[str], dest: Path, env: dict[str, str], cwd: Path, timeout: int, *, stdin: Path | None = None):
     """Record a bounded invocation without buffering potentially large logs in RAM."""
     dest.mkdir(parents=True, exist_ok=True)
     receipt = {"argv": command, "cwd": str(cwd), "timeoutSeconds": timeout, "timedOut": False}
+    if stdin is not None:
+        receipt["stdin"] = str(stdin)
     started = time.monotonic()
-    with (dest / "stdout.log").open("wb") as stdout, (dest / "stderr.log").open("wb") as stderr:
+    with (dest / "stdout.log").open("wb") as stdout, (dest / "stderr.log").open("wb") as stderr, \
+            (stdin.open("rb") if stdin is not None else nullcontext()) as input_stream:
         try:
-            proc = subprocess.Popen(command, cwd=cwd, env=env, stdout=stdout, stderr=stderr,
+            proc = subprocess.Popen(command, cwd=cwd, env=env, stdin=input_stream, stdout=stdout, stderr=stderr,
                                     start_new_session=os.name != "nt")
         except OSError as error:
             receipt.update(exitCode=None, seconds=time.monotonic() - started, spawnError=str(error))
@@ -410,6 +424,125 @@ def run_consumer(mutation: Mutation, binary: Path, dest: Path, env: dict[str, st
     return receipt, read_results(run)
 
 
+def go_test_pattern(mutation: Mutation) -> str:
+    oracle = mutation.go_test
+    if (oracle is None or not oracle.package.startswith("./") or ".." in Path(oracle.package).parts
+            or Path(mutation.suite).parent != Path(oracle.package)
+            or not mutation.suite.endswith("_test.go")
+            or not re.fullmatch(r"Test[A-Za-z0-9_]+(?:/[A-Za-z0-9_-]+)*", oracle.test)
+            or not oracle.failure or "\n" in oracle.failure
+            or len(mutation.required) != 1 or mutation.required[0][0] != oracle.test
+            or not mutation.required[0][1] or mutation.args or mutation.tool):
+        raise GateError("Go oracle requires an exact package, source, test and one semantic assertion")
+    # Go splits -test.run on slashes. Anchor every component, including parents.
+    return "/".join("^" + re.escape(part) + "$" for part in oracle.test.split("/"))
+
+
+def validate_go_test_events(mutation: Mutation, stdout: str, receipt: dict, stderr: str = "") -> list[dict]:
+    """Accept a complete exact Go test run, never an incidental process failure."""
+    go_test_pattern(mutation)
+    oracle = mutation.go_test
+    if (receipt.get("timedOut") or type(receipt.get("exitCode")) is not int
+            or receipt["exitCode"] not in (0, 1) or stderr.strip()):
+        raise GateError("Go test infrastructure failure cannot kill a mutation")
+    try:
+        events = [json.loads(line) for line in stdout.splitlines()]
+    except (ValueError, TypeError) as error:
+        raise GateError("Go test did not produce structured JSON events") from error
+    if not events or any(not isinstance(event, dict) for event in events):
+        raise GateError("Go test produced no structured events")
+    parts = oracle.test.split("/")
+    expected = {"/".join(parts[:index]) for index in range(1, len(parts) + 1)}
+    running, finished, output, assertions = set(), {}, [], []
+    package_status = None
+    for index, event in enumerate(events):
+        action, test = event.get("Action"), event.get("Test")
+        if event.get("Package") != oracle.package or package_status is not None:
+            raise GateError("Go test package or terminal event does not match the declared oracle")
+        if index == 0:
+            if action != "start" or test is not None:
+                raise GateError("Go test is missing its package start event")
+            continue
+        if test is not None and test not in expected:
+            raise GateError("Go test selected an undeclared test: " + str(test))
+        if action == "run" and test is not None:
+            parent = test.rpartition("/")[0]
+            if test in running or test in finished or parent and parent not in running:
+                raise GateError("Go test contains duplicate or unordered test selection")
+            running.add(test)
+        elif action == "output":
+            if not isinstance(event.get("Output"), str) or test is not None and test not in running:
+                raise GateError("Go test output is malformed or outside its named test")
+            output.append((test, event["Output"]))
+            if event.get("OutputType") == "error":
+                assertions.append((test, event["Output"]))
+        elif action in ("pass", "fail") and test is not None:
+            if test not in running or any(name.startswith(test + "/") for name in running):
+                raise GateError("Go test completion is missing, duplicate or out of order")
+            running.remove(test)
+            finished[test] = action
+        elif action in ("pass", "fail") and test is None:
+            if running or set(finished) != expected or index != len(events) - 1:
+                raise GateError("Go test omitted or added named test completion")
+            package_status = action
+        else:
+            raise GateError("Go test skipped, interrupted or emitted an unsupported event")
+    if package_status is None or set(finished) != expected or any(status != package_status for status in finished.values()):
+        raise GateError("Go test and parent results are incomplete or inconsistent")
+    passed = package_status == "pass"
+    if receipt["exitCode"] != (0 if passed else 1):
+        raise GateError("Go test events disagree with the actual exit status")
+    combined_output = "".join(value for _, value in output)
+    if re.search(r"(?m)^\s*(?:panic:|fatal error:|runtime:|WARNING: DATA RACE)", combined_output):
+        raise GateError("Go test crashed or reported a runtime failure")
+    if not passed:
+        assertion = re.compile(r"^\s*" + re.escape(Path(mutation.suite).name) + r":\d+: " + re.escape(oracle.failure) + r"\s*$")
+        # The pinned Go toolchain distinguishes t.Fatal/t.Error from t.Log.
+        known = [line for test, value in assertions if test == oracle.test
+                 for line in value.splitlines() if assertion.fullmatch(line)]
+        if len(known) != 1:
+            raise GateError("named Go test failed without its exact declared semantic assertion")
+    return [{"case": oracle.test, "assertions": {mutation.required[0][1]: passed}, "pass": passed}]
+
+
+def run_go_test(mutation: Mutation, go: str, source: Path, binary: Path, dest: Path,
+                env: dict[str, str], prefix: list[str]):
+    run = dest / "run"
+    if run.exists():
+        raise GateError(f"refusing to reuse old Go test evidence: {run}")
+    run.mkdir(parents=True)
+    oracle = mutation.go_test
+    pattern = go_test_pattern(mutation)
+    forwarded = {key: env[key] for key in ("GOTOOLCHAIN", "GOWORK", "GOPROXY", "LD_LIBRARY_PATH") if env.get(key)}
+    forwarded.update(mutation.env)
+    selected_env = (["env", *(key + "=" + value for key, value in forwarded.items())] if prefix and forwarded else [])
+    command = prefix + selected_env + [str(binary), "-test.v=test2json", "-test.run=" + pattern, "-test.count=1",
+        "-test.timeout=" + str(mutation.timeout) + "s"]
+    # test2json normalizes every nonzero child exit to 1. Run the test separately
+    # so a crash/exit 2 cannot masquerade as an ordinary failed assertion.
+    native = dest / "native"
+    receipt = execute(command, native, env | mutation.env, source, mutation.timeout)
+    manifest = {"oracleType": "go-test", "goTest": asdict(oracle),
+        "testSource": mutation.suite, "testSourceSha256": digest(source / mutation.suite),
+        "binary": str(binary), "binarySha256": digest(binary),
+        "driverSha256": digest(Path(__file__)), "runPattern": pattern,
+        "rawStdoutSha256": digest(native / "stdout.log"), "rawStderrSha256": digest(native / "stderr.log"),
+        "command": receipt}
+    save(run / "manifest.json", manifest)
+    if receipt["timedOut"] or receipt["exitCode"] not in (0, 1):
+        raise GateError("Go test binary did not exit normally; no semantic kill")
+    conversion = execute([go, "tool", "test2json", "-t", "-p", oracle.package], dest,
+                         env, source, mutation.timeout, stdin=native / "stdout.log")
+    manifest.update(conversion=conversion, eventsSha256=digest(dest / "stdout.log"))
+    save(run / "manifest.json", manifest)
+    if conversion["timedOut"] or conversion["exitCode"] != 0 or (dest / "stderr.log").read_bytes():
+        raise GateError("Go test JSON conversion did not complete normally")
+    rows = validate_go_test_events(mutation, (dest / "stdout.log").read_text(encoding="utf-8"), receipt,
+                                  (native / "stderr.log").read_text(encoding="utf-8"))
+    save(run / "results.json", rows)
+    return receipt, read_results(run)
+
+
 def classify(mutation: Mutation, baseline: dict[str, dict], actual: dict[str, dict], receipt: dict):
     return classify_results(mutation.required, baseline, actual, receipt)
 
@@ -442,12 +575,15 @@ def classify_results(required, baseline: dict[str, dict], actual: dict[str, dict
     }
 
 
-def build(go: str, source: Path, binary: Path, env: dict[str, str], timeout: int):
-    command = [go, "build", "-mod=vendor", "-trimpath", "-buildvcs=false", "-o", str(binary), "./cmd/argo-workflows-ls"]
+def build(go: str, source: Path, binary: Path, env: dict[str, str], timeout: int, oracle: GoTestOracle | None = None):
+    command = ([go, "test", "-c"] if oracle else [go, "build"]) + [
+        "-mod=vendor", "-trimpath", "-buildvcs=false", "-o", str(binary),
+        oracle.package if oracle else "./cmd/argo-workflows-ls"]
     receipt = execute(command, binary.parent / "build", env, source, timeout)
     if receipt["timedOut"] or receipt["exitCode"] != 0:
         raise GateError(f"compilation failed; this is not a semantic kill: {binary.parent / 'build'}")
-    return {"command": receipt, "sha256": digest(binary)}
+    return {"command": receipt, "sha256": digest(binary), "binary": str(binary),
+            "kind": "go-test" if oracle else "server"}
 
 
 def main(argv=None) -> int:
@@ -471,6 +607,8 @@ def main(argv=None) -> int:
     for mutation in candidates:
         if mutation.tool and (tools_dir is None or not (tools_dir / mutation.tool).is_file()):
             parser.error("--tools must contain the pinned " + mutation.tool + " binary")
+        if mutation.go_test:
+            go_test_pattern(mutation)
     prefix = json.loads(args.test_prefix_json)
     if not isinstance(prefix, list) or any(not isinstance(x, str) for x in prefix):
         parser.error("--test-prefix-json must be a JSON array of strings")
@@ -497,24 +635,36 @@ def main(argv=None) -> int:
             source_hashes = {str(p.relative_to(source)): digest(p) for p in source.rglob("*") if p.is_file()}
             save(out / "source-manifest.json", source_hashes)
             baseline_binary = out / "baseline" / ("server.exe" if os.name == "nt" else "server")
-            report["baselineBuild"] = build(go, source, baseline_binary, env, args.build_timeout)
+            if any(mutation.go_test is None for mutation in candidates):
+                report["baselineBuild"] = build(go, source, baseline_binary, env, args.build_timeout)
             baselines = {}
             for mutation in candidates:
                 # Same suite + arguments + environment shares one passing baseline.
-                key = (mutation.suite, mutation.args, tuple(sorted(mutation.env.items())))
+                key = (mutation.suite, mutation.args, tuple(sorted(mutation.env.items())), mutation.go_test)
                 if key not in baselines:
                     dest = out / "baseline" / mutation.name
-                    receipt, result = run_consumer(mutation, baseline_binary, dest, env, prefix, tools_dir)
+                    if mutation.go_test:
+                        test_binary = dest / ("oracle.test.exe" if os.name == "nt" else "oracle.test")
+                        baseline_build = build(go, source, test_binary, env, args.build_timeout, mutation.go_test)
+                        receipt, result = run_go_test(mutation, go, source, test_binary, dest, env, prefix)
+                    else:
+                        baseline_build = report["baselineBuild"]
+                        receipt, result = run_consumer(mutation, baseline_binary, dest, env, prefix, tools_dir)
                     if receipt["exitCode"] != 0 or not all(row["pass"] for row in result.values()):
                         raise GateError(f"baseline failed: {mutation.suite}; no mutation is accepted")
                     baselines[key] = result
                     report["baseline"][mutation.name] = {"consumer": mutation.suite, "args": mutation.args,
-                                                          "caseCount": len(result), "receipt": receipt}
+                                                          "caseCount": len(result), "receipt": receipt,
+                                                          "build": baseline_build}
+                    if mutation.go_test:
+                        report["baseline"][mutation.name]["goTest"] = asdict(mutation.go_test)
                     save(out / "results.json", report)
                 print("BASELINE PASS", mutation.name, flush=True)
                 dest = out / mutation.name
                 dest.mkdir()
                 row = {"variant": mutation.name, "origin": mutation.origin, "status": "error", "detected": False}
+                if mutation.go_test:
+                    row.update(consumerSource=mutation.suite, goTest=asdict(mutation.go_test))
                 report["variants"].append(row)
                 path = source / mutation.file
                 original = path.read_text(encoding="utf-8")
@@ -533,11 +683,16 @@ def main(argv=None) -> int:
                     save(dest / "mutation.json", {"file": mutation.file, "origin": mutation.origin,
                          "beforeSha256": hashlib.sha256(original.encode()).hexdigest(),
                          "afterSha256": hashlib.sha256(mutated.encode()).hexdigest(),
-                         "requiredAssertions": mutation.required})
+                         "requiredAssertions": mutation.required, "consumerSource": mutation.suite,
+                         "goTest": asdict(mutation.go_test) if mutation.go_test else None})
                     path.write_text(mutated, encoding="utf-8")
-                    binary = dest / ("server.exe" if os.name == "nt" else "server")
-                    row["build"] = build(go, source, binary, env, args.build_timeout)
-                    receipt, actual = run_consumer(mutation, binary, dest / "consumer", env, prefix, tools_dir)
+                    filename = "oracle.test" if mutation.go_test else "server"
+                    binary = dest / (filename + ".exe" if os.name == "nt" else filename)
+                    row["build"] = build(go, source, binary, env, args.build_timeout, mutation.go_test)
+                    if mutation.go_test:
+                        receipt, actual = run_go_test(mutation, go, source, binary, dest / "consumer", env, prefix)
+                    else:
+                        receipt, actual = run_consumer(mutation, binary, dest / "consumer", env, prefix, tools_dir)
                     row["consumer"] = receipt
                     row.update(classify(mutation, baselines[key], actual, receipt))
                 except Exception as error:

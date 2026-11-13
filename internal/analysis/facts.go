@@ -18,6 +18,14 @@ type Facts struct {
 	boundary    string
 	views       map[snapshotIdentity]yamlview.View
 	projections map[projectionIdentity]projectedDocument
+	costs       map[snapshotIdentity]factBudget
+}
+
+// CaptureDocumentFacts is the catalog's completed single-document handoff.
+// Parse/projection values carry no workspace policy; avoid retaining or
+// serializing a full multi-scope header for each independently indexed file.
+func CaptureDocumentFacts(ctx context.Context, document workspace.Document) *Facts {
+	return CaptureFacts(ctx, workspace.Workspace{Documents: []workspace.Document{document}})
 }
 
 // These optional-retention limits do not reduce the workspace input allowance.
@@ -81,6 +89,7 @@ func RestoreFacts(ctx context.Context, facts *Facts, w workspace.Workspace) {
 		}
 		if _, ok := state.views[key]; !ok && state.bytes+len(key.text) <= 50*1024*1024 {
 			state.views[key] = view
+			state.sharedViews[key.text] = view
 			state.bytes += len(key.text)
 		}
 	}
@@ -90,6 +99,7 @@ func RestoreFacts(ctx context.Context, facts *Facts, w workspace.Workspace) {
 		}
 		if _, ok := state.views[key.snapshotIdentity]; ok {
 			state.projections[key] = value
+			state.sharedProjections[key.content()] = value
 		}
 	}
 	state.imported = facts
@@ -164,7 +174,7 @@ func CaptureFacts(ctx context.Context, w workspace.Workspace) *Facts {
 		return nil
 	}
 	inputs := factInputs(w)
-	facts := &Facts{boundary: boundary, views: map[snapshotIdentity]yamlview.View{}, projections: map[projectionIdentity]projectedDocument{}}
+	facts := &Facts{boundary: boundary, views: map[snapshotIdentity]yamlview.View{}, projections: map[projectionIdentity]projectedDocument{}, costs: map[snapshotIdentity]factBudget{}}
 	for key, view := range state.views {
 		if _, ok := inputs[key]; ok {
 			facts.views[key] = view
@@ -205,6 +215,7 @@ func CaptureFacts(ctx context.Context, w workspace.Workspace) *Facts {
 		return nil
 	}
 	for key, view := range facts.views {
+		before := budget
 		if !budget.add(len(key.text) + len(key.uri)) {
 			return nil
 		}
@@ -213,8 +224,10 @@ func CaptureFacts(ctx context.Context, w workspace.Workspace) *Facts {
 				return nil
 			}
 		}
+		facts.costs[key] = factBudget{budget.text - before.text, budget.nodes - before.nodes}
 	}
 	for key, value := range facts.projections {
+		before := budget
 		for range value.shared {
 			if !budget.add(0) {
 				return nil
@@ -223,6 +236,10 @@ func CaptureFacts(ctx context.Context, w workspace.Workspace) *Facts {
 		if !budget.add(len(key.version)) || !budget.value(ctx, value.value, 0) {
 			return nil
 		}
+		cost := facts.costs[key.snapshotIdentity]
+		cost.text += budget.text - before.text
+		cost.nodes += budget.nodes - before.nodes
+		facts.costs[key.snapshotIdentity] = cost
 	}
 	if ctx.Err() != nil {
 		return nil
