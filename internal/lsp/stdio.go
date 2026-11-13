@@ -35,6 +35,8 @@ type buffer struct {
 	unavailable string
 }
 type session struct {
+	render            RenderCommand
+	showDocument      bool
 	catalog           *catalog
 	focus, method     string
 	callerDefinitions bool
@@ -371,6 +373,11 @@ func (s *session) handle(m message) (bool, int, error) {
 		var p struct {
 			RootURI      string `json:"rootUri"`
 			Capabilities struct {
+				Window struct {
+					ShowDocument struct {
+						Support bool `json:"support"`
+					} `json:"showDocument"`
+				} `json:"window"`
 				Workspace struct {
 					WorkspaceEdit struct {
 						DocumentChanges bool `json:"documentChanges"`
@@ -389,6 +396,7 @@ func (s *session) handle(m message) (bool, int, error) {
 		}
 		s.override = p.InitializationOptions.TargetVersion
 		s.versionedEdits = p.Capabilities.Workspace.WorkspaceEdit.DocumentChanges
+		s.showDocument = p.Capabilities.Window.ShowDocument.Support
 		for _, f := range p.WorkspaceFolders {
 			root, err := filePath(f.URI)
 			if err != nil {
@@ -413,8 +421,12 @@ func (s *session) handle(m message) (bool, int, error) {
 		}
 		s.initialized = true
 		capabilities := map[string]any{"workspace": map[string]any{"workspaceFolders": map[string]any{"supported": true, "changeNotifications": true}}, "positionEncoding": "utf-16", "completionProvider": map[string]any{"resolveProvider": false}, "hoverProvider": true, "definitionProvider": true, "referencesProvider": true, "documentSymbolProvider": true, "workspaceSymbolProvider": true, "textDocumentSync": map[string]any{"openClose": true, "change": 2, "save": map[string]any{"includeText": false}}}
+		if s.render != nil {
+			capabilities["executeCommandProvider"] = map[string]any{"commands": []string{"argo-workflows.renderCheck"}}
+			capabilities["codeActionProvider"] = map[string]any{"codeActionKinds": []string{"source", "quickfix"}}
+		}
 		if s.versionedEdits {
-			capabilities["codeActionProvider"] = map[string]any{"resolveProvider": true, "codeActionKinds": []string{"quickfix"}}
+			capabilities["codeActionProvider"] = map[string]any{"resolveProvider": true, "codeActionKinds": []string{"quickfix", "source"}}
 			capabilities["renameProvider"] = map[string]any{"prepareProvider": true}
 		}
 		return false, 0, s.reply(m.ID, map[string]any{"capabilities": capabilities, "serverInfo": map[string]any{"name": "argo-workflows-ls", "version": buildinfo.ServerVersion}})
@@ -436,6 +448,12 @@ func (s *session) handle(m message) (bool, int, error) {
 				return false, 0, s.failure(m.ID, -32602, b.unavailable)
 			}
 		}
+	}
+	if handled, err := s.renderRequest(m); handled {
+		return false, 0, err
+	}
+	if handled, err := s.helmQuery(m); handled {
+		return false, 0, err
 	}
 	// Cross-file results require fresh scope input. Completion first checks its
 	// local fields and names below, so local queries never acquire a whole scope.

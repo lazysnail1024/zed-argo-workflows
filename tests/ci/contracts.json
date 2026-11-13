@@ -345,32 +345,32 @@
     "wf-remediation-helm-boundary": {
       "assertionKey": "assertions",
       "rows": [
-        {"id": {"case": "yaml/chart/templates/workflow.yaml/open"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
-        {"id": {"case": "yaml/chart/templates/workflow.yaml/unsaved-error"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
-        {"id": {"case": "yaml/chart/templates/workflow.yaml/unsaved-recovery"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
-        {"id": {"case": "yaml/chart/templates/workflow.yaml/helm-expression"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
-        {"id": {"case": "yaml/chart/templates/workflow.yaml/reopen-helm"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
-        {"id": {"case": "yaml/templates/plain.yaml/open"}, "assertions": ["hover_ownership", "no_schema_error", "source_unchanged"]},
-        {"id": {"case": "yaml/templates/plain.yaml/unsaved-error"}, "assertions": ["current_schema_error", "hover_ownership", "source_unchanged"]},
-        {"id": {"case": "yaml/templates/plain.yaml/unsaved-recovery"}, "assertions": ["hover_ownership", "no_schema_error", "source_unchanged"]},
-        {"id": {"case": "yaml/templates/plain.yaml/reopen-helm"}, "assertions": ["current_schema_error", "hover_ownership", "source_unchanged"]},
-        {"id": {"case": "yaml/ordinary.yaml/open"}, "assertions": ["hover_ownership", "no_schema_error", "source_unchanged"]},
-        {"id": {"case": "yaml/ordinary.yaml/unsaved-error"}, "assertions": ["current_schema_error", "hover_ownership", "source_unchanged"]},
-        {"id": {"case": "yaml/ordinary.yaml/unsaved-recovery"}, "assertions": ["hover_ownership", "no_schema_error", "source_unchanged"]},
-        {"id": {"case": "yaml/ordinary.yaml/reopen-helm"}, "assertions": ["current_schema_error", "hover_ownership", "source_unchanged"]},
-        {"id": {"case": "helm/chart/templates/workflow.yaml/open"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
-        {"id": {"case": "helm/chart/templates/workflow.yaml/unsaved-error"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
-        {"id": {"case": "helm/chart/templates/workflow.yaml/unsaved-recovery"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
-        {"id": {"case": "helm/chart/templates/workflow.yaml/helm-expression"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
-        {"id": {"case": "helm/chart/templates/workflow.yaml/reopen-yaml"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
-        {"id": {"case": "helm/templates/plain.yaml/open"}, "assertions": ["hover_ownership", "no_schema_error", "source_unchanged"]},
-        {"id": {"case": "helm/templates/plain.yaml/unsaved-error"}, "assertions": ["current_schema_error", "hover_ownership", "source_unchanged"]},
-        {"id": {"case": "helm/templates/plain.yaml/unsaved-recovery"}, "assertions": ["hover_ownership", "no_schema_error", "source_unchanged"]},
-        {"id": {"case": "helm/templates/plain.yaml/reopen-yaml"}, "assertions": ["current_schema_error", "hover_ownership", "source_unchanged"]},
-        {"id": {"case": "helm/ordinary.yaml/open"}, "assertions": ["hover_ownership", "no_schema_error", "source_unchanged"]},
-        {"id": {"case": "helm/ordinary.yaml/unsaved-error"}, "assertions": ["current_schema_error", "hover_ownership", "source_unchanged"]},
-        {"id": {"case": "helm/ordinary.yaml/unsaved-recovery"}, "assertions": ["hover_ownership", "no_schema_error", "source_unchanged"]},
-        {"id": {"case": "helm/ordinary.yaml/reopen-yaml"}, "assertions": ["current_schema_error", "hover_ownership", "source_unchanged"]}
+        {"id": {"case": "yaml/chart/templates/workflow.yaml/open"}, "assertions": ["source_unchanged", "hover_ownership", "no_schema_error"]},
+        {"id": {"case": "yaml/chart/templates/workflow.yaml/unsaved-error"}, "assertions": ["source_unchanged", "hover_ownership", "current_schema_error"]},
+        {"id": {"case": "yaml/chart/templates/workflow.yaml/unsaved-recovery"}, "assertions": ["source_unchanged", "hover_ownership", "no_schema_error"]},
+        {"id": {"case": "yaml/chart/templates/workflow.yaml/helm-expression"}, "assertions": ["source_unchanged", "chart_source_excluded", "hover_declines_chart_source"]},
+        {"id": {"case": "yaml/chart/templates/workflow.yaml/reopen-helm"}, "assertions": ["source_unchanged", "hover_ownership", "current_schema_error"]},
+        {"id": {"case": "yaml/templates/plain.yaml/open"}, "assertions": ["source_unchanged", "hover_ownership", "no_schema_error"]},
+        {"id": {"case": "yaml/templates/plain.yaml/unsaved-error"}, "assertions": ["source_unchanged", "hover_ownership", "current_schema_error"]},
+        {"id": {"case": "yaml/templates/plain.yaml/unsaved-recovery"}, "assertions": ["source_unchanged", "hover_ownership", "no_schema_error"]},
+        {"id": {"case": "yaml/templates/plain.yaml/reopen-helm"}, "assertions": ["source_unchanged", "hover_ownership", "current_schema_error"]},
+        {"id": {"case": "yaml/ordinary.yaml/open"}, "assertions": ["source_unchanged", "hover_ownership", "no_schema_error"]},
+        {"id": {"case": "yaml/ordinary.yaml/unsaved-error"}, "assertions": ["source_unchanged", "hover_ownership", "current_schema_error"]},
+        {"id": {"case": "yaml/ordinary.yaml/unsaved-recovery"}, "assertions": ["source_unchanged", "hover_ownership", "no_schema_error"]},
+        {"id": {"case": "yaml/ordinary.yaml/reopen-helm"}, "assertions": ["source_unchanged", "hover_ownership", "current_schema_error"]},
+        {"id": {"case": "helm/chart/templates/workflow.yaml/open"}, "assertions": ["source_unchanged", "hover_ownership", "no_schema_error"]},
+        {"id": {"case": "helm/chart/templates/workflow.yaml/unsaved-error"}, "assertions": ["source_unchanged", "hover_ownership", "current_schema_error"]},
+        {"id": {"case": "helm/chart/templates/workflow.yaml/unsaved-recovery"}, "assertions": ["source_unchanged", "hover_ownership", "no_schema_error"]},
+        {"id": {"case": "helm/chart/templates/workflow.yaml/helm-expression"}, "assertions": ["source_unchanged", "chart_source_excluded", "hover_declines_chart_source"]},
+        {"id": {"case": "helm/chart/templates/workflow.yaml/reopen-yaml"}, "assertions": ["source_unchanged", "hover_ownership", "current_schema_error"]},
+        {"id": {"case": "helm/templates/plain.yaml/open"}, "assertions": ["source_unchanged", "hover_ownership", "no_schema_error"]},
+        {"id": {"case": "helm/templates/plain.yaml/unsaved-error"}, "assertions": ["source_unchanged", "hover_ownership", "current_schema_error"]},
+        {"id": {"case": "helm/templates/plain.yaml/unsaved-recovery"}, "assertions": ["source_unchanged", "hover_ownership", "no_schema_error"]},
+        {"id": {"case": "helm/templates/plain.yaml/reopen-yaml"}, "assertions": ["source_unchanged", "hover_ownership", "current_schema_error"]},
+        {"id": {"case": "helm/ordinary.yaml/open"}, "assertions": ["source_unchanged", "hover_ownership", "no_schema_error"]},
+        {"id": {"case": "helm/ordinary.yaml/unsaved-error"}, "assertions": ["source_unchanged", "hover_ownership", "current_schema_error"]},
+        {"id": {"case": "helm/ordinary.yaml/unsaved-recovery"}, "assertions": ["source_unchanged", "hover_ownership", "no_schema_error"]},
+        {"id": {"case": "helm/ordinary.yaml/reopen-yaml"}, "assertions": ["source_unchanged", "hover_ownership", "current_schema_error"]}
       ]
     },
     "wf-reaudit-rename": {
@@ -622,7 +622,7 @@
       "assertionKey": "assertions",
       "rows": [
         {"id": {"case": "nested-root-single-owner"}, "assertions": ["one_nested_symbol", "registered_root_prevents_cross_scope_binding"]},
-        {"id": {"case": "helm-open-skipped"}, "assertions": ["no_raw_template_diagnostics"]},
+        {"id": {"case": "pure-chart-yaml-analyzed"}, "assertions": ["schema_diagnostics"]},
         {"id": {"case": "excluded-open-single-file"}, "assertions": ["explicit_buffer_analyzed"]},
         {"id": {"case": "removed-root-clears"}, "assertions": ["cleared", "query_rejected"]},
         {"id": {"case": "continuous-input-latest"}, "assertions": ["latest_error"]},
@@ -1382,6 +1382,76 @@
       "linuxAssertions": ["peak_rss_under_512_mib"],
       "rows": [
         {"id": {}, "assertions": ["clean_shutdown", "complete_input_read", "cumulative_input_exceeds_retained_text", "current_workflow_local_diagnostic_before_discovery", "discovery_finishes_without_worker_reset", "first_publication_under_two_seconds", "indexed_location_maps_to_source", "no_missing_target_claim_during_discovery", "peak_rss_under_512_mib", "query_observation_cannot_hide_diagnostic_update", "readiness_within_budget", "reconciliation_reuses_unchanged_summaries", "retained_text_bounded", "second_discovery_pass_is_complete", "signature_change_invalidates_caller", "unchanged_events_do_not_reparse_workspace", "unchanged_events_read_only_related_inputs", "unknown_unwatched_uri_converges"]}
+      ]
+    },
+    "wf-helm-navigation": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "main"}, "assertions": ["exact_original_target"]},
+        {"id": {"case": "template: leaf"}, "assertions": ["exact_original_target"]},
+        {"id": {"case": "workflow.parameters.message"}, "assertions": ["exact_original_target"]},
+        {"id": {"case": "hover"}, "assertions": ["empty_without_error"]},
+        {"id": {"case": "completion"}, "assertions": ["empty_without_error"]},
+        {"id": {"case": "references"}, "assertions": ["empty_without_error"]},
+        {"id": {"case": "prepareRename"}, "assertions": ["empty_without_error"]},
+        {"id": {"case": "no-render-diagnostics"}, "assertions": ["empty"]},
+        {"id": {"case": "reject-structure-0"}, "assertions": ["empty"]},
+        {"id": {"case": "reject-structure-1"}, "assertions": ["empty"]},
+        {"id": {"case": "reject-structure-2"}, "assertions": ["empty"]},
+        {"id": {"case": "pure-chart-name-hover"}, "assertions": ["supported"]},
+        {"id": {"case": "external-library"}, "assertions": ["exact"]},
+        {"id": {"case": "external-external-leaf"}, "assertions": ["exact"]},
+        {"id": {"case": "dynamic-resource-refused"}, "assertions": ["empty"]},
+        {"id": {"case": "dynamic-namespace-namespace-namespace"}, "assertions": ["empty"]},
+        {"id": {"case": "dynamic-namespace-foo-bar"}, "assertions": ["empty"]},
+        {"id": {"case": "dynamic-mapping-key"}, "assertions": ["empty"]},
+        {"id": {"case": "unicode-crlf"}, "assertions": ["exact"]}
+      ]
+    },
+    "wf-helm-identity": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "dynamic-caller-name-helm-library"}, "assertions": ["exact_target"]},
+        {"id": {"case": "dynamic-caller-name-render"}, "assertions": ["exact_target"]},
+        {"id": {"case": "escaped-parameter-with-dynamic-caller-name"}, "assertions": ["exact_target"]},
+        {"id": {"case": "unknown-template-candidate-refuses-binding"}, "assertions": ["empty"]}
+      ]
+    },
+    "wf-render-discovery": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "helm3/file"}, "assertions": ["complete", "success", "generated_location"]},
+        {"id": {"case": "helm3/relative-file"}, "assertions": ["complete", "success", "generated_location"]},
+        {"id": {"case": "helm3/cwd"}, "assertions": ["complete", "success", "generated_location"]},
+        {"id": {"case": "helm3/root"}, "assertions": ["complete", "success", "generated_location"]},
+        {"id": {"case": "helm3/explicit-action"}, "assertions": ["one_action"]},
+        {"id": {"case": "helm3/resolve-command"}, "assertions": ["preserved", "not_executed"]},
+        {"id": {"case": "helm3/execute"}, "assertions": ["success", "opens_generated"]},
+        {"id": {"case": "helm3/stale-refused"}, "assertions": ["refused"]},
+        {"id": {"case": "helm3/dirty-refused"}, "assertions": ["save_required"]},
+        {"id": {"case": "helm3/foreign-refused"}, "assertions": ["refused"]},
+        {"id": {"case": "helm3/symlink-outside-refused"}, "assertions": ["refused"]},
+        {"id": {"case": "helm3/structural-render-action"}, "assertions": ["available"]},
+        {"id": {"case": "helm3/selected-file-scope"}, "assertions": ["success"]},
+        {"id": {"case": "helm4/file"}, "assertions": ["complete", "success", "generated_location"]},
+        {"id": {"case": "helm4/relative-file"}, "assertions": ["complete", "success", "generated_location"]},
+        {"id": {"case": "helm4/cwd"}, "assertions": ["complete", "success", "generated_location"]},
+        {"id": {"case": "helm4/root"}, "assertions": ["complete", "success", "generated_location"]},
+        {"id": {"case": "helm4/explicit-action"}, "assertions": ["one_action"]},
+        {"id": {"case": "helm4/resolve-command"}, "assertions": ["preserved", "not_executed"]},
+        {"id": {"case": "helm4/execute"}, "assertions": ["success", "opens_generated"]},
+        {"id": {"case": "helm4/stale-refused"}, "assertions": ["refused"]},
+        {"id": {"case": "helm4/dirty-refused"}, "assertions": ["save_required"]},
+        {"id": {"case": "helm4/foreign-refused"}, "assertions": ["refused"]},
+        {"id": {"case": "helm4/symlink-outside-refused"}, "assertions": ["refused"]},
+        {"id": {"case": "helm4/structural-render-action"}, "assertions": ["available"]},
+        {"id": {"case": "helm4/selected-file-scope"}, "assertions": ["success"]}
+      ]
+    },
+    "wf-render-cancel": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "cancel-reaps-descendants"}, "assertions": ["cancelled", "helm_reaped", "child_reaped"]}
       ]
     }
   }

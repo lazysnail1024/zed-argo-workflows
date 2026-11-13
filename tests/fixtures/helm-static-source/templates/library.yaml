@@ -1,0 +1,15 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: helm-library
+  namespace: argo
+spec:
+  templates:
+    - name: render
+      inputs:
+        parameters:
+          - name: message
+      container:
+        image: {{ .Values.image | quote }}
+        command: [echo]
+        args: ["{{ `{{inputs.parameters.message}}` }}"]

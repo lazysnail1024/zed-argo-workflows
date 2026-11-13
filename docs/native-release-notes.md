@@ -1,14 +1,13 @@
-# Argo Workflows language server — 0.0.1-alpha.3
+# Argo Workflows language server — 0.0.1-alpha.4
 
-This prerelease brings the shared CRD editing and incremental workspace work from main into a distributable native LSP. It remains a prerelease before 0.0.1.
+This alpha adds configuration-free chart discovery and explicit Helm rendering while retaining automatic compatibility across Argo Workflows 3.0.0–4.1.6.
 
-- Common YAML source/value projection and Schema queries now come from the pinned shared CRD toolkit; Argo-specific semantics and verification remain in this server.
-- Current-file diagnostics and lightweight read requests stay independent of slower workspace discovery. The bounded queues, per-file budgets and incremental readiness preserve the existing five-second analysis deadline and memory limits.
-- Static WorkflowTemplate / ClusterWorkflowTemplate resource names and their templateRef / workflowTemplateRef uses can be renamed together only when scope, namespace, source identity and all affected document versions are provably safe. Unsafe or incomplete cases are refused.
-- Large trailing-comment analysis is cheaper without weakening strict YAML checks or the 128 MiB input accounting.
+- Ordinary YAML in chart templates keeps normal diagnostics and editor queries. Helm source supports conservative definitions for local templates, literal templateRef targets and escaped Argo parameter tags, with original source coordinates.
+- Dynamic keys, unknown target identities, namespaces and structural Helm actions do not fabricate source bindings. Template-name hover works with the schema's template-choice constraints.
+- The **Argo Workflows: render and check saved chart** code action needs no project task file. It discovers the selected chart and scope, finds Helm on PATH, uses chart defaults and opens generated YAML. Collection and resolution never run tools; stale or unsaved input is refused.
+- CLI `render-check --file path/to/template.yaml` uses the same bounded implementation. Helm 3 and 4 are checked explicitly; cancellation terminates Helm descendants. Rendering never runs on save.
+- This release also includes the upstream bounded query, schema deadline, closed-file authority and CI evidence validation fixes merged since alpha.3.
 
-Zero-configuration exact-version coverage remains **Argo Workflows 3.0.0–4.1.6**. This is static analysis, not controller execution or automatic inference of the cluster version.
+Native executables and archives cover Linux amd64/arm64, macOS amd64/arm64 and Windows amd64, with license/source provenance and SHA256SUMS. The forthcoming independent Zed adapter `zed-v0.0.1-alpha.5` will pin native `v0.0.1-alpha.4`.
 
-Native executables and archives cover Linux amd64/arm64, macOS amd64/arm64 and Windows amd64. Distribution supplies original license/source provenance and `SHA256SUMS`. The independently versioned Zed adapter `zed-v0.0.1-alpha.4` pins native `v0.0.1-alpha.3`; separately installed native binaries must be upgraded separately.
-
-Automated CLI/LSP, large-workspace, resource and distribution checks do not constitute real Zed GUI acceptance or Zed extension-store publication.
+Use the Helm extension for Helm syntax; see the README for one-time language associations and known source-navigation limits. Separate visible roots remain separate indexes in Zed 1.28.1; open a common parent for cross-repository navigation. This remains an alpha, not a Zed extension-store publication.

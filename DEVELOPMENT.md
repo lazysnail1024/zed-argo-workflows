@@ -127,3 +127,13 @@ source identities. The default auto window is derived from the latest two stable
 majors. A new catalog must pass version compatibility consumers before release.
 See [configuration](docs/configuration.md), [architecture](docs/architecture.md),
 [CI](docs/CI.md), and [lessons learned](docs/lessons-learned.md) for current boundaries and regression requirements.
+
+Helm source navigation and identity controls run in the portable native suite via
+`wf-helm-navigation.py` and `wf-helm-identity.py`. The Linux extended suite runs
+`wf-render-discovery.py` against checksum-pinned Helm 3 and Helm 4 binaries and
+`wf-render-cancel.py` against a real LSP process and its descendants. Install the
+tools with `python3 tests/ci/install-tools.py --output artifacts/tools`, then run
+`python3 tests/ci/run.py suite --suite extended --binary build/argo-workflows-ls
+--tools artifacts/tools --output artifacts/extended` (join the command lines).
+The adapter WASI acceptance downloads its pinned native release; publish and
+verify that native release before validating a new adapter pin.

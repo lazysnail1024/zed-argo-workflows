@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/helmsource"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -78,6 +79,9 @@ func readDocuments(ctx context.Context, header Workspace, selected, override str
 				return err
 			}
 		} else {
+			if HelmTemplate(header.Root, path) && helmsource.HasActions(text) {
+				return nil
+			}
 			var snapshot source.Snapshot
 			snapshot, err = source.New(source.URI(uri), 1, text)
 			if err == nil {

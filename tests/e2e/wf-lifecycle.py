@@ -22,7 +22,7 @@ try:
   definition=lsp.request('textDocument/definition',{'textDocument':{'uri':caller.as_uri()},'position':a.pos(a.CALLER,'template: work',offset=11)})
   a.result('nested-root-single-owner',{'one_nested_symbol':len(response.get('result',[]))==1,'registered_root_prevents_cross_scope_binding':definition.get('result')==[]}, {'symbols':response,'definition':definition})
   raw=work/'chart/templates/raw.yaml';ds=lsp.open(raw,base)
-  a.result('helm-open-skipped',{'no_raw_template_diagnostics':ds==[]},ds)
+  a.result('pure-chart-yaml-analyzed',{'schema_diagnostics':any(x['code']=='SCHEMA_TYPE' for x in ds)},ds)
   ds=lsp.open(work/'vendor/open.yaml',base)
   a.result('excluded-open-single-file',{'explicit_buffer_analyzed':any(x['code']=='SCHEMA_TYPE' for x in ds)},ds)
   # Drain prior same-version publications with an ordinary request barrier.

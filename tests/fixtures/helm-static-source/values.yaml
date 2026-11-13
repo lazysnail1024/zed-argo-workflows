@@ -1,0 +1,2 @@
+image: alpine:3.20
+message: hello-from-helm

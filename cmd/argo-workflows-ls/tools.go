@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
@@ -122,13 +123,19 @@ func selectedTarget(ctx context.Context, root, scope, override string) (string, 
 	return target, compat.Resolve(target)
 }
 func renderCheck(args []string) int {
+	ctx, cancel := commandContext()
+	defer cancel()
+	return renderCheckContext(ctx, args, os.Stdout, os.Stderr)
+}
+func renderCheckContext(ctx context.Context, args []string, outputWriter, errorWriter io.Writer) int {
 	flags := flag.NewFlagSet("render-check", flag.ContinueOnError)
-	flags.SetOutput(os.Stderr)
+	flags.SetOutput(errorWriter)
 	root := flags.String("root", ".", "source root")
 	scope := flags.String("scope", "", "source scope")
 	target := flags.String("target-version", "", "exact target")
-	chart := flags.String("chart", "", "local chart directory")
-	helm := flags.String("helm-binary", "", "absolute Helm3 path")
+	chart := flags.String("chart", "", "local chart directory (default: nearest Chart.yaml)")
+	file := flags.String("file", "", "current saved chart file")
+	helm := flags.String("helm-binary", "", "absolute Helm 3 or 4 path (default: PATH)")
 	output := flags.String("output", "", "generated input directory")
 	release := flags.String("release-name", "argo-ls", "release name")
 	namespace := flags.String("namespace", "default", "namespace")
@@ -139,13 +146,65 @@ func renderCheck(args []string) int {
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
 	}
-	ctx, cancel := commandContext()
-	defer cancel()
 	var rawStdout, rawStderr []byte
 	rawExit := 0
-	fail := func(err error) int { return commandFailure(ctx, "render-check", err, rawStdout, rawStderr, rawExit) }
-	if !filepath.IsAbs(*helm) || *chart == "" || *output == "" {
-		return fail(fmt.Errorf("--helm-binary must be absolute; --chart and --output are required"))
+	fail := func(err error) int {
+		exit := 2
+		if ctx.Err() != nil {
+			err = ctx.Err()
+			exit = 3
+		}
+		report := map[string]any{"operation": "render-check", "product": "argo-workflows", "analysisComplete": false, "error": err.Error(), "toolExitCode": rawExit, "stdout": string(rawStdout), "stderr": string(rawStderr)}
+		if writeErr := json.NewEncoder(outputWriter).Encode(report); writeErr != nil {
+			fmt.Fprintln(errorWriter, writeErr)
+			return 2
+		}
+		return exit
+	}
+	if *file != "" {
+		absolute, err := filepath.Abs(*file)
+		if err != nil {
+			return fail(err)
+		}
+		*file = absolute
+	}
+	if *helm == "" {
+		resolved, err := exec.LookPath("helm")
+		if err != nil {
+			return fail(fmt.Errorf("Helm not found on PATH: %w", err))
+		}
+		*helm, err = filepath.Abs(resolved)
+		if err != nil {
+			return fail(err)
+		}
+	}
+	if !filepath.IsAbs(*helm) {
+		return fail(fmt.Errorf("--helm-binary must be absolute"))
+	}
+	if *chart == "" {
+		start := *file
+		if start == "" {
+			start = *root
+		}
+		found, err := workspace.NearestChart(start)
+		if err != nil {
+			return fail(err)
+		}
+		*chart = found
+	}
+	if *output == "" {
+		cache, err := os.UserCacheDir()
+		if err != nil {
+			return fail(err)
+		}
+		base := filepath.Join(cache, "argo-workflows-ls", "render")
+		if err := os.MkdirAll(base, 0755); err != nil {
+			return fail(err)
+		}
+		*output, err = os.MkdirTemp(base, "chart-")
+		if err != nil {
+			return fail(err)
+		}
 	}
 	chartPath, err := filepath.Abs(*chart)
 	if err != nil {
@@ -165,6 +224,25 @@ func renderCheck(args []string) int {
 	}
 	if relative, err := filepath.Rel(chartPath, outputPath); err != nil || relative == "." || relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 		return fail(fmt.Errorf("output directory must be outside the chart input directory"))
+	}
+	if *file != "" && *scope == "" {
+		header, err := workspace.Describe(ctx, *root, *target, nil)
+		if err != nil {
+			return fail(err)
+		}
+		uri, err := fileuri.FromPath(*file)
+		if err != nil {
+			return fail(err)
+		}
+		snapshot, err := source.New(source.URI(uri), 0, "")
+		if err != nil {
+			return fail(err)
+		}
+		document, err := workspace.OpenDocument(header, snapshot, *target)
+		if err != nil {
+			return fail(err)
+		}
+		*scope = document.Target.Scope
 	}
 	inputs, err := renderInputs(ctx, chartPath, *helm, *root, values)
 	if err != nil {
@@ -190,8 +268,8 @@ func renderCheck(args []string) int {
 	if err != nil {
 		return fail(fmt.Errorf("Helm version failed (%d): %s: %w", versionCode, versionErr, err))
 	}
-	if !strings.HasPrefix(toolVersion, "v3.") {
-		return fail(fmt.Errorf("Helm3 is required; got %s", toolVersion))
+	if !strings.HasPrefix(toolVersion, "v3.") && !strings.HasPrefix(toolVersion, "v4.") {
+		return fail(fmt.Errorf("Helm 3 or 4 is required; got %s", toolVersion))
 	}
 	command := []string{"template", *release, chartPath, "--namespace", *namespace, "--kube-version", *kube, "--include-crds"}
 	for _, path := range values {
@@ -225,7 +303,7 @@ func renderCheck(args []string) int {
 	save := func() {
 		data, _ := json.MarshalIndent(report, "", "  ")
 		if err := os.WriteFile(filepath.Join(outputPath, "render-report.json"), append(data, '\n'), 0644); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(errorWriter, err)
 		}
 	}
 	save()
@@ -238,7 +316,8 @@ func renderCheck(args []string) int {
 	if err := os.WriteFile(filepath.Join(outputPath, "rendered.yaml"), stdout, 0644); err != nil {
 		return fail(err)
 	}
-	code := runContext(ctx, []string{"check", "--root", outputPath, "--target-version", version, "--format", "json"})
+	fmt.Fprintln(errorWriter, "Generated YAML:", filepath.Join(outputPath, "rendered.yaml"))
+	code := runWithIO(ctx, []string{"check", "--root", outputPath, "--target-version", version, "--format", "json"}, outputWriter, errorWriter)
 	report["checkExitCode"] = code
 	save()
 	return code
@@ -417,4 +496,36 @@ func renderInputs(ctx context.Context, chart, helm, root string, values []string
 		return nil, err
 	}
 	return result, nil
+}
+
+func renderForEditor(ctx context.Context, root, file, target string) (map[string]any, error) {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return nil, err
+	}
+	base := filepath.Join(cache, "argo-workflows-ls", "render")
+	if err := os.MkdirAll(base, 0755); err != nil {
+		return nil, err
+	}
+	output, err := os.MkdirTemp(base, "chart-")
+	if err != nil {
+		return nil, err
+	}
+	args := []string{"--root", root, "--file", file, "--output", output}
+	if target != "" {
+		args = append(args, "--target-version", target)
+	}
+	var stdout, stderr bytes.Buffer
+	code := renderCheckContext(ctx, args, &stdout, &stderr)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if code != 0 && code != 1 {
+		return nil, fmt.Errorf("render-check failed: %s %s", stdout.String(), stderr.String())
+	}
+	var report map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		return nil, err
+	}
+	return map[string]any{"exitCode": code, "generatedFile": filepath.Join(output, "rendered.yaml"), "report": report}, nil
 }
