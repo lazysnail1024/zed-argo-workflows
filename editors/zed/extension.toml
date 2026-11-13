@@ -1,6 +1,6 @@
 id = "argo-workflows-lsp"
 name = "Argo Workflows"
-version = "0.0.1-alpha.4"
+version = "0.0.1-alpha.5"
 schema_version = 1
 snippets = ["snippets/yaml.json"]
 authors = ["snail (lazysnail1024)"]
@@ -24,4 +24,4 @@ kind = "download_file"
 host = "github.com"
 path = ["lazysnail1024", "zed-argo-workflows", "releases", "download", "**"]
 
-# Adapter alpha.4 pins the independently released native alpha.3.
+# Adapter alpha.5 pins the independently released native alpha.4.
