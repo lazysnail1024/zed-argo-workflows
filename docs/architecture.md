@@ -31,7 +31,7 @@ ClusterWorkflowTemplate、CronWorkflow 有工作流语义；其余四种提供 s
 | [internal/fileuri](../internal/fileuri/fileuri.go) | 本地绝对路径和 file URI 互转；包含 Windows 盘符及转义边界 |
 | [internal/buildinfo](../internal/buildinfo/info.go) | 原生版本、源码身份与 Go build metadata 中实际链接的 toolkit 版本 |
 | [compat](../compat/catalog.go) | 只读嵌入 catalog，解析支持版本、GVK/schema 映射、上游来源与 catalog hash |
-| [internal/assets](../internal/assets/schema.go) | 加载嵌入 schema；拒绝外部 schema 下载；缓存不可变编译结果，单许可限制冷编译并发 |
+| [internal/assets](../internal/assets/schema.go)、[compact.go](../internal/assets/compact.go) | 加载嵌入 schema；拒绝外部 schema 下载；精确版本在冷编译私有副本中共享相同子 schema，原始字节和元数据查询不变；缓存不可变编译结果，单许可限制冷编译并发 |
 
 `internal/workspace/config.go` 管理 `.argo-workflows-ls.yaml`、默认命名空间、引用策略和
 scope 的有效 target。`stream.go` 的 `Describe` 只读取配置元数据，`Candidate` 统一过滤
@@ -79,7 +79,7 @@ WorkspaceEdit 能力约束。具体协议分支以 [stdio.go](../internal/lsp/st
 | [edits.go](../internal/analysis/edits.go)、[quickfixes.go](../internal/analysis/quickfixes.go)、[localrename.go](../internal/analysis/localrename.go)、[pin.go](../internal/analysis/pin.go) | 源码编辑计划、YAML 标量编码、绑定安全性和版本 pin 修复；拒绝不精确或不安全的修改 |
 | [local_edits.go](../internal/analysis/local_edits.go) | 在当前文档内模拟修复，要求资源身份、导出模板和外部调用边界保持不变；可证明局部安全时不等待完整目录，否则使用完整 scope 验证 |
 | [externalrename.go](../internal/analysis/externalrename.go) | 按当前 CST 的光标位置选择局部或资源 Rename；静态 WorkflowTemplate/ClusterWorkflowTemplate 资源名及引用复用现有资源/调用模型，检查全 scope、唯一声明、精确来源、新名捕获与批量修改后的语义 |
-| [invocation.go](../internal/analysis/invocation.go)、[preparse.go](../internal/analysis/preparse.go)、[facts.go](../internal/analysis/facts.go)、[external_facts.go](../internal/analysis/external_facts.go) | 单次分析复用、CLI 有界预解析、可选解析事实交接及外部诊断复用；缓存不改变输入准入或完整性判断 |
+| [invocation.go](../internal/analysis/invocation.go)、[preparse.go](../internal/analysis/preparse.go)、[facts.go](../internal/analysis/facts.go)、[facts_store.go](../internal/analysis/facts_store.go)、[external_facts.go](../internal/analysis/external_facts.go) | 单次分析复用、CLI 有界预解析、catalog/请求共享的有界解析事实交接及外部诊断复用；缓存不改变输入准入或完整性判断 |
 
 ## 公共依赖与隔离边界
 
@@ -168,8 +168,19 @@ scope 就绪检查读取 root 的扫描完成状态、未知成员计数和目�
 
 关闭文件读取若发现漏 watcher 的内容变化，会撤销旧索引并安排重建，同时只撤销该文件所属
 scope 的完整性证明。此次读到的新内容仍可用于已知正向导航；需要完整闭包的缺失诊断、引用查找
-或编辑不能把它当作完整索引。返回 proof 保留实际 read 的 stamp，后续 watch 变化仍会拒绝旧结果。
+或编辑不能把它当作完整索引。读取发布与 hash/stamp 绑定在同一 catalog 锁内完成，第二次新字节
+观测会撤销仍在解析旧字节的票据；被动重排队和同字节索引追赶不递增输入 stamp。
+返回 proof 保留实际 read 的身份，后续 watch 变化仍会拒绝旧结果，包括同字节通知。
+同 URI 的磁盘读取至发布窗口使用可取消的短期占用，避免后台读取反过来撤销前台票据；
+不同 URI、解析和索引不受该占用串行化，磁盘 I/O 不持有 catalog 锁。
 [关闭文件自修复](../internal/lsp/catalog_inputs.go)、[并发读验证](../internal/lsp/catalog_query_repair_test.go)
+
+后台索引完成的不可变 CST/投影与前台完成的解析结果进入同一个可选 `FactStore`。所有文件和
+scope 共同使用 8 MiB 文本、512,000 节点上限；同 URI 替换，最近最少使用的条目先释放，session
+不另存第二份持久批次。恢复前仍重新获取当前输入并比较 URI、revision、完整字节和 target version，
+不会恢复旧配置、诊断、绑定结果或完整性结论。每个逻辑结果仍独立计算 alias/merge 展开准入；
+超缓存预算仅放弃复用，不减少分析输入或放宽拒绝条件。保存由成功且当前的索引票据或请求 proof
+验收；树计费在 worker 中完成，owner 保存时不重新遍历 CST。
 
 ### 资源索引表达什么
 
@@ -220,7 +231,7 @@ LSP 只返回带版本的 `documentChanges`；客户端如何原子应用多文�
 | LSP 请求准入 | 轻/重两条固定 lane，各一个 active、八个 queued；另一个诊断 worker；每个 worker 五秒 deadline |
 | CLI 一次性目录收集 | 最多 50,000 YAML 候选；五秒分析 deadline |
 | YAML 投影与 schema 查询 | 每文档至多 100,000 展开/访问节点，单标量 1 MiB；alias/merge 的同一逻辑结果累计 100,000 有效节点；公共查询遵守其 work/depth 预算 |
-| 请求内解析复用 / 可选跨 worker 解析事实 | 50 MiB / 8 MiB 文本和 512,000 节点；超出可选缓存不扩大输入预算 |
+| 请求内解析复用 / 可选跨 worker 解析事实 | 50 MiB / 全 catalog 与 session 共用 8 MiB 文本和 512,000 节点；超出可选缓存不扩大输入预算 |
 | 外部诊断事实复用 | 最多 20,000 keys / 4 MiB；候选集合参与身份 |
 | 名称候选 / workspace symbols | 1,000 / 20,000；修复/补全候选截断明确拒绝，workspace symbols 保留 URI/文件内顺序的前 20,000 项；冷索引不承诺全量结果 |
 | 符号查询工作量 | 单请求最多 1,100,000 次文件/符号访问，含零命中；覆盖既有 100,000 文件与 1,000,000 符号容量；候选查询在多个 key/scope 间累计，不因解析缓存重置而重新授予预算 |
@@ -228,7 +239,8 @@ LSP 只返回带版本的 `documentChanges`；客户端如何原子应用多文�
 | 冷 schema 编译 | 一个可取消等待的许可；暖命中直接使用不可变缓存，失败不缓存 |
 | LSP Go 软内存目标 | 288 MiB；保留更低的调用方限制，结束恢复原值；不等于进程 RSS 上限 |
 
-关闭文件的完整原文不放 catalog LRU，临时 Workspace、解析 context 和 buffer map 随 worker 释放；
+Documents 和 catalog 文件条目不缓存关闭文件正文；唯一可选解析事实存储在上述总额内保留精确原文
+及不可变解析对象，命中也不能替代新的磁盘读取。临时 Workspace、解析 context 和 buffer map 随 worker 释放；
 摘要名称、容器名和编辑字符串复制所需片段，避免小 substring 持有整份旧原文。
 资源或容量拒收会标记 unavailable，不能退回旧 buffer 或磁盘并声称成功；完整替换或 close/reopen 可恢复，条目数耗尽也不会终止服务。
 旧 version 或非法 UTF-16 更新则被忽略，已接受快照保持有效，这与资源拒收不同。

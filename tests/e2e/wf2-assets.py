@@ -17,4 +17,5 @@ try:
  for version,present in e['cronSchedules'].items():
   v=next(v for v in entries if v['version']==version); s=next(s for s in v['sources'] if s['kind']=='CronWorkflow'); text=(root/s['path']).read_text(); results.append({'version':version,'assertion':'CronWorkflow schedules availability','pass':('\n              schedules:' in text)==present})
 except Exception as err: results.append({'assertion':'assets load','pass':False,'error':str(err)})
+for row in results: row['assertions']={row['assertion']:row['pass']}
 (out/'results.json').write_text(json.dumps(results,indent=2)); (out/'manifest.json').write_text(json.dumps({'command':sys.argv,'testSha256':hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),'expectedSha256':hashlib.sha256((root/'tests/e2e/wf2.expected.json').read_bytes()).hexdigest(),'tagInventorySha256':hashlib.sha256((root/'compat/upstream/tags.txt').read_bytes()).hexdigest(),'scope':'source asset integrity; runtime validation is covered separately by wf-multi-version'},indent=2));sys.exit(0 if results and all(r['pass'] for r in results) else 1)

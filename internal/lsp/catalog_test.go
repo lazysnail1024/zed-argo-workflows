@@ -347,6 +347,18 @@ func TestCatalogObservesSavedBufferAfterScannedDirectory(t *testing.T) {
 	if c.files[source.URI(uri)] != file || !c.queue.Pending(source.URI(uri)) || r.complete {
 		t.Fatal("scan completion deleted a closed authoritative input before its disk read")
 	}
+	// Pending work now fences finishPass. Drain that reservation as the closed
+	// input worker would, then prove the saved input survives the actual sweep.
+	job, ok := c.queue.Pop()
+	if !ok || job.URI != source.URI(uri) {
+		t.Fatal("closed authoritative input was not queued for reconciliation")
+	}
+	c.queue.Complete(job)
+	c.refreshReadiness(job.URI)
+	c.finishPass(r)
+	if c.files[source.URI(uri)] != file {
+		t.Fatal("completed close reconciliation deleted a file observed by the saved buffer")
+	}
 }
 
 func TestDocumentCapacityRefusalRecoversAfterClose(t *testing.T) {

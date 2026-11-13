@@ -52,7 +52,7 @@ func (s *session) publishIndexed(uri string, params map[string]any) error {
 	}
 	ctx, cancel := context.WithTimeout(analysis.WithLogicalResult(s.context()), 5*time.Second)
 	defer cancel()
-	analysis.RestoreFacts(ctx, s.facts, workspace.Workspace{Documents: []workspace.Document{document}})
+	s.catalog.facts.Restore(ctx, workspace.Workspace{Documents: []workspace.Document{document}})
 	result := analysis.AnalyzeSchema(ctx, document.Snapshot, document.Target.Version)
 	_, _, headerErr := s.catalog.header(s.root(uri))
 	complete := s.catalog.scopeReady(s.root(uri), document.Target.ID)

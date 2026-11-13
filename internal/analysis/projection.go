@@ -47,7 +47,7 @@ func project(ctx context.Context, snapshot source.Snapshot, doc yamlview.Documen
 	state, _ := ctx.Value(invocationKey{}).(*invocation)
 	key := projectionIdentity{snapshotKey(snapshot), version, doc.Span()}
 	if state != nil {
-		if value, ok := state.projections[key]; ok {
+		if value, ok := state.projection(key); ok {
 			if err := admitProjection(ctx, key, value.graphNodes); err != nil {
 				return nil, err
 			}
@@ -81,8 +81,15 @@ func project(ctx context.Context, snapshot source.Snapshot, doc yamlview.Documen
 		return nil, err
 	}
 	if state != nil && ctx.Err() == nil {
+		value := projectedDocument{value: value, graphNodes: projected.LogicalNodes, shared: projected.Shared}
 		if _, ok := state.views[key.snapshotIdentity]; ok {
-			state.projections[key] = projectedDocument{value: value, graphNodes: projected.LogicalNodes, shared: projected.Shared}
+			state.projections[key] = value
+		}
+		// A shared parse hit does not retain another snapshot identity or its
+		// text backing storage. Reuse its projection under the same bounded
+		// content identity instead of projecting it again at every call site.
+		if _, ok := state.sharedViews[key.text]; ok {
+			state.sharedProjections[key.content()] = value
 		}
 	}
 	return value, nil

@@ -10,6 +10,6 @@ for trial in range(5):
  cmd=[str(binary),'check','--root',str(work),'--format','json'];start=time.monotonic();r=subprocess.run(cmd,capture_output=True,timeout=12);elapsed=time.monotonic()-start
  (out/('%d.stdout'%trial)).write_bytes(r.stdout);(out/('%d.stderr'%trial)).write_bytes(r.stderr)
  report=json.loads(r.stdout);checks={'allFiles':report['filesAnalyzed']==24,'allResources':report['resourcesAnalyzed']==24,'noDeadline':not any('deadline' in str(x).lower() for x in report['notEvaluated']),'withinBudget':elapsed<=5,'acceptedComplete':r.returncode==0 and report['analysisComplete'] is True,'noDiagnostics':report.get('diagnostics')==[],'noConfigurationError':report.get('configurationErrors')==[],'noUnevaluated':report.get('notEvaluated')==[]}
- results.append({'command':cmd,'exitCode':r.returncode,'elapsedSeconds':elapsed,'assertions':checks,'pass':all(checks.values())});(out/'results.json').write_text(json.dumps(results,indent=2)+'\n')
+ results.append({'sample':trial,'command':cmd,'exitCode':r.returncode,'elapsedSeconds':elapsed,'assertions':checks,'pass':all(checks.values())});(out/'results.json').write_text(json.dumps(results,indent=2)+'\n')
 (out/'manifest.json').write_text(json.dumps({'binarySha256':sha(binary),'testSha256':sha(pathlib.Path(__file__)),'python':sys.version,'inputs':{p.name:sha(p) for p in work.iterdir()},'measurement':'Diagnostic baseline; not the constrained full-load acceptance gate'},indent=2)+'\n')
-sys.exit(0 if all(r['pass'] for r in results) else 1)
+sys.exit(0 if len(results)==5 and all(r['pass'] for r in results) else 1)

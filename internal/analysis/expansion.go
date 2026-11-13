@@ -52,7 +52,7 @@ type projectedDocument struct {
 func sharedOrigins(ctx context.Context, snapshot source.Snapshot, doc yamlview.Document, version string) map[source.Span]bool {
 	state, _ := ctx.Value(invocationKey{}).(*invocation)
 	if state != nil {
-		if value, ok := state.projections[projectionIdentity{snapshotKey(snapshot), version, doc.Span()}]; ok {
+		if value, ok := state.projection(projectionIdentity{snapshotKey(snapshot), version, doc.Span()}); ok {
 			return value.shared
 		}
 	}

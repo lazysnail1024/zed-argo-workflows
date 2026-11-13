@@ -49,6 +49,8 @@ type catalogFile struct {
 	stamp                                         uint64
 	revision                                      source.Revision
 	hash                                          [32]byte
+	observedHash                                  [32]byte
+	observed                                      bool
 	config, problem                               string
 	opened, blocked, invalidated, owned, awaiting bool
 	symbols                                       []analysis.DomainSymbol
@@ -57,18 +59,22 @@ type catalogFile struct {
 	querySlot                                     int
 }
 
-// catalog survives every request/publication worker. Its maps retain identities,
-// summaries and authoritative buffers, never closed-file text, a Workspace, or
-// an analysis invocation. Existing optional parse facts have their own budget.
+// catalog survives every request/publication worker. Its index maps retain
+// identities and summaries, and Documents owns authoritative open buffers.
+// The optional fact store is the single bounded owner of detached parse and
+// projection data for both catalog and session workers. No Workspace or analysis
+// invocation outlives its worker.
 type catalog struct {
 	mu                       sync.Mutex
 	ctx                      context.Context
 	cancel                   context.CancelFunc
 	documents                *shared.Documents
 	index                    *index.Index
+	facts                    analysis.FactStore
 	queue                    *shared.WorkQueue
 	roots                    map[string]*catalogRoot
 	files                    map[source.URI]*catalogFile
+	reading                  map[source.URI]chan struct{}
 	queryFiles               []source.URI
 	queryEpoch               uint64
 	events                   chan struct{}
@@ -352,8 +358,9 @@ func (c *catalog) mark(uri source.URI, priority shared.Priority, invalidate bool
 	if file == nil || file.blocked {
 		return
 	}
-	file.stamp++
 	if invalidate {
+		file.stamp++
+		file.observed = false
 		c.invalidate(uri, file)
 		if root := c.roots[file.root]; root != nil {
 			root.complete, root.reported = false, false
@@ -371,6 +378,7 @@ func (c *catalog) mark(uri source.URI, priority shared.Priority, invalidate bool
 }
 
 func (c *catalog) invalidate(uri source.URI, file *catalogFile) {
+	c.facts.Delete(uri)
 	scope := file.target.ID
 	if scope == "" {
 		scope = file.root + "#root"
@@ -385,6 +393,7 @@ func (c *catalog) invalidate(uri source.URI, file *catalogFile) {
 }
 
 func (c *catalog) removeFacts(uri source.URI) {
+	c.facts.Delete(uri)
 	change, err := c.index.Remove(uri)
 	if err == nil {
 		c.affected(change.Affected)
@@ -396,6 +405,10 @@ func (c *catalog) removeFacts(uri source.URI) {
 
 func (c *catalog) remove(uri source.URI) {
 	c.documents.Invalidate(uri)
+	if done := c.reading[uri]; done != nil {
+		delete(c.reading, uri)
+		close(done)
+	}
 	c.queue.Remove(uri)
 	c.removeFacts(uri)
 	if file := c.files[uri]; file != nil {
@@ -523,11 +536,12 @@ func (c *catalog) process(job shared.WorkTicket) {
 		c.refreshReadiness(uri)
 	}
 	c.mu.Unlock()
-	snapshot, err := c.readSnapshot(ctx, uri)
+	read, err := c.readSnapshot(ctx, uri)
 	if err != nil {
 		c.finishFile(uri, file, stamp, epoch, err)
 		return
 	}
+	snapshot, stamp := read.Snapshot, read.input.stamp
 	document, err := workspace.OpenDocument(header, snapshot, override)
 	if err != nil {
 		c.finishFile(uri, file, stamp, epoch, err)
@@ -543,12 +557,6 @@ func (c *catalog) process(job shared.WorkTicket) {
 	if unchanged && !file.invalidated {
 		c.mu.Unlock()
 		return
-	}
-	if !unchanged && !file.invalidated {
-		// A missed-watch read has now observed different bytes. Withdraw old
-		// locations before parsing, and revoke results captured during the read.
-		file.stamp++
-		stamp = file.stamp
 	}
 	ticket, err := c.index.Begin(uri, index.Scope(document.Target.ID), snapshot.Revision())
 	var change index.Change
@@ -570,9 +578,13 @@ func (c *catalog) process(job shared.WorkTicket) {
 		return
 	}
 	var summary analysis.FileSummary
+	var facts *analysis.Facts
 	if !reused {
 		ctx = analysis.WithInvocation(ctx)
 		summary, err = analysis.Summarize(ctx, header, document)
+		if err == nil {
+			facts = analysis.CaptureDocumentFacts(ctx, document)
+		}
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -615,6 +627,9 @@ func (c *catalog) process(job shared.WorkTicket) {
 		c.symbolBytes += symbolBytes - file.symbolBytes
 		c.symbolCount += len(summary.Symbols) - len(file.symbols)
 		file.symbols, file.symbolBytes, file.owned = summary.Symbols, symbolBytes, summary.Owned
+		if ctx.Err() == nil {
+			c.facts.Store(facts)
+		}
 	}
 	c.affected(change.Affected)
 }

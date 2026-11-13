@@ -108,6 +108,14 @@ func Compile(ctx context.Context, version, apiVersion, kind string) (*jsonschema
 	if err != nil {
 		return nil, err
 	}
+	// Exact CRDs are stored in expanded form for provenance and field lookup.
+	// Automatic compatibility already shares its release branches at build time.
+	if version != compat.DefaultVersion {
+		document, err = compactSchema(ctx, document)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	compiler := jsonschema.NewCompiler()
 	compiler.DefaultDraft(jsonschema.Draft2020)

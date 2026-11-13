@@ -43,6 +43,8 @@ def query(name, marked, method='completion', labels=None, excluded=(), applied=N
             checks['excluded'] = not (set(got) & set(excluded))
             if no_result: checks['empty'] = items == []
             for index, (label, old, new) in enumerate(applied or []):
+                for check in ('textEdit', 'exactBytes', 'actual-complete-resource', 'actual-no-diagnostics', 'actual-honest-incomplete', 'expected-complete-resource', 'expected-no-diagnostics', 'expected-honest-incomplete'):
+                    checks[check + '-' + str(index)] = False
                 matches = [x for x in items if x['label'] == label]
                 checks['uniqueCandidate-' + str(index)] = len(matches) == 1
                 if len(matches) != 1: continue
@@ -100,5 +102,5 @@ else:
     query('boolean-false-hover', HEAD + 'spec:\n  imposs' + MARK + 'ible: x\n', method='hover', needles=['Type: `never`'])
     query('intersection-never-hover', HEAD + 'spec:\n  typeContra' + MARK + 'diction: x\n', method='hover', needles=['Type: `never`'])
 
-m.save(m.OUT / 'manifest.json', {'command': sys.argv, 'binarySha256': m.sha(m.BINARY), 'probeSha256': m.sha(pathlib.Path(__file__)), 'expectationsSha256': m.sha(ROOT / 'tests/fixtures/schema-query/contract.json'), 'protocolHelperSha256': m.sha(ROOT / 'tests/e2e/wf-audit-gaps.py'), 'caseCount': len(m.RESULTS), 'classification': sys.argv[3], 'inputHashes': {str(p.relative_to(m.OUT)): m.sha(p) for p in m.OUT.rglob('*.yaml')}})
+m.save(m.OUT / 'manifest.json', {'command': sys.argv, 'binarySha256': m.sha(m.BINARY), 'testSha256': m.sha(pathlib.Path(__file__)), 'expectationsSha256': m.sha(ROOT / 'tests/fixtures/schema-query/contract.json'), 'protocolHelperSha256': m.sha(ROOT / 'tests/e2e/wf-audit-gaps.py'), 'caseCount': len(m.RESULTS), 'classification': sys.argv[3], 'inputHashes': {str(p.relative_to(m.OUT)): m.sha(p) for p in m.OUT.rglob('*.yaml')}})
 sys.exit(0 if len(m.RESULTS) == (9 if sys.argv[3] == 'actual' else 15) and all(r['pass'] for r in m.RESULTS) else 1)

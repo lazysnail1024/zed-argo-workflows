@@ -9,9 +9,9 @@ cases.append(('scalarBudget',base+'spec: {entrypoint: '+json.dumps('x'*1048577)+
 with tempfile.TemporaryDirectory(prefix='wf-yaml-') as d:
  work=pathlib.Path(d)
  for name,text,target in cases:
-  (work/'case.yaml').write_text(text);(out/(name+'.input.yaml')).write_text(text);cmd=[str(binary),'check','--root',str(work),'--target-version',target,'--format','json'];p=subprocess.run(cmd,capture_output=True,timeout=15);(out/(name+'.stdout')).write_bytes(p.stdout);(out/(name+'.stderr')).write_bytes(p.stderr);checks={'exit':p.returncode==e['exitCode']}
+  (work/'case.yaml').write_text(text);(out/(name+'.input.yaml')).write_text(text);cmd=[str(binary),'check','--root',str(work),'--target-version',target,'--format','json'];p=subprocess.run(cmd,capture_output=True,timeout=15);(out/(name+'.stdout')).write_bytes(p.stdout);(out/(name+'.stderr')).write_bytes(p.stderr);checks={'exit':p.returncode==e['exitCodes'][name]}
   try:
-   v=json.loads(p.stdout);ds=v['diagnostics'];unknown=[x for x in ds if x['code']==e['unknownCode']]
+   v=json.loads(p.stdout);checks['scopeComplete']=v['analysisComplete'] is (e['exitCodes'][name]!=2);checks['configurationValid']=v['configurationErrors']==[];checks['selectedCounts']=v['filesAnalyzed']==v['resourcesAnalyzed']==(0 if e['exitCodes'][name]==2 else 1);ds=v['diagnostics'];unknown=[x for x in ds if x['code']==e['unknownCode']]
    if name=='old':checks['unknown']=len(unknown)==1 and unknown[0]['severity']=='Warning' and unknown[0]['range']['start']=={'line':4,'character':2}
    if name=='new':checks['version']=not unknown
    if name=='alias':checks['derived']=len(ds)==1 and ds[0]['code']=='SCHEMA_TYPE' and ds[0].get('positionKind')=='derived' and ds[0]['range']['start']=={'line':e['aliasLine'],'character':e['aliasColumn']};checks['evaluated']=not any('alias' in x.lower() for x in v['notEvaluated'])

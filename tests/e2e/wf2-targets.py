@@ -1,12 +1,46 @@
 #!/usr/bin/env python3
-import pathlib,json,hashlib,subprocess,sys
-root=pathlib.Path(__file__).resolve().parents[2];binary=pathlib.Path(sys.argv[1]).resolve();out=root/'artifacts/wf2-targets';out.mkdir(parents=True,exist_ok=True)
-e=json.loads((root/'tests/e2e/wf2.expected.json').read_text());cases=[('known','3.6.0',False),('unknown',e['unknownTarget'],True)];results=[]
-for name,target,unknown in cases:
- command=[str(binary),'check','--root',str(root/'tests/fixtures/schema'),'--format','json','--target-version',target];p=subprocess.run(command,capture_output=True,timeout=10);(out/(name+'.stdout')).write_bytes(p.stdout);(out/(name+'.stderr')).write_bytes(p.stderr)
- checks={'exit':p.returncode==2}
- try:
-  v=json.loads(p.stdout); checks['incomplete']=v['analysisComplete'] is False;checks['catalog']=isinstance(v['catalogHash'],str) and len(v['catalogHash'])==64;checks['target_selection']=any('unknown target' in x for x in v['configurationErrors'])==unknown;checks['no_unverified_target']=all(t.get('analysisComplete') is False for t in v['targets'])
- except Exception as err:checks['parse']=str(err)
- results.append({'name':name,'command':command,'exitCode':p.returncode,'assertions':checks,'pass':all(x is True for x in checks.values())})
-(out/'results.json').write_text(json.dumps(results,indent=2));(out/'manifest.json').write_text(json.dumps({'command':sys.argv,'binarySha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'testSha256':hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),'expectedSha256':hashlib.sha256((root/'tests/e2e/wf2.expected.json').read_bytes()).hexdigest()},indent=2));sys.exit(0 if all(r['pass'] for r in results) else 1)
+"""A supported target completes a real resource; an unknown target is refused."""
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+ROOT = Path(__file__).resolve().parents[2]
+binary = Path(sys.argv[1]).resolve()
+output = Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else ROOT / 'artifacts/wf2-targets'
+output.mkdir(parents=True, exist_ok=True)
+expected_path = ROOT / 'tests/e2e/wf2.expected.json'
+expected = json.loads(expected_path.read_text())
+rows = []
+with tempfile.TemporaryDirectory(prefix='wf-target-contract-') as temporary:
+    work = Path(temporary)
+    fixture = ROOT / 'tests/fixtures/schema/valid.yaml'
+    (work / 'valid.yaml').write_bytes(fixture.read_bytes())
+    for name, target, unknown in [('known', '3.6.0', False), ('unknown', expected['unknownTarget'], True)]:
+        command = [str(binary), 'check', '--root', str(work), '--format', 'json', '--target-version', target]
+        process = subprocess.run(command, capture_output=True, timeout=10)
+        (output / (name + '.stdout')).write_bytes(process.stdout)
+        (output / (name + '.stderr')).write_bytes(process.stderr)
+        report = json.loads(process.stdout)
+        checks = {
+            'exit': process.returncode == (expected['unknownExit'] if unknown else 0),
+            'completeness': report['analysisComplete'] is (not unknown),
+            'catalog': isinstance(report['catalogHash'], str) and len(report['catalogHash']) == 64,
+            'targetSelection': any('unknown target' in value for value in report['configurationErrors']) is unknown,
+            'reportIdentity': report['product'] == expected['product'] and report['reportSchemaVersion'] == 1,
+            'counts': (report['filesAnalyzed'], report['resourcesAnalyzed']) == ((0, 0) if unknown else (1, 1)),
+            'diagnostics': report['diagnostics'] == [],
+            'targetState': (all(value.get('analysisComplete') is False for value in report['targets']) if unknown
+                            else len(report['targets']) == 1 and report['targets'][0]['version'] == target
+                            and report['targets'][0]['analysisComplete'] is True),
+        }
+        rows.append({'name': name, 'command': command, 'exitCode': process.returncode,
+                     'assertions': checks, 'pass': all(checks.values())})
+sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+(output / 'results.json').write_text(json.dumps(rows, indent=2) + '\n')
+(output / 'manifest.json').write_text(json.dumps({'command': sys.argv, 'binarySha256': sha(binary),
+    'testSha256': sha(Path(__file__)), 'expectedSha256': sha(expected_path),
+    'fixtureSha256': sha(fixture)}, indent=2) + '\n')
+raise SystemExit(0 if len(rows) == 2 and all(row['pass'] for row in rows) else 1)

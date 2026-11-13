@@ -16,61 +16,135 @@ import (
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
 )
 
-func (c *catalog) readSnapshot(ctx context.Context, uri source.URI) (source.Snapshot, error) {
-	c.mu.Lock()
-	file := c.files[uri]
-	blocked := file != nil && file.blocked
-	problem := "opened document is unavailable"
-	if blocked && file.problem != "" {
-		problem = file.problem
-	}
-	c.mu.Unlock()
-	if blocked {
-		return source.Snapshot{}, fmt.Errorf("%s", problem)
-	}
-	if snapshot, opened := c.documents.Snapshot(uri); opened {
-		return snapshot, nil
-	}
-	path, err := filePath(string(uri))
-	if err != nil {
-		return source.Snapshot{}, err
-	}
-	ticket, err := c.documents.BeginRead(uri)
-	if err != nil {
-		if snapshot, open := c.documents.Snapshot(uri); open {
-			return snapshot, nil
+// catalogSnapshot binds the bytes to the input identity at publication. An
+// index worker may catch up later without changing that identity; another read
+// of different bytes or an authoritative notification must revoke it.
+type catalogSnapshot struct {
+	source.Snapshot
+	input             catalogInput
+	changed, repaired bool
+}
+
+func (c *catalog) readSnapshot(ctx context.Context, uri source.URI) (catalogSnapshot, error) {
+	for {
+		c.mu.Lock()
+		file := c.files[uri]
+		if file != nil && file.blocked {
+			problem := file.problem
+			if problem == "" {
+				problem = "opened document is unavailable"
+			}
+			c.mu.Unlock()
+			return catalogSnapshot{}, fmt.Errorf("%s", problem)
 		}
-		return source.Snapshot{}, err
+		if snapshot, opened := c.documents.Snapshot(uri); opened {
+			defer c.mu.Unlock()
+			return c.observeSnapshot(uri, snapshot), nil
+		}
+		if pending := c.reading[uri]; pending != nil {
+			c.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return catalogSnapshot{}, ctx.Err()
+			case <-pending:
+				continue
+			}
+		}
+		path, err := filePath(string(uri))
+		if err != nil {
+			c.mu.Unlock()
+			return catalogSnapshot{}, err
+		}
+		// Documents intentionally revokes an older ticket when a new read
+		// begins. Serialize only this URI's I/O/publication window so a
+		// background read cannot revoke a foreground read of unchanged bytes.
+		// Parsing and indexing never hold this short-lived reservation.
+		if c.reading == nil {
+			c.reading = map[source.URI]chan struct{}{}
+		}
+		done := make(chan struct{})
+		c.reading[uri] = done
+		ticket, err := c.documents.BeginRead(uri)
+		c.mu.Unlock()
+		if err != nil {
+			c.releaseRead(uri, done)
+			return catalogSnapshot{}, err
+		}
+		return c.readDiskSnapshot(ctx, uri, path, ticket, done)
 	}
+}
+
+func (c *catalog) releaseRead(uri source.URI, done chan struct{}) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// Removal can retire a reservation before its reader exits. The old
+	// reader must not release a recreated URI's newer reservation.
+	if c.reading[uri] == done {
+		delete(c.reading, uri)
+		close(done)
+	}
+}
+
+func (c *catalog) readDiskSnapshot(ctx context.Context, uri source.URI, path string, ticket shared.ReadTicket, done chan struct{}) (catalogSnapshot, error) {
+	defer c.releaseRead(uri, done)
 	defer c.documents.DiscardRead(ticket)
 	text, err := workspace.ReadText(ctx, path)
 	if err != nil {
-		return source.Snapshot{}, err
+		return catalogSnapshot{}, err
 	}
 	if err := ctx.Err(); err != nil {
-		return source.Snapshot{}, err
+		return catalogSnapshot{}, err
 	}
-	snapshot, err := c.documents.PublishRead(ticket, text)
-	if err != nil {
-		return source.Snapshot{}, err
-	}
-	hash := sha256.Sum256([]byte(text))
+	// Publish and record the observed bytes under the same catalog lock as
+	// notifications. A later successful read cannot be overwritten by an older
+	// reader that was paused between Documents publication and proof capture.
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	file = c.files[uri]
+	snapshot, err := c.documents.PublishRead(ticket, text)
+	if err != nil {
+		return catalogSnapshot{}, err
+	}
+	file := c.files[uri]
 	if file != nil {
 		if root := c.roots[file.root]; root != nil {
 			root.reads++
 			root.bytes += uint64(len(text))
 		}
-		if file.hash == hash && file.revision != 0 {
-			snapshot, err = source.New(uri, file.revision, text)
-			if err != nil {
-				return source.Snapshot{}, err
-			}
+	}
+	read := c.observeSnapshot(uri, snapshot)
+	if file != nil && file.hash == read.input.hash && file.revision != 0 {
+		read.Snapshot, err = source.New(uri, file.revision, text)
+	}
+	return read, err
+}
+
+// observeSnapshot requires c.mu. Retain only a hash of the latest source, even
+// while an older summary is pending. Queue occupancy says nothing about which
+// bytes a running worker is parsing, so it cannot stand in for this identity.
+func (c *catalog) observeSnapshot(uri source.URI, snapshot source.Snapshot) catalogSnapshot {
+	hash := sha256.Sum256([]byte(snapshot.Text()))
+	read := catalogSnapshot{Snapshot: snapshot, input: catalogInput{hash: hash}}
+	file := c.files[uri]
+	if file == nil {
+		return read
+	}
+	previous := file.hash
+	if file.observed {
+		previous = file.observedHash
+	}
+	read.changed = previous != hash && (file.observed || !file.invalidated)
+	if read.changed {
+		file.stamp++
+		c.invalidate(uri, file)
+		if root := c.roots[file.root]; root != nil {
+			root.complete, root.reported = false, false
 		}
 	}
-	return snapshot, nil
+	file.observedHash, file.observed = hash, true
+	read.input.stamp = file.stamp
+	read.repaired = read.changed || file.hash != hash
+	c.refreshReadiness(uri)
+	return read
 }
 
 func (c *catalog) header(root string) (workspace.Workspace, bool, error) {
@@ -166,33 +240,34 @@ func (c *catalog) document(ctx context.Context, uri string) (workspace.Document,
 		var stamp uint64
 		if file != nil {
 			stamp = file.stamp
-			proof.files = map[source.URI]catalogInput{source.URI(uri): {file.stamp, file.hash}}
+			proof.files = map[source.URI]catalogInput{source.URI(uri): {stamp, file.hash}}
 		}
 		c.mu.Unlock()
-		snapshot, err := c.readSnapshot(ctx, source.URI(uri))
+		read, err := c.readSnapshot(ctx, source.URI(uri))
 		if err != nil {
 			return workspace.Document{}, proof, err
 		}
-		document, err := workspace.OpenDocument(header, snapshot, override)
+		document, err := workspace.OpenDocument(header, read.Snapshot, override)
 		if err != nil {
 			return document, proof, err
 		}
 		c.mu.Lock()
-		if c.roots[root] != r || r.epoch != proof.epoch || c.files[source.URI(uri)] != file || file != nil && file.stamp != stamp {
+		if c.roots[root] != r || r.epoch != proof.epoch || c.files[source.URI(uri)] != file || file != nil && file.stamp != read.input.stamp {
 			c.mu.Unlock()
 			return workspace.Document{}, proof, shared.ErrStale
 		}
 		if file != nil {
-			hash := sha256.Sum256([]byte(snapshot.Text()))
-			if file.hash != hash && !c.queue.Pending(source.URI(uri)) {
-				// A closed read can discover a missed watch. Keep this useful
-				// positive input, but withdraw any claim of scope completeness.
-				c.mark(source.URI(uri), shared.Related, true)
-				proof.repaired = true
+			hash := read.input.hash
+			if read.changed || read.repaired && !c.queue.Pending(source.URI(uri)) {
+				// A newer source must survive an older worker's exit, including
+				// when that worker is still holding its queue reservation.
+				c.mark(source.URI(uri), shared.Related, false)
 			}
+			proof.repaired = read.repaired
 			proof.files[source.URI(uri)] = catalogInput{file.stamp, hash}
 		}
 		c.mu.Unlock()
+		c.facts.Restore(ctx, workspace.Workspace{Documents: []workspace.Document{document}})
 		return document, proof, nil
 	}
 }
@@ -308,17 +383,22 @@ type catalogInput struct {
 }
 
 type catalogProof struct {
-	root              string
-	epoch             uint64
-	states            map[index.Scope]uint64
-	files             map[source.URI]catalogInput
-	repaired          bool
-	allowIndexCatchUp bool
+	root     string
+	epoch    uint64
+	states   map[index.Scope]uint64
+	files    map[source.URI]catalogInput
+	repaired bool
 }
 
 func (c *catalog) valid(proofs []catalogProof) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.validLocked(proofs)
+}
+
+// validLocked requires c.mu, allowing callers to fence publication or retention
+// with the same input proof without a validation-to-publication gap.
+func (c *catalog) validLocked(proofs []catalogProof) bool {
 	for _, proof := range proofs {
 		root := c.roots[proof.root]
 		if root == nil || root.epoch != proof.epoch {
@@ -334,7 +414,7 @@ func (c *catalog) valid(proofs []catalogProof) bool {
 			if file == nil || !file.invalidated && file.hash != input.hash {
 				return false
 			}
-			if file.stamp != input.stamp && !(proof.allowIndexCatchUp && !file.invalidated && file.hash == input.hash) {
+			if file.stamp != input.stamp {
 				return false
 			}
 		}

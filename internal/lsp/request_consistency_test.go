@@ -2,9 +2,7 @@ package lsp
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,43 +10,10 @@ import (
 	"testing"
 
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
-	shared "github.com/lazysnail1024/k8s-crd-toolkit/workspace"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/analysis"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
 )
-
-func TestClosedReadRetryRevokesCapturedProofWithoutByteChange(t *testing.T) {
-	c := testCatalogNoWorkers(t)
-	uri, text := source.URI("file:///caller.yaml"), "unchanged bytes"
-	file := &catalogFile{root: "root", stamp: 4, hash: sha256.Sum256([]byte(text)), invalidated: true}
-	c.roots["root"] = &catalogRoot{epoch: 7}
-	c.files[uri] = file
-	proof := catalogProof{root: "root", epoch: 7, files: map[source.URI]catalogInput{uri: {file.stamp, file.hash}}}
-	if !c.valid([]catalogProof{proof}) {
-		t.Fatal("fixture proof must initially be current")
-	}
-	// A foreground closed read can supersede the catalog worker's disk ticket.
-	older, err := c.documents.BeginRead(uri)
-	if err != nil {
-		t.Fatal(err)
-	}
-	newer, err := c.documents.BeginRead(uri)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := c.documents.PublishRead(newer, text); err != nil {
-		t.Fatal(err)
-	}
-	_, err = c.documents.PublishRead(older, text)
-	if !errors.Is(err, shared.ErrStale) {
-		t.Fatalf("older closed read was not superseded: %v", err)
-	}
-	c.finishFile(uri, file, 4, 7, err)
-	if file.stamp != 5 || file.hash != proof.files[uri].hash || !c.queue.Pending(uri) || c.valid([]catalogProof{proof}) {
-		t.Fatal("stale-read retry failed to revoke the old proof while retaining unchanged bytes")
-	}
-}
 
 func TestReadOnlyClosureKeepsSnapshotsWithTheirProofs(t *testing.T) {
 	c := testCatalogNoWorkers(t)

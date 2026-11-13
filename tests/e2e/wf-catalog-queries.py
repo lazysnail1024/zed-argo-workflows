@@ -2,6 +2,7 @@
 """Real stdio consumers for closed-read repair and bounded resource candidates."""
 import argparse
 import importlib.util
+import json
 import pathlib
 import sys
 import time
@@ -18,9 +19,17 @@ m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 
 
-def ready(client):
+def ready(client, expected_files=None):
     deadline = time.monotonic() + 30
-    while b'"state":"Ready"' not in client.stderr_raw:
+    while True:
+        for line in bytes(client.stderr_raw).splitlines():
+            try:
+                state = json.loads(line)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                continue
+            if (state.get("state") == "Ready" and
+                    (expected_files is None or state.get("files") == expected_files and state.get("queue") == 0)):
+                return state
         if time.monotonic() >= deadline:
             raise TimeoutError("catalog did not finish the bounded fixture")
         time.sleep(.01)
@@ -69,6 +78,33 @@ def repair():
         client.close()
 
 
+def idle_repair():
+    # Keep the consecutive-write race above intact. This independent file has
+    # no pending repair when its first query must capture newly read bytes.
+    dest, work = m.setup("closed-idle-file-repair", {"base.yaml": m.BASE})
+    client = m.LSP(dest, work)
+    path = work / "base.yaml"
+    try:
+        indexed = ready(client, expected_files=1)
+        moved = "# completed write after the idle index became Ready 😀\r\n" + m.BASE
+        path.write_bytes(moved.encode())
+        symbols = client.request("textDocument/documentSymbol", {"textDocument": {"uri": path.as_uri()}})
+        selected = selection(moved, "- name: work", "work")
+        expected = [{"name": "work", "detail": "template", "kind": 12,
+                     "range": selected, "selectionRange": selected}]
+        m.result("closed-idle-file-repair", {
+            "first_query_has_fresh_symbol": symbols.get("result") == expected,
+            "no_self_content_modified": "error" not in symbols,
+        }, {"indexBeforeWrite": indexed, "symbols": symbols})
+    finally:
+        client.close()
+
+
+def repair_cases():
+    repair()
+    idle_repair()
+
+
 def candidates(truncated=False):
     name = "candidate-matching-budget" if truncated else "candidate-prefix-budget"
     caller = m.CALLER.replace("name: base, template:", "name: bas, template:")
@@ -107,7 +143,7 @@ def candidates(truncated=False):
         client.close()
 
 
-for name, run in [("repair", repair), ("candidates", candidates), ("truncation", lambda: candidates(True))]:
+for name, run in [("repair", repair_cases), ("candidates", candidates), ("truncation", lambda: candidates(True))]:
     if name not in args.cases:
         continue
     try:

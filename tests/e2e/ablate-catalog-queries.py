@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from mutation_support import classify_results, read_results
 
 ROOT = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser(description=__doc__)
@@ -33,15 +34,18 @@ def run(folder, label, command, cwd=ROOT, timeout=180):
 baseline = out / "baseline"
 baseline.mkdir()
 baseline_run = run(baseline, "consumer", [sys.executable, consumer, args.binary.resolve(), baseline / "e2e"])
-baseline_states = run(baseline, "state-guards", [go, "test", "-mod=vendor", "-count=1", "-timeout=60s", "./internal/lsp",
+baseline_cases = read_results(baseline / "e2e")
+baseline_states = run(baseline, "state-guards", [go, "test", "-v", "-mod=vendor", "-count=1", "-timeout=60s", "./internal/lsp",
                                              "-run", "TestClosedReadRepairsOnlyItsScopeProof|TestReadinessTracksPendingFailureRetargetAndRemoval|TestReadOnlyClosureKeepsSnapshotsWithTheirProofs"])
+state_names = ("TestClosedReadRepairsOnlyItsScopeProof", "TestReadinessTracksPendingFailureRetargetAndRemoval", "TestReadOnlyClosureKeepsSnapshotsWithTheirProofs")
+state_output = baseline_states.stdout.decode(errors="replace")
 rows = [{"id": "baseline", "consumerExit": baseline_run.returncode, "stateExit": baseline_states.returncode,
-         "passed": baseline_run.returncode == 0 and baseline_states.returncode == 0}]
+         "passed": baseline_run.returncode == 0 and baseline_states.returncode == 0 and all("--- PASS: " + name + " (" in state_output for name in state_names) and all(row['pass'] for row in baseline_cases.values())}]
 variants = [
     ("closed-read-stamp", "internal/lsp/catalog_inputs.go",
      "proof.files[source.URI(uri)] = catalogInput{file.stamp, hash}",
-     "proof.files[source.URI(uri)] = catalogInput{stamp, file.hash}",
-     "repair", "closed-current-file-repair", "no_self_content_modified"),
+     "proof.files[source.URI(uri)] = catalogInput{stamp, hash}",
+     "repair", "closed-idle-file-repair", "no_self_content_modified"),
     ("self-repair-scope-proof", "internal/lsp/catalog_inputs.go",
      "if observed.repaired {", "if false && observed.repaired {",
      "repair", "closed-read-repair", "no_self_content_modified"),
@@ -93,12 +97,17 @@ if rows[0]["passed"]:
                 if case == "go":
                     probe = run(folder, "probe", [binary, "-test.run", "^" + required_case + "$", "-test.count=1", "-test.timeout=60s"], source)
                     text = probe.stdout.decode(errors="replace") + probe.stderr.decode(errors="replace")
-                    row["passed"] = probe.returncode == 1 and "--- FAIL: " + required_case in text and required_assertion in text
+                    row["passed"] = probe.returncode == 1 and "--- FAIL: " + required_case in text and required_assertion in text and not any(marker in text for marker in ("panic:", "fatal error:", "test timed out"))
                 else:
                     probe = run(folder, "probe", [sys.executable, consumer, binary, folder / "e2e", "--cases", case])
-                    results = json.loads((folder / "e2e/results.json").read_text())
-                    target = next((r for r in results if r["case"] == required_case), None)
-                    row["passed"] = probe.returncode == 1 and target is not None and target["assertions"].get(required_assertion) is False
+                    actual = read_results(folder / "e2e")
+                    selected = {"repair": ("closed-read-repair", "closed-current-file-repair", "closed-idle-file-repair"),
+                                "candidates": ("candidate-prefix-budget",), "truncation": ("candidate-matching-budget",)}[case]
+                    classified = classify_results(((required_case, required_assertion),),
+                                                  {key: baseline_cases[key] for key in selected}, actual,
+                                                  {"exitCode": probe.returncode})
+                    row.update(classified)
+                    row["passed"] = classified["detected"]
                 row.update(probeExit=probe.returncode, requiredCase=required_case, requiredAssertion=required_assertion)
         except Exception as error:
             row["error"] = repr(error)

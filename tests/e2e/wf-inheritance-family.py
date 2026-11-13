@@ -147,7 +147,7 @@ def worker(version):
   code,report=cli(dest,work);checks=report_checks(code,report,expected,envelope,work,version);outcomes=[]
   for case in records:
    first=case['range']['start']['line'];last=case['range']['end']['line'];actual=[d for d in report['diagnostics'] if first<=d['range']['start']['line']<last]
-   keys=['uri','range','code','message','severity','source','positionKind','targetId'];outcomes.append({'case':case['case'],'pass':norm([{k:d[k] for k in keys} for d in actual])==norm(case['diagnostics'])})
+   keys=['uri','range','code','message','severity','source','positionKind','targetId'];matched=norm([{k:d[k] for k in keys} for d in actual])==norm(case['diagnostics']);outcomes.append({'case':case['case'],'checks':{'completeDiagnostics':matched},'pass':matched})
   checks['bytes']=path.read_bytes()==text.encode();m.save(dest/'case-results.json',outcomes)
  except Exception:
   fatal=traceback.format_exc();(dest/'error.txt').write_text(fatal)

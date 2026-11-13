@@ -1,0 +1,1388 @@
+{
+  "schemaVersion": 1,
+  "consumers": {
+    "wf1": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"name": "version"}, "assertions": ["exit", "fields", "identity"]},
+        {"id": {"name": "help"}, "assertions": ["exit"]},
+        {"id": {"name": "check"}, "assertions": ["complete", "exit", "report"]},
+        {"id": {"name": "unknown"}, "assertions": ["exit"]},
+        {"id": {"name": "extra"}, "assertions": ["exit"]}
+      ]
+    },
+    "wf3-lsp": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"name": "stdio-buffer-lifecycle"}, "assertions": ["buffer", "close_disk", "config_buffer_repairs", "encoding", "exit", "field_completion", "field_hover", "incremental", "invalid_config_visible", "no_version_regression", "shutdown", "sync", "template_definition", "template_references", "template_symbols"]}
+      ]
+    },
+    "wf5-edits": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"name": "versioned-field-fix-and-template-rename"}, "assertions": ["disk_unchanged", "edit_capability", "exit", "field_bytes", "field_diagnostic_removed", "independent_scope_change_keeps_fix", "prepare", "public_rejected", "rename_bytes", "rename_valid", "shutdown", "stale_rejected"]}
+      ]
+    },
+    "wf-delivery": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "identity"}, "assertions": ["accepted", "default", "exit", "ready"]},
+        {"id": {"case": "default"}, "assertions": ["bytes", "defaultOrigin", "diagnostics", "envelope", "exit", "identity", "targetIdentity", "versions"]},
+        {"id": {"case": "explicit"}, "assertions": ["bytes", "diagnostics", "envelope", "exit", "identity", "targetIdentity", "versions"]},
+        {"id": {"case": "error"}, "assertions": ["bytes", "diagnostics", "envelope", "exit", "identity", "recovery", "targetIdentity", "versions"]},
+        {"id": {"case": "warning"}, "assertions": ["bytes", "diagnostics", "envelope", "exit", "identity", "targetIdentity", "versions"]},
+        {"id": {"case": "warnings-as-errors"}, "assertions": ["bytes", "diagnostics", "envelope", "exit", "identity", "targetIdentity", "versions"]},
+        {"id": {"case": "experimental"}, "assertions": ["bytes", "diagnostics", "envelope", "exit", "identity", "targetIdentity", "versions"]},
+        {"id": {"case": "empty-experimental"}, "assertions": ["bytes", "diagnostics", "envelope", "exit", "identity", "targetIdentity", "versions"]},
+        {"id": {"case": "unknown"}, "assertions": ["bytes", "diagnostics", "envelope", "exit", "identity", "targetIdentity", "versions"]},
+        {"id": {"case": "mixed"}, "assertions": ["bytes", "diagnostics", "envelope", "exit", "identity", "targetIdentity", "versions"]},
+        {"id": {"case": "selected"}, "assertions": ["bytes", "diagnostics", "envelope", "exit", "identity", "targetIdentity", "versions"]},
+        {"id": {"case": "file-filter"}, "assertions": ["bytes", "diagnostics", "envelope", "exit", "identity", "targetIdentity", "versions"]},
+        {"id": {"case": "edits"}, "assertions": ["actionBytes", "bytes", "experimentalPublication", "naturalExit", "olderTargetActions", "olderTargetRename", "stableAction", "stablePublication", "stableRename", "staleAction"]},
+        {"id": {"case": "settings"}, "assertions": ["bytes", "naturalExit", "settingsPublication", "settingsRecovery", "settingsRenameRestored", "settingsRenameSupported", "stablePublication", "stableRename"]},
+        {"id": {"case": "pin-mixed"}, "assertions": ["bytes", "independentScopePin", "naturalExit", "scopePinBytes", "stablePublication", "stableRename"]}
+      ]
+    },
+    "wf-remediation-semantics": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "expression-plain"}, "assertions": ["cli_type", "completion", "lsp_type", "partial_range", "partial_visible"]},
+        {"id": {"case": "expression-complete"}, "assertions": ["cli_type", "completion", "lsp_type", "partial_range", "partial_visible"]},
+        {"id": {"case": "expression-partial"}, "assertions": ["cli_type", "completion", "lsp_type", "partial_range", "partial_visible"]},
+        {"id": {"case": "labels-inline"}, "assertions": ["rename_exact"]},
+        {"id": {"case": "labels-templateRef"}, "assertions": ["rename_exact"]},
+        {"id": {"case": "labels-globalName"}, "assertions": ["rename_exact"]},
+        {"id": {"case": "annotations-inline"}, "assertions": ["rename_exact"]},
+        {"id": {"case": "annotations-templateRef"}, "assertions": ["rename_exact"]},
+        {"id": {"case": "annotations-globalName"}, "assertions": ["rename_exact"]},
+        {"id": {"case": "completion-name-0-False"}, "assertions": ["candidate", "correct_value", "suffix_removed"]},
+        {"id": {"case": "completion-name-0-True"}, "assertions": ["candidate", "correct_value", "suffix_removed"]},
+        {"id": {"case": "completion-name-39-False"}, "assertions": ["candidate", "correct_value", "suffix_removed"]},
+        {"id": {"case": "completion-name-39-True"}, "assertions": ["candidate", "correct_value", "suffix_removed"]},
+        {"id": {"case": "completion-name-34-False"}, "assertions": ["candidate", "correct_value", "suffix_removed"]},
+        {"id": {"case": "completion-name-34-True"}, "assertions": ["candidate", "correct_value", "suffix_removed"]},
+        {"id": {"case": "completion-template-0-False"}, "assertions": ["candidate", "correct_value", "suffix_removed"]},
+        {"id": {"case": "completion-template-0-True"}, "assertions": ["candidate", "correct_value", "suffix_removed"]},
+        {"id": {"case": "completion-template-39-False"}, "assertions": ["candidate", "correct_value", "suffix_removed"]},
+        {"id": {"case": "completion-template-39-True"}, "assertions": ["candidate", "correct_value", "suffix_removed"]},
+        {"id": {"case": "completion-template-34-False"}, "assertions": ["candidate", "correct_value", "suffix_removed"]},
+        {"id": {"case": "completion-template-34-True"}, "assertions": ["candidate", "correct_value", "suffix_removed"]},
+        {"id": {"case": "completion-edge-0"}, "assertions": ["candidate", "exact_value", "old_suffix_removed", "unicode_preserved"]},
+        {"id": {"case": "completion-edge-1"}, "assertions": ["candidate", "exact_value", "old_suffix_removed", "unicode_preserved"]},
+        {"id": {"case": "completion-edge-2"}, "assertions": ["candidate", "exact_value", "old_suffix_removed", "unicode_preserved"]},
+        {"id": {"case": "completion-edge-3"}, "assertions": ["candidate", "exact_value", "old_suffix_removed", "unicode_preserved"]},
+        {"id": {"case": "completion-edge-4"}, "assertions": ["candidate", "exact_value", "old_suffix_removed", "unicode_preserved"]},
+        {"id": {"case": "completion-edge-5"}, "assertions": ["candidate", "exact_value", "old_suffix_removed", "unicode_preserved"]},
+        {"id": {"case": "completion-edge-6"}, "assertions": ["candidate", "exact_value", "old_suffix_removed", "unicode_preserved"]},
+        {"id": {"case": "completion-edge-7"}, "assertions": ["candidate", "exact_value", "old_suffix_removed", "unicode_preserved"]},
+        {"id": {"case": "invalid-config-visible"}, "assertions": ["config_status", "workflow_status"]},
+        {"id": {"case": "oversize-visible"}, "assertions": ["config_recovered", "unavailable"]},
+        {"id": {"case": "input-recovery"}, "assertions": ["schema_restored", "status_cleared"]},
+        {"id": {"case": "action-unrelated-scope"}, "assertions": ["baseline", "still_valid"]},
+        {"id": {"case": "action-reconciliation"}, "assertions": ["still_valid"]},
+        {"id": {"case": "action-stale"}, "assertions": ["refused"]}
+      ]
+    },
+    "wf-remediation-lifecycle": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "cancel-recovery"}, "assertions": ["cancelled", "current_type_error", "one_terminal"]},
+        {"id": {"case": "latest-version"}, "assertions": ["type_error"]},
+        {"id": {"case": "remove-root"}, "assertions": ["new_clear_publication", "previous_type_error"]}
+      ]
+    },
+    "wf-remediation-rename": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "independent"}, "assertions": ["exact_local_closure", "external_untouched", "no_new_errors", "policy", "undo_restores"]},
+        {"id": {"case": "namespace"}, "assertions": ["exact_local_closure", "external_untouched", "no_new_errors", "policy", "undo_restores"]},
+        {"id": {"case": "public-template"}, "assertions": ["policy"]},
+        {"id": {"case": "dynamic-external"}, "assertions": ["policy"]},
+        {"id": {"case": "inherited"}, "assertions": ["policy"]},
+        {"id": {"case": "inline"}, "assertions": ["policy"]},
+        {"id": {"case": "alias"}, "assertions": ["policy"]}
+      ]
+    },
+    "wf-remediation-targets": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "3.6.0"}, "assertions": ["complete_only_accepted", "edits_only_accepted", "exit", "status"]},
+        {"id": {"case": "3.5.0"}, "assertions": ["complete_only_accepted", "edits_only_accepted", "exit", "status"]},
+        {"id": {"case": "99.99.99"}, "assertions": ["complete_only_accepted", "edits_only_accepted", "exit", "status"]},
+        {"id": {"case": "source-0"}, "assertions": ["pin_unchanged", "source_visible", "target_visible"]},
+        {"id": {"case": "source-1"}, "assertions": ["pin_unchanged", "source_visible", "target_visible"]},
+        {"id": {"case": "source-2"}, "assertions": ["pin_unchanged", "source_visible", "target_visible"]},
+        {"id": {"case": "source-3"}, "assertions": ["pin_unchanged", "source_visible", "target_visible"]}
+      ]
+    },
+    "wf-default-target-provenance": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "absent"}, "assertions": ["cli_provenance", "complete", "lsp_provenance", "target_unchanged"]},
+        {"id": {"case": "empty"}, "assertions": ["cli_provenance", "complete", "lsp_provenance", "target_unchanged"]},
+        {"id": {"case": "no-pin"}, "assertions": ["cli_provenance", "complete", "lsp_provenance", "target_unchanged"]},
+        {"id": {"case": "root-pin"}, "assertions": ["cli_provenance", "complete", "lsp_provenance", "target_unchanged"]},
+        {"id": {"case": "scope-pin"}, "assertions": ["cli_provenance", "complete", "lsp_provenance", "target_unchanged"]},
+        {"id": {"case": "override"}, "assertions": ["provenance", "target"]},
+        {"id": {"case": "remove-override"}, "assertions": ["provenance", "target"]}
+      ]
+    },
+    "wf-schema-queries": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "partial-key-existing-value-plain-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "partial-key-existing-value-snippet-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "quoted-key-plain-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "quoted-key-snippet-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "blank-key-plain-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "blank-key-snippet-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "first-sequence-partial-plain-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "first-sequence-partial-snippet-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "first-sequence-blank-plain-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "first-sequence-blank-snippet-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "existing-key-excluded-plain-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "existing-key-excluded-snippet-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "typed-hook-map-plain-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "typed-hook-map-snippet-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "utf16-flow-key-plain-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "utf16-flow-key-snippet-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "enum-empty-plain-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "enum-empty-snippet-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "enum-empty-colon-plain-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "enum-empty-colon-snippet-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "enum-partial-plain-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "enum-partial-snippet-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "enum-quoted-plain-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "enum-quoted-snippet-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "enum-comment-plain-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "enum-comment-snippet-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "enum-colon-comment-plain-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "enum-colon-comment-snippet-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "enum-flow-plain-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "enum-flow-snippet-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "enum-empty-string-plain-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "enum-empty-string-snippet-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "crlf-comment-plain-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "crlf-comment-snippet-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "existing-annotation-key-plain-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "existing-annotation-key-snippet-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "existing-annotation-value-plain-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "existing-annotation-value-snippet-client"}, "assertions": ["acceptedTarget", "actualCLICompleteResource", "candidate", "exactActualDiagnostics", "exactBytes", "exactEnum", "exactTextEditPresent", "existingExcluded", "plainTextUsable"]},
+        {"id": {"case": "hover-integer"}, "assertions": ["exactRangePresent", "noNil", "sourceCommit", "target", "typeAndAnnotations"]},
+        {"id": {"case": "hover-quantity-union"}, "assertions": ["exactRangePresent", "noNil", "sourceCommit", "target", "typeAndAnnotations"]},
+        {"id": {"case": "hover-protocol-default"}, "assertions": ["exactRangePresent", "noNil", "sourceCommit", "target", "typeAndAnnotations"]},
+        {"id": {"case": "hover-typed-hook"}, "assertions": ["exactRangePresent", "noNil", "sourceCommit", "target", "typeAndAnnotations"]},
+        {"id": {"case": "hover-plain-colon-block"}, "assertions": ["exactRangePresent", "noNil", "sourceCommit", "target", "typeAndAnnotations"]},
+        {"id": {"case": "hover-plain-colon-value"}, "assertions": ["exactRangePresent", "noNil", "sourceCommit", "target", "typeAndAnnotations"]},
+        {"id": {"case": "hover-api-version-key"}, "assertions": ["exactRangePresent", "noNil", "sourceCommit", "target", "typeAndAnnotations"]},
+        {"id": {"case": "hover-kind-value"}, "assertions": ["exactRangePresent", "noNil", "sourceCommit", "target", "typeAndAnnotations"]},
+        {"id": {"case": "filtered-comment"}, "assertions": ["noCompletion", "noHover"]},
+        {"id": {"case": "filtered-foreign"}, "assertions": ["noCompletion", "noHover"]},
+        {"id": {"case": "filtered-unknown-gvk"}, "assertions": ["noCompletion", "noHover"]}
+      ]
+    },
+    "wf-schema-query-targets": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "target-1-3.6.0"}, "assertions": ["currentCompletionTarget", "currentSource", "currentTarget", "existingKeyExcluded", "integerType", "noStaleSource"]},
+        {"id": {"case": "target-2-3.5.0"}, "assertions": ["currentCompletionTarget", "currentSource", "currentTarget", "existingKeyExcluded", "integerType", "noStaleSource"]},
+        {"id": {"case": "target-3-99.0.0"}, "assertions": ["explicitUnknownTargetRefusal"]},
+        {"id": {"case": "target-4-3.6.0"}, "assertions": ["currentCompletionTarget", "currentSource", "currentTarget", "existingKeyExcluded", "integerType", "noStaleSource"]}
+      ]
+    },
+    "wf-domain-queries": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "Workflow"}, "assertions": ["definition-arg", "definition-arg2", "definition-artref", "definition-bracket", "definition-call1", "definition-call2", "definition-dep", "definition-entry", "definition-init", "definition-otherref", "definition-outref", "definition-paramref", "definition-steparg", "definition-steparg2", "definition-stepcall", "definition-stepcall2", "definition-stepout", "definition-stepref", "definition-taskref", "definition-wfref", "no-invented-env", "no-invented-shadow", "references-otherparamFalse", "references-otherparamTrue", "references-outFalse", "references-outTrue", "references-paramFalse", "references-paramTrue", "references-stepFalse", "references-stepTrue", "references-taskFalse", "references-taskTrue", "symbol-artifact", "symbol-main", "symbol-otherparam", "symbol-out", "symbol-param", "symbol-step", "symbol-task", "symbol-wf", "symbol-worker", "workspace-symbols"]},
+        {"id": {"case": "CronWorkflow"}, "assertions": ["definition-arg", "definition-arg2", "definition-artref", "definition-bracket", "definition-call1", "definition-call2", "definition-dep", "definition-entry", "definition-init", "definition-otherref", "definition-outref", "definition-paramref", "definition-steparg", "definition-steparg2", "definition-stepcall", "definition-stepcall2", "definition-stepout", "definition-stepref", "definition-taskref", "definition-wfref", "no-invented-env", "no-invented-shadow", "references-otherparamFalse", "references-otherparamTrue", "references-outFalse", "references-outTrue", "references-paramFalse", "references-paramTrue", "references-stepFalse", "references-stepTrue", "references-taskFalse", "references-taskTrue", "symbol-artifact", "symbol-main", "symbol-otherparam", "symbol-out", "symbol-param", "symbol-step", "symbol-task", "symbol-wf", "symbol-worker", "workspace-symbols"]},
+        {"id": {"case": "WorkflowTemplate"}, "assertions": ["definition-arg", "definition-arg2", "definition-artref", "definition-bracket", "definition-call1", "definition-call2", "definition-dep", "definition-entry", "definition-init", "definition-otherref", "definition-outref", "definition-paramref", "definition-steparg", "definition-steparg2", "definition-stepcall", "definition-stepcall2", "definition-stepout", "definition-stepref", "definition-taskref", "definition-wfref", "no-invented-env", "no-invented-shadow", "references-otherparamFalse", "references-otherparamTrue", "references-outFalse", "references-outTrue", "references-paramFalse", "references-paramTrue", "references-stepFalse", "references-stepTrue", "references-taskFalse", "references-taskTrue", "symbol-artifact", "symbol-main", "symbol-otherparam", "symbol-out", "symbol-param", "symbol-step", "symbol-task", "symbol-wf", "symbol-worker", "workspace-symbols"]},
+        {"id": {"case": "ClusterWorkflowTemplate"}, "assertions": ["definition-arg", "definition-arg2", "definition-artref", "definition-bracket", "definition-call1", "definition-call2", "definition-dep", "definition-entry", "definition-init", "definition-otherref", "definition-outref", "definition-paramref", "definition-steparg", "definition-steparg2", "definition-stepcall", "definition-stepcall2", "definition-stepout", "definition-stepref", "definition-taskref", "definition-wfref", "no-invented-env", "no-invented-shadow", "references-otherparamFalse", "references-otherparamTrue", "references-outFalse", "references-outTrue", "references-paramFalse", "references-paramTrue", "references-stepFalse", "references-stepTrue", "references-taskFalse", "references-taskTrue", "symbol-artifact", "symbol-main", "symbol-otherparam", "symbol-out", "symbol-param", "symbol-step", "symbol-task", "symbol-wf", "symbol-worker", "workspace-symbols"]},
+        {"id": {"case": "completion-template"}, "assertions": ["exactBytes", "fullCLI", "unique"]},
+        {"id": {"case": "completion-parameter"}, "assertions": ["exactBytes", "fullCLI", "unique"]},
+        {"id": {"case": "completion-bracket"}, "assertions": ["exactBytes", "fullCLI", "unique"]}
+      ]
+    },
+    "wf-quickfixes": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "reference-local-candidates"}, "assertions": ["cli_after_contract", "disk_unchanged", "exact_candidate_bytes", "independent_peer_keeps_local_edit", "request_succeeded", "stale_rejected", "target_removed"]},
+        {"id": {"case": "reference-quoted-crlf"}, "assertions": ["cli_after_contract", "disk_unchanged", "exact_candidate_bytes", "request_succeeded", "target_removed"]},
+        {"id": {"case": "reference-dynamic"}, "assertions": ["disk_unchanged", "exact_candidate_bytes", "request_succeeded"]},
+        {"id": {"case": "reference-incomplete-scope"}, "assertions": ["disk_unchanged", "exact_candidate_bytes", "incomplete_peer_still_reported", "request_succeeded", "target_removed"]},
+        {"id": {"case": "reference-sibling-resource"}, "assertions": ["cli_after_contract", "disk_unchanged", "exact_candidate_bytes", "request_succeeded", "target_removed"]},
+        {"id": {"case": "enum-candidates"}, "assertions": ["cli_after_contract", "disk_unchanged", "exact_candidate_bytes", "independent_peer_keeps_local_edit", "request_succeeded", "stale_rejected", "target_removed"]},
+        {"id": {"case": "enum-valid"}, "assertions": ["disk_unchanged", "exact_candidate_bytes", "request_succeeded"]},
+        {"id": {"case": "enum-block-scalar"}, "assertions": ["disk_unchanged", "exact_candidate_bytes", "request_succeeded"]},
+        {"id": {"case": "reference-block-scalar"}, "assertions": ["disk_unchanged", "exact_candidate_bytes", "request_succeeded"]},
+        {"id": {"case": "enum-foreign-gvk"}, "assertions": ["disk_unchanged", "exact_candidate_bytes", "request_succeeded"]},
+        {"id": {"case": "external-resource-candidate"}, "assertions": ["cli_after_contract", "disk_unchanged", "exact_candidate_bytes", "request_succeeded", "target_removed"]},
+        {"id": {"case": "external-ambiguous"}, "assertions": ["disk_unchanged", "exact_candidate_bytes", "request_succeeded"]},
+        {"id": {"case": "pin-scope-named-root"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "persisted_without_override", "request_succeeded", "stale_rejected", "target_preserved"]},
+        {"id": {"case": "pin-scope-inherited"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "persisted_without_override", "request_succeeded", "stale_rejected", "target_preserved"]},
+        {"id": {"case": "pin-root-override"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "persisted_without_override", "request_succeeded", "stale_rejected", "target_preserved"]},
+        {"id": {"case": "pin-root-document-end"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "persisted_without_override", "request_succeeded", "stale_rejected", "target_preserved"]},
+        {"id": {"case": "pin-root-document-end-crlf"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "persisted_without_override", "request_succeeded", "stale_rejected", "target_preserved"]},
+        {"id": {"case": "pin-scope-document-end"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "persisted_without_override", "request_succeeded", "stale_rejected", "target_preserved"]},
+        {"id": {"case": "pin-existing"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "no_pin_action", "request_succeeded"]},
+        {"id": {"case": "pin-closed"}, "assertions": ["closed_refused", "disk_unchanged", "exact_pin_bytes", "request_succeeded"]},
+        {"id": {"case": "pin-scope-isolation"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "persisted_without_override", "request_succeeded", "stale_rejected", "target_preserved"]},
+        {"id": {"case": "pin-root-replace"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "persisted_without_override", "request_succeeded", "stale_rejected", "target_preserved"]},
+        {"id": {"case": "pin-flow-refused"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "no_pin_action", "request_succeeded"]},
+        {"id": {"case": "enum-alias-refused"}, "assertions": ["disk_unchanged", "exact_candidate_bytes", "request_succeeded"]},
+        {"id": {"case": "reference-scope-isolation"}, "assertions": ["disk_unchanged", "exact_candidate_bytes", "request_succeeded"]},
+        {"id": {"case": "pin-known-default"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "no_pin_action", "request_succeeded"]},
+        {"id": {"case": "pin-explicit-auto"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "no_pin_action", "request_succeeded"]},
+        {"id": {"case": "pin-auto-override"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "no_pin_action", "request_succeeded"]},
+        {"id": {"case": "pin-auto-inherited-scope"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "no_pin_action", "request_succeeded"]},
+        {"id": {"case": "pin-explicit-auto-scope"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "no_pin_action", "request_succeeded"]},
+        {"id": {"case": "pin-root-older-exact"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "persisted_without_override", "request_succeeded", "stale_rejected", "target_preserved"]},
+        {"id": {"case": "pin-root-latest-exact"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "persisted_without_override", "request_succeeded", "stale_rejected", "target_preserved"]}
+      ]
+    },
+    "wf-local-rename": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "task-declaration"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "task-static-reference"}, "assertions": ["changed_reference_not_old_binding", "disk_unchanged", "exact_bytes", "no_new_errors", "old_version_ignored", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "task-dependencies"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "step-reference"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "input-parameter-call-argument"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "input-parameter-expression"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "output-parameter"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "output-artifact-expression"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "input-artifact"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "workflow-parameter"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "template-with-static-tags"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "cron-artifact"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "mixed-foreign-and-unrelated"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "unicode-crlf"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "unrelated-dynamic-template"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "computed-index-workflow-reference"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "computed-index-target-refused"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "raw-output-parameter-reference"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "raw-artifact-reference"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "expression-dot-to-string-index"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "unknown-member"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "incomplete-sibling-scope"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "coupled-workflow-entrypoint"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "index-needs-expression-tag"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "expression-string-literal-unchanged"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "step-self-hook-declaration"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "step-self-hook-reference"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "malformed-expression-tail"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "malformed-expression-parenthesis"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "malformed-raw-expression"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "expression-escaped-literal"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "expression-raw-literal"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "expression-comment-preserved"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "expression-unicode-before-member"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "expression-shadowed-input"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "expression-shadow-initializer"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "expression-unrelated-let"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "env-static-refusal"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "env-dynamic-refusal"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "env-get-refusal"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "env-shadow-refusal"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "env-alias-refusal"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "env-unrelated-namespace"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "env-literal-preserved"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "env-selector-reference"}, "assertions": ["disk_unchanged", "exact_bytes", "no_new_errors", "prepare_succeeds", "undo_restores_diagnostics"]},
+        {"id": {"case": "workflow-reserved-json"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "collision"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "public"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "derived-alias"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "dynamic-index"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "unknown-static"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "unknown-collection"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "external-template"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "incomplete-same-scope"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "duplicate-declaration"}, "assertions": ["disk_unchanged", "rename_refused"]},
+        {"id": {"case": "global-output"}, "assertions": ["disk_unchanged", "rename_refused"]}
+      ]
+    },
+    "wf-bounded-scalars": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "scalar-0"}, "assertions": ["exactSymbols"]},
+        {"id": {"case": "scalar-1"}, "assertions": ["exactSymbols"]},
+        {"id": {"case": "scalar-2"}, "assertions": ["exactSymbols"]},
+        {"id": {"case": "scalar-3"}, "assertions": ["exactSymbols"]},
+        {"id": {"case": "scalar-4"}, "assertions": ["exactSymbols"]},
+        {"id": {"case": "scalar-5"}, "assertions": ["exactSymbols"]},
+        {"id": {"case": "scalar-6"}, "assertions": ["exactSymbols"]},
+        {"id": {"case": "scalar-7"}, "assertions": ["exactSymbols"]},
+        {"id": {"case": "scalar-8"}, "assertions": ["exactSymbols"]},
+        {"id": {"case": "scalar-9"}, "assertions": ["exactSymbols"]},
+        {"id": {"case": "scalar-10"}, "assertions": ["exactSymbols"]},
+        {"id": {"case": "scalar-11"}, "assertions": ["exactSymbols"]},
+        {"id": {"case": "scalar-12"}, "assertions": ["exactSymbols"]},
+        {"id": {"case": "scalar-13"}, "assertions": ["exactSymbols"]},
+        {"id": {"case": "scalar-14"}, "assertions": ["exactSymbols"]},
+        {"id": {"case": "scalar-15"}, "assertions": ["exactSymbols"]},
+        {"id": {"case": "scalar-16"}, "assertions": ["exactSymbols"]}
+      ]
+    },
+    "wf-bounded-completion": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "damaged-gvk"}, "assertions": ["completionExit", "exactFiles", "exactResources", "explicitIncompleteInput", "noProductSyntaxDiagnostic"]},
+        {"id": {"case": "mixed-damaged-gvk"}, "assertions": ["completionExit", "exactFiles", "exactResources", "explicitIncompleteInput", "noProductSyntaxDiagnostic"]},
+        {"id": {"case": "separate-damaged-gvk"}, "assertions": ["completionExit", "exactFiles", "exactResources", "explicitIncompleteInput", "noProductSyntaxDiagnostic"]},
+        {"id": {"case": "valid-foreign"}, "assertions": ["completionExit", "exactFiles", "exactResources", "explicitIncompleteInput", "noProductSyntaxDiagnostic"]},
+        {"id": {"case": "mixed-valid-foreign"}, "assertions": ["completionExit", "exactFiles", "exactResources", "explicitIncompleteInput", "noProductSyntaxDiagnostic"]},
+        {"id": {"case": "damaged-foreign"}, "assertions": ["completionExit", "exactFiles", "exactResources", "explicitIncompleteInput", "noProductSyntaxDiagnostic"]},
+        {"id": {"case": "valid-unknown-gvk"}, "assertions": ["completionExit", "exactFiles", "exactResources", "explicitIncompleteInput", "noProductSyntaxDiagnostic"]}
+      ]
+    },
+    "wf-toolkit-budget": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "cli-depth-at-limit"}, "assertions": ["complete", "expectedExit", "noBudgetRefusal", "oneActualResource", "schemaStillRuns"]},
+        {"id": {"case": "cli-depth-budget"}, "assertions": ["explicit_budget_reason", "incomplete", "incomplete_exit"]},
+        {"id": {"case": "lsp-recovers-after-budget"}, "assertions": ["schema_diagnostic_returns", "server_alive"]}
+      ]
+    },
+    "wf-remediation-helm-boundary": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "yaml/chart/templates/workflow.yaml/open"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
+        {"id": {"case": "yaml/chart/templates/workflow.yaml/unsaved-error"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
+        {"id": {"case": "yaml/chart/templates/workflow.yaml/unsaved-recovery"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
+        {"id": {"case": "yaml/chart/templates/workflow.yaml/helm-expression"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
+        {"id": {"case": "yaml/chart/templates/workflow.yaml/reopen-helm"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
+        {"id": {"case": "yaml/templates/plain.yaml/open"}, "assertions": ["hover_ownership", "no_schema_error", "source_unchanged"]},
+        {"id": {"case": "yaml/templates/plain.yaml/unsaved-error"}, "assertions": ["current_schema_error", "hover_ownership", "source_unchanged"]},
+        {"id": {"case": "yaml/templates/plain.yaml/unsaved-recovery"}, "assertions": ["hover_ownership", "no_schema_error", "source_unchanged"]},
+        {"id": {"case": "yaml/templates/plain.yaml/reopen-helm"}, "assertions": ["current_schema_error", "hover_ownership", "source_unchanged"]},
+        {"id": {"case": "yaml/ordinary.yaml/open"}, "assertions": ["hover_ownership", "no_schema_error", "source_unchanged"]},
+        {"id": {"case": "yaml/ordinary.yaml/unsaved-error"}, "assertions": ["current_schema_error", "hover_ownership", "source_unchanged"]},
+        {"id": {"case": "yaml/ordinary.yaml/unsaved-recovery"}, "assertions": ["hover_ownership", "no_schema_error", "source_unchanged"]},
+        {"id": {"case": "yaml/ordinary.yaml/reopen-helm"}, "assertions": ["current_schema_error", "hover_ownership", "source_unchanged"]},
+        {"id": {"case": "helm/chart/templates/workflow.yaml/open"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
+        {"id": {"case": "helm/chart/templates/workflow.yaml/unsaved-error"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
+        {"id": {"case": "helm/chart/templates/workflow.yaml/unsaved-recovery"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
+        {"id": {"case": "helm/chart/templates/workflow.yaml/helm-expression"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
+        {"id": {"case": "helm/chart/templates/workflow.yaml/reopen-yaml"}, "assertions": ["chart_source_excluded", "hover_refuses_chart_source", "source_unchanged"]},
+        {"id": {"case": "helm/templates/plain.yaml/open"}, "assertions": ["hover_ownership", "no_schema_error", "source_unchanged"]},
+        {"id": {"case": "helm/templates/plain.yaml/unsaved-error"}, "assertions": ["current_schema_error", "hover_ownership", "source_unchanged"]},
+        {"id": {"case": "helm/templates/plain.yaml/unsaved-recovery"}, "assertions": ["hover_ownership", "no_schema_error", "source_unchanged"]},
+        {"id": {"case": "helm/templates/plain.yaml/reopen-yaml"}, "assertions": ["current_schema_error", "hover_ownership", "source_unchanged"]},
+        {"id": {"case": "helm/ordinary.yaml/open"}, "assertions": ["hover_ownership", "no_schema_error", "source_unchanged"]},
+        {"id": {"case": "helm/ordinary.yaml/unsaved-error"}, "assertions": ["current_schema_error", "hover_ownership", "source_unchanged"]},
+        {"id": {"case": "helm/ordinary.yaml/unsaved-recovery"}, "assertions": ["hover_ownership", "no_schema_error", "source_unchanged"]},
+        {"id": {"case": "helm/ordinary.yaml/reopen-yaml"}, "assertions": ["current_schema_error", "hover_ownership", "source_unchanged"]}
+      ]
+    },
+    "wf-reaudit-rename": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "metadata-expression-literal"}, "assertions": ["baseline_has_no_errors", "disk_unchanged", "exact_bytes", "exact_edits", "exact_references", "no_new_errors", "prepare_exact", "undo_restores", "versioned_edit"]},
+        {"id": {"case": "metadata-from-expression-literal"}, "assertions": ["baseline_has_no_errors", "disk_unchanged", "exact_bytes", "exact_edits", "exact_references", "no_new_errors", "prepare_exact", "undo_restores", "versioned_edit"]},
+        {"id": {"case": "metadata-from-literal"}, "assertions": ["baseline_has_no_errors", "disk_unchanged", "exact_bytes", "exact_edits", "exact_references", "no_new_errors", "prepare_exact", "undo_restores", "versioned_edit"]},
+        {"id": {"case": "metadata-parameter-literal"}, "assertions": ["baseline_has_no_errors", "disk_unchanged", "exact_bytes", "exact_edits", "exact_references", "no_new_errors", "prepare_exact", "undo_restores", "versioned_edit"]},
+        {"id": {"case": "metadata-labels-literal"}, "assertions": ["baseline_has_no_errors", "disk_unchanged", "exact_bytes", "exact_edits", "exact_references", "no_new_errors", "prepare_exact", "undo_restores", "versioned_edit"]},
+        {"id": {"case": "template-metadata-literal"}, "assertions": ["baseline_has_no_errors", "disk_unchanged", "exact_bytes", "exact_edits", "exact_references", "no_new_errors", "prepare_exact", "undo_restores", "versioned_edit"]},
+        {"id": {"case": "metadata-prose"}, "assertions": ["baseline_has_no_errors", "disk_unchanged", "exact_bytes", "exact_edits", "exact_references", "no_new_errors", "prepare_exact", "undo_restores", "versioned_edit"]},
+        {"id": {"case": "metadata-tagged"}, "assertions": ["baseline_has_no_errors", "disk_unchanged", "exact_bytes", "exact_edits", "exact_references", "no_new_errors", "prepare_exact", "undo_restores", "versioned_edit"]},
+        {"id": {"case": "metadata-unicode-crlf"}, "assertions": ["baseline_has_no_errors", "disk_unchanged", "exact_bytes", "exact_edits", "exact_references", "no_new_errors", "prepare_exact", "undo_restores", "versioned_edit"]},
+        {"id": {"case": "input-parameter-raw"}, "assertions": ["baseline_has_no_errors", "disk_unchanged", "exact_bytes", "exact_edits", "exact_references", "no_new_errors", "prepare_exact", "undo_restores", "versioned_edit"]},
+        {"id": {"case": "input-artifact-raw"}, "assertions": ["baseline_has_no_errors", "disk_unchanged", "exact_bytes", "exact_edits", "exact_references", "no_new_errors", "prepare_exact", "undo_restores", "versioned_edit"]},
+        {"id": {"case": "output-parameter-raw"}, "assertions": ["baseline_has_no_errors", "disk_unchanged", "exact_bytes", "exact_edits", "exact_references", "no_new_errors", "prepare_exact", "undo_restores", "versioned_edit"]},
+        {"id": {"case": "output-artifact-raw"}, "assertions": ["baseline_has_no_errors", "disk_unchanged", "exact_bytes", "exact_edits", "exact_references", "no_new_errors", "prepare_exact", "undo_restores", "versioned_edit"]},
+        {"id": {"case": "lifecycle-retry-expressions"}, "assertions": ["baseline_has_no_errors", "disk_unchanged", "exact_bytes", "exact_edits", "exact_references", "no_new_errors", "prepare_exact", "undo_restores", "versioned_edit"]},
+        {"id": {"case": "data-transformation-expression"}, "assertions": ["baseline_has_no_errors", "disk_unchanged", "exact_bytes", "exact_edits", "exact_references", "no_new_errors", "prepare_exact", "undo_restores", "versioned_edit"]},
+        {"id": {"case": "cron-raw-fields"}, "assertions": ["baseline_has_no_errors", "disk_unchanged", "exact_bytes", "exact_edits", "exact_references", "no_new_errors", "prepare_exact", "undo_restores", "versioned_edit"]},
+        {"id": {"case": "malformed-raw-expression"}, "assertions": ["disk_unchanged", "prepare_refused", "rename_refused"]}
+      ]
+    },
+    "wf-reaudit-actions": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "regular"}, "assertions": ["actionOffered", "appliedDiagnosticsClean", "changedDocumentRefused", "changedTargetRefused", "closedDocumentRefused", "currentVersionExactEdit", "diskUnchanged", "freshActionOffered", "immediateExactEdit", "olderTargetEditsEnabled", "originalDiagnostic", "reopenDoesNotReviveToken", "reopenedActionOffered", "reopenedExactEdit", "restoredActionOffered", "restoredTargetExactEdit", "supportedTargetClean", "targetActionOffered", "unrelatedScopeStillValid"]},
+        {"id": {"case": "excluded"}, "assertions": ["actionOffered", "appliedDiagnosticsClean", "changedDocumentRefused", "changedTargetRefused", "closedDocumentRefused", "currentVersionExactEdit", "diskUnchanged", "freshActionOffered", "immediateExactEdit", "olderTargetEditsEnabled", "originalDiagnostic", "reopenDoesNotReviveToken", "reopenedActionOffered", "reopenedExactEdit", "restoredActionOffered", "restoredTargetExactEdit", "supportedTargetClean", "targetActionOffered", "unrelatedScopeStillValid"]},
+        {"id": {"case": "internal-directory"}, "assertions": ["actionOffered", "appliedDiagnosticsClean", "changedDocumentRefused", "changedTargetRefused", "closedDocumentRefused", "currentVersionExactEdit", "diskUnchanged", "freshActionOffered", "immediateExactEdit", "olderTargetEditsEnabled", "originalDiagnostic", "reopenDoesNotReviveToken", "reopenedActionOffered", "reopenedExactEdit", "restoredActionOffered", "restoredTargetExactEdit", "supportedTargetClean", "targetActionOffered", "unrelatedScopeStillValid"]},
+        {"id": {"case": "exclusion-change"}, "assertions": ["actionOffered", "changedExclusionRefused", "freshActionOffered", "immediateExactEdit", "newScopeExactEdit"]},
+        {"id": {"case": "changed-dependency"}, "assertions": ["actionOffered", "freshActionOffered", "freshDependencyExactEdit", "immediateExactEdit", "independentPeerKeepsLocalEdit"]},
+        {"id": {"case": "isolated-reference"}, "assertions": ["callerStillUnresolved", "callerUnmodified", "isolatedActionOffered", "isolatedExactEdit", "isolatedRepairClean", "noCrossScopeDefinitionAfter", "noCrossScopeDefinitionBefore"]},
+        {"id": {"case": "isolated-config-policy"}, "assertions": ["actionOffered", "documentBytesUnchanged", "effectiveConfigChangeRefused", "effectiveReferenceStateChanged", "freshActionOffered", "freshConfigExactEdit", "immediateExactEdit", "initialReferenceState", "unrelatedScopeConfigStillValid"]},
+        {"id": {"case": "isolated-config-namespace"}, "assertions": ["actionOffered", "documentBytesUnchanged", "effectiveConfigChangeRefused", "effectiveReferenceStateChanged", "freshActionOffered", "freshConfigExactEdit", "immediateExactEdit", "initialReferenceState", "unrelatedScopeConfigStillValid"]}
+      ]
+    },
+    "wf-reaudit-queries": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "configuration-recovery"}, "assertions": ["close_restores_disk_configuration", "independent_workflow_type_error", "reopen_config_clean", "syntax_config_error", "syntax_config_recovered_clean", "syntax_workflow_error_restored", "syntax_workflow_unavailable", "unknown-target_config_error", "unknown-target_config_recovered_clean", "unknown-target_workflow_error_restored", "unknown-target_workflow_unavailable", "unused-scope_config_error", "unused-scope_config_recovered_clean", "unused-scope_workflow_error_restored", "unused-scope_workflow_unavailable", "valid_config_clean"]},
+        {"id": {"case": "configuration-independent"}, "assertions": ["known_experimental_target_is_valid_configuration", "resource_failure_not_config_failure"]},
+        {"id": {"case": "local-completion"}, "assertions": ["changed_buffer_replaces_old_names", "exact_local_name", "no_protocol_errors", "repeat_exact_local_name", "schema_fields_present"]},
+        {"id": {"case": "external-completion-cache"}, "assertions": ["callee_close_restores_disk", "close_does_not_reuse_overlay_candidate", "configuration_scope_invalidates_query", "disk_change_invalidates_query", "disk_delete_invalidates_query", "disk_restore_invalidates_query", "initial_scope_isolated", "no_protocol_errors", "repeat_exact_candidates", "unsaved_callee_is_authoritative"]},
+        {"id": {"case": "isolated-completion"}, "assertions": ["no_protocol_error", "only_isolated_target_candidates"]},
+        {"id": {"case": "isolated-completion-namespace"}, "assertions": ["config_changes_remain_clean", "default_namespace_invalidates_query", "initial_effective_namespace", "no_protocol_errors", "repeated_effective_namespace", "restored_namespace_candidates"]}
+      ]
+    },
+    "wf-reaudit-reconciliation": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "create-after-query"}, "assertions": ["current_diagnostic_inventory", "current_document_version", "fresh_publication", "initial_diagnostic_inventory", "query_uses_only_known_positive_candidates"]},
+        {"id": {"case": "create-control"}, "assertions": ["current_diagnostic_inventory", "current_document_version", "fresh_publication", "initial_diagnostic_inventory"]},
+        {"id": {"case": "delete-after-query"}, "assertions": ["current_diagnostic_inventory", "current_document_version", "fresh_publication", "initial_diagnostic_inventory", "query_observes_known_disk_change"]},
+        {"id": {"case": "delete-control"}, "assertions": ["current_diagnostic_inventory", "current_document_version", "fresh_publication", "initial_diagnostic_inventory"]},
+        {"id": {"case": "unchanged-idle-action"}, "assertions": ["applied_fix_clears_diagnostics", "exact_edit_bytes", "offered_one_fix", "still_resolves_after_reconciliation"]},
+        {"id": {"case": "scope-rebinding"}, "assertions": ["obsolete_scope_not_reconciled", "original_scopes_clean", "rebound_scopes_clean"]}
+      ]
+    },
+    "wf-report-deadline": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "json-success"}, "assertions": ["analysisFinishedBeforeDeadline", "everyDiagnosticPublished", "exactCounts", "exception", "exitMatchesPublishedOutcome", "naturalExit", "noIncompleteOrConfigErrors", "outputHeldPastDeadline", "parse", "stderrEmpty", "writerBlocked"]},
+        {"id": {"case": "json-error"}, "assertions": ["analysisFinishedBeforeDeadline", "everyDiagnosticPublished", "exactCounts", "exception", "exitMatchesPublishedOutcome", "naturalExit", "noIncompleteOrConfigErrors", "outputHeldPastDeadline", "parse", "stderrEmpty", "writerBlocked"]},
+        {"id": {"case": "human-success"}, "assertions": ["analysisFinishedBeforeDeadline", "everyDiagnosticPublished", "exactCounts", "exception", "exitMatchesPublishedOutcome", "naturalExit", "noIncompleteOrConfigErrors", "outputHeldPastDeadline", "parse", "stderrEmpty", "writerBlocked"]}
+      ]
+    },
+    "wf-diagnostic-ownership": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "deployment"}, "assertions": ["no_workflows_diagnostics"]},
+        {"id": {"case": "application"}, "assertions": ["no_workflows_diagnostics"]},
+        {"id": {"case": "applicationset"}, "assertions": ["no_workflows_diagnostics"]},
+        {"id": {"case": "other-group"}, "assertions": ["no_workflows_diagnostics"]},
+        {"id": {"case": "unknown-argo-kind"}, "assertions": ["no_workflows_diagnostics"]},
+        {"id": {"case": "values"}, "assertions": ["no_workflows_diagnostics"]},
+        {"id": {"case": "comments"}, "assertions": ["no_workflows_diagnostics"]},
+        {"id": {"case": "block-scalar"}, "assertions": ["no_workflows_diagnostics"]},
+        {"id": {"case": "plain"}, "assertions": ["no_workflows_diagnostics"]},
+        {"id": {"case": "damaged-foreign"}, "assertions": ["no_workflows_diagnostics"]},
+        {"id": {"case": "empty"}, "assertions": ["no_workflows_diagnostics"]},
+        {"id": {"case": "mixed-foreign"}, "assertions": ["no_workflows_diagnostics"]},
+        {"id": {"case": "no-workspace-acquisition"}, "assertions": ["no_workspace_error_log"]},
+        {"id": {"case": "owned-Workflow"}, "assertions": ["analysis_completed", "schema_error_preserved"]},
+        {"id": {"case": "owned-WorkflowTemplate"}, "assertions": ["analysis_completed", "schema_error_preserved"]},
+        {"id": {"case": "owned-ClusterWorkflowTemplate"}, "assertions": ["analysis_completed", "schema_error_preserved"]},
+        {"id": {"case": "owned-CronWorkflow"}, "assertions": ["analysis_completed", "schema_error_preserved"]},
+        {"id": {"case": "owned-WorkflowEventBinding"}, "assertions": ["analysis_completed", "schema_error_preserved"]},
+        {"id": {"case": "owned-WorkflowArtifactGCTask"}, "assertions": ["analysis_completed", "schema_error_preserved"]},
+        {"id": {"case": "owned-WorkflowTaskResult"}, "assertions": ["analysis_completed", "schema_error_preserved"]},
+        {"id": {"case": "owned-WorkflowTaskSet"}, "assertions": ["analysis_completed", "schema_error_preserved"]},
+        {"id": {"case": "owned-quoted-flow"}, "assertions": ["analysis_completed", "schema_error_preserved"]},
+        {"id": {"case": "owned-merged-identity"}, "assertions": ["analysis_completed", "schema_error_preserved"]},
+        {"id": {"case": "owned-alias-identity"}, "assertions": ["analysis_completed", "schema_error_preserved"]},
+        {"id": {"case": "owned-mixed-stream"}, "assertions": ["analysis_completed", "schema_error_preserved"]},
+        {"id": {"case": "workflow-ordinary-workflow"}, "assertions": ["disk_unchanged", "initial_schema_error", "repair_clears_error", "stale_diagnostics_cleared", "unsaved_workflow_reactivated"]}
+      ]
+    },
+    "wf-diagnostic-deadline": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "deadline-isolation"}, "assertions": ["all_six_roots_published", "current_versions", "foreign_cleared_before_timeout", "no_false_input_blame", "ordinary_files_clear", "workflow_timeout_visible"]},
+        {"id": {"case": "deadline-edit-recovery"}, "assertions": ["stale_timeout_cleared"]}
+      ]
+    },
+    "wf-index-boundaries": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "scope-local-failure"}, "assertions": ["healthy_scope_definition", "healthy_scope_edit_proof", "healthy_scope_has_complete_diagnostics", "independent_missing_scope_proves_absence"]},
+        {"id": {"case": "candidate-set-changes"}, "assertions": ["ambiguous_reference_not_uniquely_bound", "delete_immediately_withdraws_old_candidate", "duplicates_kept_as_distinct_locations", "initial_complete", "remaining_candidate_recovers"]},
+        {"id": {"case": "summary-candidate-generation"}, "assertions": ["initial_names", "new_summary_invalidates_cached_candidates", "no_protocol_errors", "warm_names"]},
+        {"id": {"case": "reopen-publication-order"}, "assertions": ["reopen_0_final_domain_diagnostic", "reopen_0_no_late_local_clear", "reopen_1_final_domain_diagnostic", "reopen_1_no_late_local_clear", "reopen_2_final_domain_diagnostic", "reopen_2_no_late_local_clear", "reopen_3_final_domain_diagnostic", "reopen_3_no_late_local_clear", "reopen_4_final_domain_diagnostic", "reopen_4_no_late_local_clear"]}
+      ]
+    },
+    "wf-mixed-parent-index": {
+      "assertionKey": "checks",
+      "rows": [
+        {"id": {}, "assertions": ["clean_shutdown", "close_restores_current_disk_target", "current_file_publication_under_two_seconds", "delete_does_not_return_old_target", "deleted_target_is_withdrawn", "foreign_resource_has_no_workflows_diagnostics", "mixed_document_cross_file_definition", "open_target_overrides_disk_watch", "position_only_change_refreshes_definition", "recreated_target_resolves", "watch_does_not_return_old_position"]}
+      ]
+    },
+    "wf-persistent-workspace": {
+      "assertionKey": "checks",
+      "linuxAssertions": ["peak_rss_under_512_mib"],
+      "rows": [
+        {"id": {}, "assertions": ["clean_shutdown", "complete_input_read", "current_workflow_local_diagnostic_before_discovery", "discovery_finishes_without_worker_reset", "first_publication_under_two_seconds", "indexed_location_maps_to_source", "no_missing_target_claim_during_discovery", "peak_rss_under_512_mib", "query_observation_cannot_hide_diagnostic_update", "readiness_within_budget", "reconciliation_reuses_unchanged_summaries", "retained_text_bounded", "second_discovery_pass_is_complete", "signature_change_invalidates_caller", "unchanged_events_do_not_reparse_workspace", "unchanged_events_read_only_related_inputs", "unknown_unwatched_uri_converges"]}
+      ]
+    },
+    "wf-persistent-slowio": {
+      "assertionKey": "assertions",
+      "linuxAssertions": ["peak_rss_under_512_mib"],
+      "rows": [
+        {"id": {"case": "slow-io-resumable-discovery"}, "assertions": ["clean_shutdown", "complete_input_read", "current_workflow_local_diagnostic_before_discovery", "discovery_exceeds_request_deadline", "discovery_finishes_without_worker_reset", "first_publication_under_two_seconds", "indexed_location_maps_to_source", "no_missing_target_claim_during_discovery", "peak_rss_under_512_mib", "query_observation_cannot_hide_diagnostic_update", "readiness_within_budget", "reconciliation_reuses_unchanged_summaries", "retained_text_bounded", "second_discovery_pass_is_complete", "signature_change_invalidates_caller", "unchanged_events_do_not_reparse_workspace", "unchanged_events_read_only_related_inputs", "unknown_unwatched_uri_converges"]}
+      ]
+    },
+    "wf-shared-yaml-projection": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "partial-root-key"}, "assertions": ["exactBytes", "noProtocolError", "recoveredDiagnostics", "recoveredHover", "usefulCompletion"]},
+        {"id": {"case": "partial-template-key"}, "assertions": ["exactBytes", "noProtocolError", "recoveredDiagnostics", "recoveredHover", "usefulCompletion"]},
+        {"id": {"case": "selected-duplicate-key"}, "assertions": ["cliRefusal", "explicitRefusal", "noPartialResult", "recoveredDiagnostics", "recoveredHover"]},
+        {"id": {"case": "explicit-standard-tag"}, "assertions": ["cliRefusal", "explicitRefusal", "noPartialResult", "recoveredDiagnostics", "recoveredHover"]}
+      ]
+    },
+    "wf-responsive-editing": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"name": "startup"}, "assertions": ["current_diagnostic_before_full_discovery", "current_diagnostic_under_two_seconds", "fix_replaces_only_misspelled_key", "local_fix_available_during_discovery", "local_fix_resolves_exact_open_version"]},
+        {"id": {"name": "churn"}, "assertions": ["every_unrelated_edit_preserves_useful_hover", "foreground_p95_under_250_ms"]},
+        {"id": {"name": "lanes"}, "assertions": ["heavy_lane_resumes_after_cancellation", "heavy_query_completes_correctly", "heavy_queue_is_bounded", "light_capacity_reserved_under_heavy_saturation", "light_query_has_useful_result", "light_result_precedes_heavy_result", "one_terminal_response_per_heavy_request"]},
+        {"id": {"name": "fences"}, "assertions": ["fresh_buffer_result_remains_available", "own_buffer_change_rejects_active_and_queued_results", "same_path_root_replacement_rejects_old_requests"]}
+      ]
+    },
+    "wf-resource-rename": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "declaration"}, "assertions": ["affectedFiles", "bindingPreserved", "diskUntouched", "exactBytes", "prepareName", "renameProvided"]},
+        {"id": {"case": "automatic-version"}, "assertions": ["affectedFiles", "bindingPreserved", "diskUntouched", "exactBytes", "prepareName", "renameProvided"]},
+        {"id": {"case": "named-scope-isolation"}, "assertions": ["affectedFiles", "bindingPreserved", "diskUntouched", "exactBytes", "prepareName", "renameProvided"]},
+        {"id": {"case": "reference"}, "assertions": ["affectedFiles", "bindingPreserved", "diskUntouched", "exactBytes", "prepareName", "renameProvided"]},
+        {"id": {"case": "whole-workflow"}, "assertions": ["affectedFiles", "bindingPreserved", "diskUntouched", "exactBytes", "prepareName", "renameProvided"]},
+        {"id": {"case": "cron-workflow"}, "assertions": ["affectedFiles", "bindingPreserved", "diskUntouched", "exactBytes", "prepareName", "renameProvided"]},
+        {"id": {"case": "step-reference"}, "assertions": ["affectedFiles", "bindingPreserved", "diskUntouched", "exactBytes", "prepareName", "renameProvided"]},
+        {"id": {"case": "hook-reference"}, "assertions": ["affectedFiles", "bindingPreserved", "diskUntouched", "exactBytes", "prepareName", "renameProvided"]},
+        {"id": {"case": "cluster"}, "assertions": ["affectedFiles", "bindingPreserved", "diskUntouched", "exactBytes", "prepareName", "renameProvided"]},
+        {"id": {"case": "default-namespace"}, "assertions": ["affectedFiles", "bindingPreserved", "diskUntouched", "exactBytes", "prepareName", "renameProvided"]},
+        {"id": {"case": "namespace-isolation"}, "assertions": ["affectedFiles", "bindingPreserved", "diskUntouched", "exactBytes", "prepareName", "renameProvided"]},
+        {"id": {"case": "numeric-string"}, "assertions": ["affectedFiles", "bindingPreserved", "diskUntouched", "exactBytes", "prepareName", "renameProvided"]},
+        {"id": {"case": "boolean-string"}, "assertions": ["affectedFiles", "bindingPreserved", "diskUntouched", "exactBytes", "prepareName", "renameProvided"]},
+        {"id": {"case": "crlf-utf16-stream"}, "assertions": ["affectedFiles", "bindingPreserved", "diskUntouched", "exactBytes", "prepareName", "renameProvided"]},
+        {"id": {"case": "closed-file"}, "assertions": ["diskUntouched", "prepareRefused", "renameRefused"]},
+        {"id": {"case": "open-policy"}, "assertions": ["diskUntouched", "prepareRefused", "renameRefused"]},
+        {"id": {"case": "duplicate-definition"}, "assertions": ["diskUntouched", "prepareRefused", "renameRefused"]},
+        {"id": {"case": "name-conflict"}, "assertions": ["diskUntouched", "renameRefused"]},
+        {"id": {"case": "unresolved-capture"}, "assertions": ["diskUntouched", "renameRefused"]},
+        {"id": {"case": "unknown-namespace"}, "assertions": ["diskUntouched", "prepareRefused", "renameRefused"]},
+        {"id": {"case": "dynamic-namespace"}, "assertions": ["diskUntouched", "prepareRefused", "renameRefused"]},
+        {"id": {"case": "dynamic-reference"}, "assertions": ["diskUntouched", "prepareRefused", "renameRefused"]},
+        {"id": {"case": "derived-reference"}, "assertions": ["diskUntouched", "prepareRefused", "renameRefused"]},
+        {"id": {"case": "shared-declaration"}, "assertions": ["diskUntouched", "prepareRefused", "renameRefused"]},
+        {"id": {"case": "invalid-name"}, "assertions": ["diskUntouched", "renameRefused"]},
+        {"id": {"case": "incomplete-peer"}, "assertions": ["diskUntouched", "prepareRefused", "renameRefused"]},
+        {"id": {"case": "inline-reference"}, "assertions": ["diskUntouched", "prepareRefused", "renameRefused"]},
+        {"id": {"case": "schema-only-peer"}, "assertions": ["diskUntouched", "prepareRefused", "renameRefused"]},
+        {"id": {"case": "closed-after-prepare"}, "assertions": ["closedFileRefused", "prepareWorked"]},
+        {"id": {"case": "changed-after-prepare"}, "assertions": ["newUnsavedCaptureRefused", "prepareWorked"]}
+      ]
+    },
+    "wf-catalog-queries": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "closed-read-repair"}, "assertions": ["baseline_definition_exact", "first_query_repairs_position", "no_self_content_modified"]},
+        {"id": {"case": "closed-current-file-repair"}, "assertions": ["first_query_has_fresh_symbol", "no_self_content_modified"]},
+        {"id": {"case": "closed-idle-file-repair"}, "assertions": ["first_query_has_fresh_symbol", "no_self_content_modified"]},
+        {"id": {"case": "candidate-prefix-budget"}, "assertions": ["applied_fix_clears_missing_reference", "disk_input_unchanged", "no_protocol_error", "unrelated_namespaces_do_not_hide_candidate"]},
+        {"id": {"case": "candidate-matching-budget"}, "assertions": ["matching_overflow_explicit", "no_partial_candidate_edit"]}
+      ]
+    },
+    "wf-symbol-query-budget": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"name": "stable-display-symbols"}, "assertions": ["complete_fixture_indexed", "full_query_within_five_seconds", "low_match_beyond_cap_not_hidden", "same_first_20000_display_symbols", "template_and_parameter_kinds_preserved", "zero_match_is_successful_empty_list"]},
+        {"id": {"name": "cancellation-and-current-input"}, "assertions": ["active_and_queued_old_positions_refused", "cancellation_path_exercised", "explicit_cancel_lane_recovers", "explicit_cancellation_without_input_change", "foreground_hover_p95_within_500ms", "heavy_lane_recovers", "new_parameter_position_is_current", "one_terminal_per_query", "workspace_parameter_position_is_current"]},
+        {"id": {"name": "clean-shutdown"}, "assertions": ["exit_zero", "within_five_seconds"]}
+      ]
+    },
+    "wf2-targets": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"name": "known"}, "assertions": ["catalog", "completeness", "counts", "diagnostics", "exit", "reportIdentity", "targetSelection", "targetState"]},
+        {"id": {"name": "unknown"}, "assertions": ["catalog", "completeness", "counts", "diagnostics", "exit", "reportIdentity", "targetSelection", "targetState"]}
+      ]
+    },
+    "wf3-yaml": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"name": "old"}, "assertions": ["configurationValid", "exit", "scopeComplete", "selectedCounts", "unknown"]},
+        {"id": {"name": "new"}, "assertions": ["configurationValid", "exit", "scopeComplete", "selectedCounts", "version"]},
+        {"id": {"name": "alias"}, "assertions": ["configurationValid", "derived", "evaluated", "exit", "scopeComplete", "selectedCounts"]},
+        {"id": {"name": "tag"}, "assertions": ["configurationValid", "exit", "scopeComplete", "selectedCounts", "tagRejected"]},
+        {"id": {"name": "merge"}, "assertions": ["configurationValid", "exit", "mergeDerived", "scopeComplete", "selectedCounts"]},
+        {"id": {"name": "cycle"}, "assertions": ["configurationValid", "cycleRejected", "exit", "scopeComplete", "selectedCounts"]},
+        {"id": {"name": "scalarBudget"}, "assertions": ["budget", "configurationValid", "exit", "scopeComplete", "selectedCounts"]}
+      ]
+    },
+    "wf4-external-lsp": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"name": "external-buffer-navigation"}, "assertions": ["buffer_removes_callee", "cross_file_definition", "disk_restored", "exit", "inherited_resource_definition", "open_policy_information", "resolved"]}
+      ]
+    },
+    "wf-audit-gaps": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "rename-dag-onexit"}, "assertions": ["all_static_references_updated", "baseline_official_valid", "disk_unchanged", "official_remains_valid"]},
+        {"id": {"case": "rename-step-onexit"}, "assertions": ["all_static_references_updated", "baseline_official_valid", "disk_unchanged", "official_remains_valid"]},
+        {"id": {"case": "fieldfix-external"}, "assertions": ["baseline_has_no_external_error", "unsafe_fix_withheld"]},
+        {"id": {"case": "incomplete-scope-field-fix"}, "assertions": ["scope_incomplete_observed", "semantic_fix_withheld_while_scope_incomplete"]},
+        {"id": {"case": "complete-scope-field-fix"}, "assertions": ["exact_fix_bytes", "one_safe_fix"]},
+        {"id": {"case": "scope-separate-damage"}, "assertions": ["completion_exit", "missing_reference_severity"]},
+        {"id": {"case": "scope-same-damage"}, "assertions": ["completion_exit", "missing_reference_severity"]},
+        {"id": {"case": "scope-same-duplicate"}, "assertions": ["completion_exit", "missing_reference_severity"]},
+        {"id": {"case": "unknown-namespace"}, "assertions": ["completion_exit", "missing_reference_severity"]},
+        {"id": {"case": "unsupported-gvk"}, "assertions": ["caller_not_falsely_resolved", "unsupported_resource_not_a_definition", "unsupported_resource_not_symbols"]},
+        {"id": {"case": "alias-input"}, "assertions": ["no_false_input_scope_error", "official_valid"]},
+        {"id": {"case": "workspace-symbol-baseline"}, "assertions": ["exact_symbol_set"]}
+      ]
+    },
+    "wf-lifecycle": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "nested-root-single-owner"}, "assertions": ["one_nested_symbol", "registered_root_prevents_cross_scope_binding"]},
+        {"id": {"case": "helm-open-skipped"}, "assertions": ["no_raw_template_diagnostics"]},
+        {"id": {"case": "excluded-open-single-file"}, "assertions": ["explicit_buffer_analyzed"]},
+        {"id": {"case": "removed-root-clears"}, "assertions": ["cleared", "query_rejected"]},
+        {"id": {"case": "continuous-input-latest"}, "assertions": ["latest_error"]},
+        {"id": {"case": "interleaved-requests-complete"}, "assertions": ["one_response_each", "standard_result_or_stale"]},
+        {"id": {"case": "old-result-rejected"}, "assertions": ["stable_request_completed", "versions_never_regress"]},
+        {"id": {"case": "config-invalid-visible"}, "assertions": ["unavailable"]},
+        {"id": {"case": "config-buffer-repair"}, "assertions": ["error_returns"]},
+        {"id": {"case": "request-old-epoch-rejected"}, "assertions": ["content_modified"]},
+        {"id": {"case": "cancel-acknowledged"}, "assertions": ["request_cancelled"]},
+        {"id": {"case": "cancel-recovery"}, "assertions": ["normal_diagnostic", "one_cancel_response"]},
+        {"id": {"case": "shutdown-after-cancel"}, "assertions": ["bounded", "shutdown_response"]}
+      ]
+    },
+    "wf-lifecycle-gaps": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"name": "saturation-id-reuse"}, "assertions": ["active_cancelled", "clean_bounded_exit", "one_terminal_each", "queue_full_exercised", "reused_completed_id_succeeds"]},
+        {"id": {"name": "buffer-authority"}, "assertions": ["buffer_diagnostics", "buffer_symbols", "disk_unchanged"]},
+        {"id": {"name": "nested-root-spelling"}, "assertions": ["add_normal", "one_owner", "remove_other_spelling", "remove_slash_spelling"]},
+        {"id": {"name": "close-clear-interrupted-1"}, "assertions": ["closed_uri_cleared", "new_open_buffer_published", "new_query_completed", "started_with_error"]},
+        {"id": {"name": "close-clear-interrupted-2"}, "assertions": ["closed_uri_cleared", "new_open_buffer_published", "new_query_completed", "started_with_error"]}
+      ]
+    },
+    "wf-shutdown-active": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"name": "active-and-queued-shutdown"}, "assertions": ["active_cancelled", "clean_bounded_process_exit", "one_terminal_each", "shutdown_replied"]}
+      ]
+    },
+    "wf-bounded-config": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "fifo"}, "assertions": ["exit", "explicitFailure", "terminalWithoutHarnessKill"]},
+        {"id": {"case": "directory"}, "assertions": ["exit", "explicitFailure", "terminalWithoutHarnessKill"]},
+        {"id": {"case": "oversize"}, "assertions": ["exit", "explicitFailure", "terminalWithoutHarnessKill"]},
+        {"id": {"case": "overlay-before-fifo-read"}, "assertions": ["overlayAnalyzed"]}
+      ]
+    },
+    "wf-bounded-input-files": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "all"}, "assertions": ["boundedTerminal", "completedFiles", "correctScopeCompleteness", "nonregularReason"]},
+        {"id": {"case": "selected-good"}, "assertions": ["boundedTerminal", "completedFiles", "correctScopeCompleteness", "nonregularReason"]},
+        {"id": {"case": "selected-bad"}, "assertions": ["boundedTerminal", "completedFiles", "correctScopeCompleteness", "nonregularReason"]},
+        {"id": {"case": "opened-fifo-buffer"}, "assertions": ["symbolFromBuffer"]}
+      ]
+    },
+    "wf-bounded-scope-identity": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "selected-cli-application"}, "assertions": ["acceptedTargetErrorExit", "exactDiagnostic", "noConfigurationError", "oneFile", "oneResource"]},
+        {"id": {"case": "current-lsp-application"}, "assertions": ["currentChangeCleared", "exactInitialDiagnostic"]},
+        {"id": {"case": "selected-cli-root"}, "assertions": ["acceptedTargetErrorExit", "exactDiagnostic", "noConfigurationError", "oneFile", "oneResource"]},
+        {"id": {"case": "current-lsp-root"}, "assertions": ["currentChangeCleared", "exactInitialDiagnostic"]},
+        {"id": {"case": "authoritative-before-refusal"}, "assertions": ["oldBufferOnly"]},
+        {"id": {"case": "existing-refused-authority"}, "assertions": ["noOldOrDiskSymbols", "textDocument/completion", "textDocument/definition", "textDocument/documentSymbol", "textDocument/prepareRename"]},
+        {"id": {"case": "incremental-cannot-revive-refused-text"}, "assertions": ["explicitRefusal"]},
+        {"id": {"case": "full-replacement-recovers"}, "assertions": ["onlyNewSymbols"]},
+        {"id": {"case": "close-reopen-recovers"}, "assertions": ["onlyReopenedSymbols"]},
+        {"id": {"case": "mixed-stream-completed-counts"}, "assertions": ["explicitDepthReason", "files", "incompleteExit", "resources"]},
+        {"id": {"case": "separate-files-completed-counts"}, "assertions": ["explicitDepthReason", "files", "incompleteExit", "resources"]},
+        {"id": {"case": "implicit-root"}, "assertions": ["counts", "selection", "targetExit"]},
+        {"id": {"case": "unassigned"}, "assertions": ["counts", "selection", "targetExit"]},
+        {"id": {"case": "unknown-root"}, "assertions": ["counts", "selection", "targetExit"]},
+        {"id": {"case": "unknown-name"}, "assertions": ["counts", "selection", "targetExit"]},
+        {"id": {"case": "opened-config-root-authority"}, "assertions": ["currentBufferCleared", "diagnosticPreserved"]}
+      ]
+    },
+    "wf-bounded-schema-lifetime": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "two-version-identity"}, "assertions": ["newerAcceptsSchedules", "olderRequiresSchedule"]},
+        {"id": {"case": "config-target-swap"}, "assertions": ["newTargetAccepted", "oldTargetRequired"]},
+        {"id": {"case": "unknown-target-does-not-use-cache"}, "assertions": ["bothUnavailable"]},
+        {"id": {"case": "target-recovery"}, "assertions": ["newStillAccepted", "oldStillRequired"]},
+        {"id": {"case": "cancel-and-value-recovery"}, "assertions": ["cancelTerminal", "currentValid", "exactlyOneTerminal", "invalidStillDetected"]}
+      ]
+    },
+    "wf-bounded-external-counts": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {}, "assertions": ["allAttemptsVerified", "bounded", "deadlineExit", "deadlineReason", "fixtureWithinCaps", "genuineDeadlineObserved", "notAllCompleted", "positiveControlComplete"]}
+      ]
+    },
+    "wf-bounded-baseline": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"sample": 0}, "assertions": ["acceptedComplete", "allFiles", "allResources", "noConfigurationError", "noDeadline", "noDiagnostics", "noUnevaluated", "withinBudget"]},
+        {"id": {"sample": 1}, "assertions": ["acceptedComplete", "allFiles", "allResources", "noConfigurationError", "noDeadline", "noDiagnostics", "noUnevaluated", "withinBudget"]},
+        {"id": {"sample": 2}, "assertions": ["acceptedComplete", "allFiles", "allResources", "noConfigurationError", "noDeadline", "noDiagnostics", "noUnevaluated", "withinBudget"]},
+        {"id": {"sample": 3}, "assertions": ["acceptedComplete", "allFiles", "allResources", "noConfigurationError", "noDeadline", "noDiagnostics", "noUnevaluated", "withinBudget"]},
+        {"id": {"sample": 4}, "assertions": ["acceptedComplete", "allFiles", "allResources", "noConfigurationError", "noDeadline", "noDiagnostics", "noUnevaluated", "withinBudget"]}
+      ]
+    },
+    "wf-aggregate-transitions": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "activation-recovery"}, "assertions": ["1-json-definition", "1-json-referencesFalse", "1-json-referencesTrue", "1-recovery", "1-restore", "1-target", "2-json-definition", "2-json-referencesFalse", "2-json-referencesTrue", "2-recovery", "2-restore", "2-target", "3-json-definition", "3-json-referencesFalse", "3-json-referencesTrue", "3-recovery", "3-restore", "3-target", "4-json-definition", "4-json-referencesFalse", "4-json-referencesTrue", "4-recovery", "4-restore", "4-target", "bytes", "exitZero", "initial", "unchangedSibling"]}
+      ]
+    },
+    "wf-call-queries": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "local-workflow-plain"}, "assertions": ["after-diagnostics", "after-envelope", "appliedBytes", "before-diagnostics", "before-envelope", "completionLabels", "completionProtocol", "editRange", "editedPublication", "independentEditedBytes", "inputUse-definition", "inputUse-referencesFalse", "inputUse-referencesTrue", "itemKind", "originMetadata", "originalBytes", "prefix_after-definition", "prefix_after-referencesFalse", "prefix_after-referencesTrue", "publication-caller.yaml", "renameOverlapRefused"]},
+        {"id": {"case": "local-cron-quoted"}, "assertions": ["after-diagnostics", "after-envelope", "appliedBytes", "before-diagnostics", "before-envelope", "completionLabels", "completionProtocol", "editRange", "editedPublication", "independentEditedBytes", "inputUse-definition", "inputUse-referencesFalse", "inputUse-referencesTrue", "itemKind", "originMetadata", "originalBytes", "prefix_after-definition", "prefix_after-referencesFalse", "prefix_after-referencesTrue", "publication-caller.yaml", "renameOverlapRefused"]},
+        {"id": {"case": "inherited-fallback-plain"}, "assertions": ["after-diagnostics", "after-envelope", "appliedBytes", "before-diagnostics", "before-envelope", "completionLabels", "completionProtocol", "editRange", "editedPublication", "independentEditedBytes", "inputUse-definition", "inputUse-referencesFalse", "inputUse-referencesTrue", "itemKind", "originMetadata", "originalBytes", "prefix_after-definition", "prefix_after-referencesFalse", "prefix_after-referencesTrue", "publication-caller.yaml", "publication-library.yaml", "renameOverlapRefused"]},
+        {"id": {"case": "inherited-explicit-entrypoint"}, "assertions": ["after-diagnostics", "after-envelope", "appliedBytes", "before-diagnostics", "before-envelope", "completionLabels", "completionProtocol", "editRange", "editedPublication", "independentEditedBytes", "itemKind", "originMetadata", "originalBytes", "prefix_after-definition", "prefix_after-referencesFalse", "prefix_after-referencesTrue", "publication-caller.yaml", "publication-library.yaml", "renameOverlapRefused", "selectedInputUse-definition", "selectedInputUse-referencesFalse", "selectedInputUse-referencesTrue"]},
+        {"id": {"case": "local-entry-and-exit-input-roles"}, "assertions": ["after-diagnostics", "after-envelope", "appliedBytes", "before-diagnostics", "before-envelope", "completionLabels", "completionProtocol", "editRange", "editedPublication", "entryInputUse-definition", "entryInputUse-referencesFalse", "entryInputUse-referencesTrue", "exitInputUse-definition", "exitInputUse-referencesFalse", "exitInputUse-referencesTrue", "independentEditedBytes", "itemKind", "originMetadata", "originalBytes", "prefix_after-definition", "prefix_after-referencesFalse", "prefix_after-referencesTrue", "publication-caller.yaml", "renameOverlapRefused"]},
+        {"id": {"case": "local-exit-only-input-role"}, "assertions": ["after-diagnostics", "after-envelope", "appliedBytes", "before-diagnostics", "before-envelope", "completionLabels", "completionProtocol", "editRange", "editedPublication", "exitInputUse-definition", "exitInputUse-referencesFalse", "exitInputUse-referencesTrue", "independentEditedBytes", "itemKind", "originMetadata", "originalBytes", "prefix_after-definition", "prefix_after-referencesFalse", "prefix_after-referencesTrue", "publication-caller.yaml", "renameOverlapRefused"]},
+        {"id": {"case": "explicit-exit"}, "assertions": ["argument-definition", "argument-referencesFalse", "argument-referencesTrue", "baseEntry-definition", "before-diagnostics", "before-envelope", "cleanup-referencesFalse", "cleanup-referencesTrue", "entryInputUse-definition", "entryInputUse-referencesFalse", "entryInputUse-referencesTrue", "exit-definition", "exit-referencesFalse", "exit-referencesTrue", "exitInputUse-definition", "exitInputUse-referencesFalse", "exitInputUse-referencesTrue", "globalUse-definition", "globalUse-referencesFalse", "globalUse-referencesTrue", "main-referencesFalse", "main-referencesTrue", "originalBytes", "publication-caller.yaml", "publication-library.yaml"]},
+        {"id": {"case": "explicit-exit-override"}, "assertions": ["alternate-referencesFalse", "alternate-referencesTrue", "before-diagnostics", "before-envelope", "cleanup-referencesFalse", "cleanup-referencesTrue", "exit-definition", "exit-referencesFalse", "exit-referencesTrue", "originalBytes", "publication-caller.yaml", "publication-library.yaml"]},
+        {"id": {"case": "base-exit-fallback-source"}, "assertions": ["baseExit-definition", "baseExit-referencesFalse", "baseExit-referencesTrue", "before-diagnostics", "before-envelope", "cleanup-referencesFalse", "cleanup-referencesTrue", "originalBytes", "publication-caller.yaml", "publication-library.yaml", "publication-other.yaml"]},
+        {"id": {"case": "encoded-duplicate-exit"}, "assertions": ["before-diagnostics", "before-envelope", "cleanup-referencesFalse", "cleanup-referencesTrue", "exit-definition", "exit-referencesFalse", "exit-referencesTrue", "originalBytes", "publication-caller.yaml", "publication-library.yaml"]},
+        {"id": {"case": "duplicate-library-exit"}, "assertions": ["before-diagnostics", "before-envelope", "cleanup-referencesFalse", "cleanup-referencesTrue", "exit-definition", "exit-referencesFalse", "exit-referencesTrue", "originalBytes", "otherCleanup-referencesFalse", "otherCleanup-referencesTrue", "publication-caller.yaml", "publication-duplicate.yaml", "publication-library.yaml"]},
+        {"id": {"case": "derived-exit-and-exact-sibling"}, "assertions": ["before-diagnostics", "before-envelope", "derived-definition", "derived-referencesFalse", "derived-referencesTrue", "exact-definition", "exact-referencesFalse", "exact-referencesTrue", "originalBytes", "publication-caller.yaml", "publication-library.yaml", "publication-other.yaml"]}
+      ]
+    },
+    "wf-inheritance-calls": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "entrypoint-fallback"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "caller-entrypoint"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "caller-argument-precedence"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "caller-entrypoint-missing"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "inherited-exit-missing"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "recoveryCLI", "recoveryPublication", "restoredPublication", "unchangedBytes"]},
+        {"id": {"case": "inherited-exit-provided"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "explicit-exit-missing"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "explicit-exit-override"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "explicit-exit-unknown"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "cron-inherited-exit"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "recoveryCLI", "recoveryPublication", "restoredPublication", "unchangedBytes"]},
+        {"id": {"case": "empty-local-templates"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "nonempty-local-templates"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "template-validation-absent-entry"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "template-validation-explicit-entry"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "workflow-real-entry-arguments"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "template-fake-artifact"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "workflow-real-artifact-missing"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "WorkflowTemplate-exit-default"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "WorkflowTemplate-exit-empty-argument"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "ClusterWorkflowTemplate-exit-default"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "ClusterWorkflowTemplate-exit-empty-argument"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "namespace-isolation"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "resource-ambiguity"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "template-ignore-invalid-fallback"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "template-inherited-exit-still-called"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "local-exit-unique-missing"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "local-exit-duplicate-required-first"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "local-exit-duplicate-empty-first"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "duplicate-call-arguments-unique"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]},
+        {"id": {"case": "duplicate-call-arguments-ambiguous"}, "assertions": ["envelope", "fullCLI", "libraryPublished", "published", "unchangedBytes"]}
+      ]
+    },
+    "wf-inherited-workflow-parameters": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "independent-WorkflowTemplate"}, "assertions": ["bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-library.yaml"]},
+        {"id": {"case": "independent-ClusterWorkflowTemplate"}, "assertions": ["bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-library.yaml"]},
+        {"id": {"case": "inherited-base"}, "assertions": ["aUse-definition", "aUse-referencesFalse", "aUse-referencesTrue", "baseDecl-definition", "baseDecl-referencesFalse", "baseDecl-referencesTrue", "bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-library.yaml"]},
+        {"id": {"case": "caller-override"}, "assertions": ["aDecl-definition", "aDecl-referencesFalse", "aDecl-referencesTrue", "aUse-definition", "aUse-referencesFalse", "aUse-referencesTrue", "baseDecl-definition", "baseDecl-referencesFalse", "baseDecl-referencesTrue", "bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-library.yaml"]},
+        {"id": {"case": "caller-provided"}, "assertions": ["aDecl-definition", "aDecl-referencesFalse", "aDecl-referencesTrue", "aUse-definition", "aUse-referencesFalse", "aUse-referencesTrue", "bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-library.yaml"]},
+        {"id": {"case": "two-callers-one-base"}, "assertions": ["aUse-definition", "aUse-referencesFalse", "aUse-referencesTrue", "baseDecl-definition", "baseDecl-referencesFalse", "baseDecl-referencesTrue", "bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-library.yaml", "publication-other.yaml"]},
+        {"id": {"case": "two-callers-distinct-origins"}, "assertions": ["aDecl-definition", "aDecl-referencesFalse", "aDecl-referencesTrue", "aUse-definition", "aUse-referencesFalse", "aUse-referencesTrue", "bUse-definition", "bUse-referencesFalse", "bUse-referencesTrue", "bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-library.yaml", "publication-other.yaml"]},
+        {"id": {"case": "caller-context-missing"}, "assertions": ["aUse-definition", "aUse-referencesFalse", "aUse-referencesTrue", "bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-library.yaml", "publication-other.yaml", "recoveryPublication", "restoredPublication"]},
+        {"id": {"case": "template-name-only-override"}, "assertions": ["aUse-definition", "aUse-referencesFalse", "aUse-referencesTrue", "bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-library.yaml"]},
+        {"id": {"case": "exit-merged-globals"}, "assertions": ["baseDecl-definition", "baseDecl-referencesFalse", "baseDecl-referencesTrue", "bytes", "envelope", "exitUse-definition", "exitUse-referencesFalse", "exitUse-referencesTrue", "fullCLI", "publication-caller.yaml", "publication-library.yaml"]},
+        {"id": {"case": "encoded-duplicate-base"}, "assertions": ["aUse-definition", "aUse-referencesFalse", "aUse-referencesTrue", "baseDecl-definition", "baseDecl-referencesFalse", "baseDecl-referencesTrue", "bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-library.yaml"]},
+        {"id": {"case": "derived-base"}, "assertions": ["aUse-definition", "aUse-referencesFalse", "aUse-referencesTrue", "bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-library.yaml"]},
+        {"id": {"case": "namespace-isolation"}, "assertions": ["aUse-definition", "aUse-referencesFalse", "aUse-referencesTrue", "bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-library.yaml"]},
+        {"id": {"case": "cron-inherited-crlf"}, "assertions": ["aUse-definition", "aUse-referencesFalse", "aUse-referencesTrue", "bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-library.yaml"]},
+        {"id": {"case": "ambiguous-whole-resource"}, "assertions": ["aUse-definition", "aUse-referencesFalse", "aUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-duplicate.yaml", "publication-library.yaml"]},
+        {"id": {"case": "dynamic-whole-own-parameter"}, "assertions": ["aUse-definition", "aUse-referencesFalse", "aUse-referencesTrue", "bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-library.yaml"]},
+        {"id": {"case": "caller-context-key-missing"}, "assertions": ["aUse-definition", "aUse-referencesFalse", "aUse-referencesTrue", "bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-library.yaml", "publication-other.yaml", "recoveryPublication", "restoredPublication"]},
+        {"id": {"case": "json-empty"}, "assertions": ["bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-library.yaml"]},
+        {"id": {"case": "json-seed"}, "assertions": ["bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-library.yaml"]},
+        {"id": {"case": "plain-aggregate-empty"}, "assertions": ["bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-library.yaml"]},
+        {"id": {"case": "plain-aggregate-seed"}, "assertions": ["bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-library.yaml"]},
+        {"id": {"case": "inherited-base-json"}, "assertions": ["aUse-definition", "aUse-referencesFalse", "aUse-referencesTrue", "baseDecl-definition", "baseDecl-referencesFalse", "baseDecl-referencesTrue", "bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-library.yaml"]},
+        {"id": {"case": "caller-provided-json"}, "assertions": ["aDecl-definition", "aDecl-referencesFalse", "aDecl-referencesTrue", "aUse-definition", "aUse-referencesFalse", "aUse-referencesTrue", "bodyUse-definition", "bodyUse-referencesFalse", "bodyUse-referencesTrue", "bytes", "envelope", "fullCLI", "publication-caller.yaml", "publication-library.yaml"]}
+      ]
+    },
+    "wf-domain-boundaries": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "unrelated-schema-error"}, "assertions": ["exactBinding", "noProtocolError"]},
+        {"id": {"case": "unrelated-malformed-expression"}, "assertions": ["exactBinding", "noProtocolError"]},
+        {"id": {"case": "unrelated-dynamic"}, "assertions": ["exactBinding", "noProtocolError"]},
+        {"id": {"case": "unfinished-neighbor"}, "assertions": ["exactBinding", "noProtocolError"]},
+        {"id": {"case": "ambiguous-declaration"}, "assertions": ["exactBinding", "noProtocolError"]},
+        {"id": {"case": "dynamic-index"}, "assertions": ["exactBinding", "noProtocolError"]},
+        {"id": {"case": "inline-shadow"}, "assertions": ["exactBinding", "noProtocolError"]},
+        {"id": {"case": "foreign-gvk"}, "assertions": ["exactBinding", "noProtocolError"]},
+        {"id": {"case": "encoded-member"}, "assertions": ["exactBinding", "noProtocolError"]},
+        {"id": {"case": "previous-step"}, "assertions": ["noProtocolError", "visibility"]},
+        {"id": {"case": "parallel-peer"}, "assertions": ["noProtocolError", "visibility"]},
+        {"id": {"case": "external-known"}, "assertions": ["isolation", "noProtocolError"]},
+        {"id": {"case": "external-namespace"}, "assertions": ["isolation", "noProtocolError"]},
+        {"id": {"case": "external-ambiguous"}, "assertions": ["isolation", "noProtocolError"]},
+        {"id": {"case": "external-scope"}, "assertions": ["isolation", "noProtocolError"]},
+        {"id": {"case": "external-cluster"}, "assertions": ["isolation", "noProtocolError"]},
+        {"id": {"case": "external-dynamic"}, "assertions": ["isolation", "noProtocolError"]},
+        {"id": {"case": "encoded-task-member"}, "assertions": ["exactSourceRequired"]},
+        {"id": {"case": "external-root"}, "assertions": ["isolated"]}
+      ]
+    },
+    "wf-domain-repair": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "categories-Workflow"}, "assertions": ["0-textDocument/definition-completeResult", "0-textDocument/definition-protocol", "1-textDocument/references-completeResult", "1-textDocument/references-protocol", "10-textDocument/references-completeResult", "10-textDocument/references-protocol", "11-textDocument/references-completeResult", "11-textDocument/references-protocol", "12-textDocument/definition-completeResult", "12-textDocument/definition-protocol", "13-textDocument/references-completeResult", "13-textDocument/references-protocol", "14-textDocument/references-completeResult", "14-textDocument/references-protocol", "15-textDocument/documentSymbol-completeResult", "15-textDocument/documentSymbol-protocol", "16-workspace/symbol-completeResult", "16-workspace/symbol-protocol", "2-textDocument/references-completeResult", "2-textDocument/references-protocol", "3-textDocument/definition-completeResult", "3-textDocument/definition-protocol", "4-textDocument/references-completeResult", "4-textDocument/references-protocol", "5-textDocument/references-completeResult", "5-textDocument/references-protocol", "6-textDocument/definition-completeResult", "6-textDocument/definition-protocol", "7-textDocument/references-completeResult", "7-textDocument/references-protocol", "8-textDocument/references-completeResult", "8-textDocument/references-protocol", "9-textDocument/definition-completeResult", "9-textDocument/definition-protocol", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "categories-WorkflowTemplate"}, "assertions": ["0-textDocument/definition-completeResult", "0-textDocument/definition-protocol", "1-textDocument/references-completeResult", "1-textDocument/references-protocol", "10-textDocument/references-completeResult", "10-textDocument/references-protocol", "11-textDocument/references-completeResult", "11-textDocument/references-protocol", "12-textDocument/definition-completeResult", "12-textDocument/definition-protocol", "13-textDocument/references-completeResult", "13-textDocument/references-protocol", "14-textDocument/references-completeResult", "14-textDocument/references-protocol", "15-textDocument/documentSymbol-completeResult", "15-textDocument/documentSymbol-protocol", "16-workspace/symbol-completeResult", "16-workspace/symbol-protocol", "2-textDocument/references-completeResult", "2-textDocument/references-protocol", "3-textDocument/definition-completeResult", "3-textDocument/definition-protocol", "4-textDocument/references-completeResult", "4-textDocument/references-protocol", "5-textDocument/references-completeResult", "5-textDocument/references-protocol", "6-textDocument/definition-completeResult", "6-textDocument/definition-protocol", "7-textDocument/references-completeResult", "7-textDocument/references-protocol", "8-textDocument/references-completeResult", "8-textDocument/references-protocol", "9-textDocument/definition-completeResult", "9-textDocument/definition-protocol", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "categories-ClusterWorkflowTemplate"}, "assertions": ["0-textDocument/definition-completeResult", "0-textDocument/definition-protocol", "1-textDocument/references-completeResult", "1-textDocument/references-protocol", "10-textDocument/references-completeResult", "10-textDocument/references-protocol", "11-textDocument/references-completeResult", "11-textDocument/references-protocol", "12-textDocument/definition-completeResult", "12-textDocument/definition-protocol", "13-textDocument/references-completeResult", "13-textDocument/references-protocol", "14-textDocument/references-completeResult", "14-textDocument/references-protocol", "15-textDocument/documentSymbol-completeResult", "15-textDocument/documentSymbol-protocol", "16-workspace/symbol-completeResult", "16-workspace/symbol-protocol", "2-textDocument/references-completeResult", "2-textDocument/references-protocol", "3-textDocument/definition-completeResult", "3-textDocument/definition-protocol", "4-textDocument/references-completeResult", "4-textDocument/references-protocol", "5-textDocument/references-completeResult", "5-textDocument/references-protocol", "6-textDocument/definition-completeResult", "6-textDocument/definition-protocol", "7-textDocument/references-completeResult", "7-textDocument/references-protocol", "8-textDocument/references-completeResult", "8-textDocument/references-protocol", "9-textDocument/definition-completeResult", "9-textDocument/definition-protocol", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "categories-CronWorkflow"}, "assertions": ["0-textDocument/definition-completeResult", "0-textDocument/definition-protocol", "1-textDocument/references-completeResult", "1-textDocument/references-protocol", "10-textDocument/references-completeResult", "10-textDocument/references-protocol", "11-textDocument/references-completeResult", "11-textDocument/references-protocol", "12-textDocument/definition-completeResult", "12-textDocument/definition-protocol", "13-textDocument/references-completeResult", "13-textDocument/references-protocol", "14-textDocument/references-completeResult", "14-textDocument/references-protocol", "15-textDocument/documentSymbol-completeResult", "15-textDocument/documentSymbol-protocol", "16-workspace/symbol-completeResult", "16-workspace/symbol-protocol", "2-textDocument/references-completeResult", "2-textDocument/references-protocol", "3-textDocument/definition-completeResult", "3-textDocument/definition-protocol", "4-textDocument/references-completeResult", "4-textDocument/references-protocol", "5-textDocument/references-completeResult", "5-textDocument/references-protocol", "6-textDocument/definition-completeResult", "6-textDocument/definition-protocol", "7-textDocument/references-completeResult", "7-textDocument/references-protocol", "8-textDocument/references-completeResult", "8-textDocument/references-protocol", "9-textDocument/definition-completeResult", "9-textDocument/definition-protocol", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "non-string-names"}, "assertions": ["0-textDocument/definition-completeResult", "0-textDocument/definition-protocol", "1-textDocument/references-completeResult", "1-textDocument/references-protocol", "10-textDocument/definition-completeResult", "10-textDocument/definition-protocol", "11-textDocument/definition-completeResult", "11-textDocument/definition-protocol", "12-textDocument/documentSymbol-completeResult", "12-textDocument/documentSymbol-protocol", "2-textDocument/references-completeResult", "2-textDocument/references-protocol", "3-textDocument/definition-completeResult", "3-textDocument/definition-protocol", "4-textDocument/references-completeResult", "4-textDocument/references-protocol", "5-textDocument/references-completeResult", "5-textDocument/references-protocol", "6-textDocument/definition-completeResult", "6-textDocument/definition-protocol", "7-textDocument/references-completeResult", "7-textDocument/references-protocol", "8-textDocument/references-completeResult", "8-textDocument/references-protocol", "9-textDocument/definition-completeResult", "9-textDocument/definition-protocol", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "external-overlap"}, "assertions": ["0-textDocument/definition-completeResult", "0-textDocument/definition-protocol", "1-textDocument/references-completeResult", "1-textDocument/references-protocol", "2-textDocument/references-completeResult", "2-textDocument/references-protocol", "3-textDocument/definition-completeResult", "3-textDocument/definition-protocol", "4-textDocument/references-completeResult", "4-textDocument/references-protocol", "5-textDocument/references-completeResult", "5-textDocument/references-protocol", "6-textDocument/definition-completeResult", "6-textDocument/definition-protocol", "7-textDocument/references-completeResult", "7-textDocument/references-protocol", "8-textDocument/references-completeResult", "8-textDocument/references-protocol", "9-textDocument/prepareRename", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "external-overlap-inexact-input"}, "assertions": ["0-textDocument/definition-completeResult", "0-textDocument/definition-protocol", "1-textDocument/references-completeResult", "1-textDocument/references-protocol", "2-textDocument/references-completeResult", "2-textDocument/references-protocol", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "external-overlap-duplicate-input"}, "assertions": ["0-textDocument/definition-completeResult", "0-textDocument/definition-protocol", "1-textDocument/references-completeResult", "1-textDocument/references-protocol", "2-textDocument/references-completeResult", "2-textDocument/references-protocol", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "steps-visibility"}, "assertions": ["0-textDocument/definition-completeResult", "0-textDocument/definition-protocol", "1-textDocument/definition-completeResult", "1-textDocument/definition-protocol", "2-textDocument/definition-completeResult", "2-textDocument/definition-protocol", "3-textDocument/definition-completeResult", "3-textDocument/definition-protocol", "4-textDocument/references-completeResult", "4-textDocument/references-protocol", "5-textDocument/references-completeResult", "5-textDocument/references-protocol", "6-textDocument/references-completeResult", "6-textDocument/references-protocol", "7-textDocument/references-completeResult", "7-textDocument/references-protocol", "8-textDocument/references-completeResult", "8-textDocument/references-protocol", "9-textDocument/references-completeResult", "9-textDocument/references-protocol", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "yaml-plain-template-true"}, "assertions": ["0-textDocument/completion-exactBytes", "0-textDocument/completion-format", "0-textDocument/completion-kind", "0-textDocument/completion-labels", "0-textDocument/completion-metadata", "0-textDocument/completion-protocol", "0-textDocument/completion-range", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "yaml-quoted-template-true"}, "assertions": ["0-textDocument/completion-exactBytes", "0-textDocument/completion-format", "0-textDocument/completion-kind", "0-textDocument/completion-labels", "0-textDocument/completion-metadata", "0-textDocument/completion-protocol", "0-textDocument/completion-range", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "yaml-plain-template-null"}, "assertions": ["0-textDocument/completion-exactBytes", "0-textDocument/completion-format", "0-textDocument/completion-kind", "0-textDocument/completion-labels", "0-textDocument/completion-metadata", "0-textDocument/completion-protocol", "0-textDocument/completion-range", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "yaml-quoted-template-null"}, "assertions": ["0-textDocument/completion-exactBytes", "0-textDocument/completion-format", "0-textDocument/completion-kind", "0-textDocument/completion-labels", "0-textDocument/completion-metadata", "0-textDocument/completion-protocol", "0-textDocument/completion-range", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "yaml-plain-template-123"}, "assertions": ["0-textDocument/completion-exactBytes", "0-textDocument/completion-format", "0-textDocument/completion-kind", "0-textDocument/completion-labels", "0-textDocument/completion-metadata", "0-textDocument/completion-protocol", "0-textDocument/completion-range", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "yaml-quoted-template-123"}, "assertions": ["0-textDocument/completion-exactBytes", "0-textDocument/completion-format", "0-textDocument/completion-kind", "0-textDocument/completion-labels", "0-textDocument/completion-metadata", "0-textDocument/completion-protocol", "0-textDocument/completion-range", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "yaml-plain-argument-true"}, "assertions": ["0-textDocument/completion-exactBytes", "0-textDocument/completion-format", "0-textDocument/completion-kind", "0-textDocument/completion-labels", "0-textDocument/completion-metadata", "0-textDocument/completion-protocol", "0-textDocument/completion-range", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "crlf-nonbmp-sibling-error"}, "assertions": ["0-textDocument/completion-exactBytes", "0-textDocument/completion-format", "0-textDocument/completion-kind", "0-textDocument/completion-labels", "0-textDocument/completion-metadata", "0-textDocument/completion-protocol", "0-textDocument/completion-range", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "yaml-external-argument-plain"}, "assertions": ["0-textDocument/completion-exactBytes", "0-textDocument/completion-format", "0-textDocument/completion-kind", "0-textDocument/completion-labels", "0-textDocument/completion-metadata", "0-textDocument/completion-protocol", "0-textDocument/completion-range", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "yaml-external-argument-quoted"}, "assertions": ["0-textDocument/completion-exactBytes", "0-textDocument/completion-format", "0-textDocument/completion-kind", "0-textDocument/completion-labels", "0-textDocument/completion-metadata", "0-textDocument/completion-protocol", "0-textDocument/completion-range", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "yaml-external-name"}, "assertions": ["0-textDocument/completion-exactBytes", "0-textDocument/completion-format", "0-textDocument/completion-kind", "0-textDocument/completion-labels", "0-textDocument/completion-metadata", "0-textDocument/completion-protocol", "0-textDocument/completion-range", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]},
+        {"id": {"case": "yaml-external-template"}, "assertions": ["0-textDocument/completion-exactBytes", "0-textDocument/completion-format", "0-textDocument/completion-kind", "0-textDocument/completion-labels", "0-textDocument/completion-metadata", "0-textDocument/completion-protocol", "0-textDocument/completion-range", "complete", "configurationErrors", "counts", "exit", "fullCLIDiagnostics"]}
+      ]
+    },
+    "wf-domain-role-cardinality": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "duplicate-external-template"}, "assertions": ["countsExit", "exactCLI", "exactDefinition", "overlapReferencesFalse", "overlapReferencesTrue", "workflowReferencesFalse", "workflowReferencesTrue"]},
+        {"id": {"case": "encoded-duplicate-external-template"}, "assertions": ["countsExit", "exactCLI", "exactDefinition", "overlapReferencesFalse", "overlapReferencesTrue", "workflowReferencesFalse", "workflowReferencesTrue"]},
+        {"id": {"case": "role-publication-transitions"}, "assertions": ["config-restored-definition", "config-restored-refsFalse", "config-restored-refsTrue", "configSeparatedFullDiagnostic", "diskConfigRestoredPublication", "diskUnchangedFullCLI", "initial-definition", "initial-refsFalse", "initial-refsTrue", "initialCallerClean", "initialLibraryFullDiagnostic", "removed-input-definition", "removed-input-refsFalse", "removed-input-refsTrue", "removedInputCallerPublished", "removedInputLibraryClean", "restored-definition", "restored-refsFalse", "restored-refsTrue", "restoredCallerPublished", "restoredLibraryClean", "separated-scope-definition", "separated-scope-refsFalse", "separated-scope-refsTrue"]}
+      ]
+    },
+    "wf-domain-role-resources": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "duplicate-external-resource"}, "assertions": ["countsExit", "exactCLI", "exactDefinition", "overlapReferencesFalse", "overlapReferencesTrue", "workflowReferencesFalse", "workflowReferencesTrue"]},
+        {"id": {"case": "known-zero-external-input"}, "assertions": ["countsExit", "exactCLI", "exactDefinition", "overlapReferencesFalse", "overlapReferencesTrue", "workflowReferencesFalse", "workflowReferencesTrue"]},
+        {"id": {"case": "known-missing-external-input"}, "assertions": ["countsExit", "exactCLI", "exactDefinition", "overlapReferencesFalse", "overlapReferencesTrue", "workflowReferencesFalse", "workflowReferencesTrue"]},
+        {"id": {"case": "duplicate-resource-zero-input"}, "assertions": ["countsExit", "exactCLI", "exactDefinition", "overlapReferencesFalse", "overlapReferencesTrue", "workflowReferencesFalse", "workflowReferencesTrue"]},
+        {"id": {"case": "duplicate-resource-missing-input"}, "assertions": ["countsExit", "exactCLI", "exactDefinition", "overlapReferencesFalse", "overlapReferencesTrue", "workflowReferencesFalse", "workflowReferencesTrue"]}
+      ]
+    },
+    "wf-domain-inexact-cardinality": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "local-definition"}, "assertions": ["exactCandidateDespiteAmbiguity", "noProtocolError"]},
+        {"id": {"case": "local-completion"}, "assertions": ["noProtocolError", "uniqueBeforeOriginFilter"]},
+        {"id": {"case": "local-unique"}, "assertions": ["noProtocolError", "uniqueBeforeOriginFilter"]},
+        {"id": {"case": "external-output-definition"}, "assertions": ["noProtocolError", "uniqueBeforeOriginFilter"]},
+        {"id": {"case": "external-output-completion"}, "assertions": ["noProtocolError", "uniqueBeforeOriginFilter"]},
+        {"id": {"case": "external-input-completion"}, "assertions": ["noProtocolError", "uniqueBeforeOriginFilter"]},
+        {"id": {"case": "unsafe-name-completion"}, "assertions": ["noProtocolError", "uniqueBeforeOriginFilter"]},
+        {"id": {"case": "external-template-completion"}, "assertions": ["noProtocolError", "uniqueBeforeOriginFilter"]},
+        {"id": {"case": "local-alias-definition"}, "assertions": ["exactCandidateDespiteAmbiguity", "noProtocolError"]},
+        {"id": {"case": "local-alias-completion"}, "assertions": ["noProtocolError", "uniqueBeforeOriginFilter"]},
+        {"id": {"case": "external-alias-output-definition"}, "assertions": ["noProtocolError", "uniqueBeforeOriginFilter"]},
+        {"id": {"case": "external-alias-template-completion"}, "assertions": ["noProtocolError", "uniqueBeforeOriginFilter"]},
+        {"id": {"case": "local-references"}, "assertions": ["emptyFalse", "emptyTrue"]}
+      ]
+    },
+    "wf-domain-overlap": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "overlap"}, "assertions": ["exactDefinitionCandidates", "exactReferenceSetFalse", "exactReferenceSetTrue", "noProtocolErrorFalse", "noProtocolErrorTrue"]},
+        {"id": {"case": "workflow"}, "assertions": ["exactDefinitionCandidates", "exactReferenceSetFalse", "exactReferenceSetTrue", "noProtocolErrorFalse", "noProtocolErrorTrue"]},
+        {"id": {"case": "input"}, "assertions": ["exactDefinitionCandidates", "exactReferenceSetFalse", "exactReferenceSetTrue", "noProtocolErrorFalse", "noProtocolErrorTrue"]},
+        {"id": {"case": "rename-still-closed"}, "assertions": ["refused"]}
+      ]
+    },
+    "wf-domain-ambiguous-references": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "useFalse"}, "assertions": ["noProtocolError", "noResolvedReferences"]},
+        {"id": {"case": "useTrue"}, "assertions": ["noProtocolError", "noResolvedReferences"]},
+        {"id": {"case": "declarationFalse"}, "assertions": ["noProtocolError", "noResolvedReferences"]},
+        {"id": {"case": "declarationTrue"}, "assertions": ["noProtocolError", "noResolvedReferences"]}
+      ]
+    },
+    "wf-domain-completion-context": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "task"}, "assertions": ["exactBytes", "exactCandidates", "fullCLI"]},
+        {"id": {"case": "output"}, "assertions": ["exactBytes", "exactCandidates", "fullCLI"]},
+        {"id": {"case": "dependency"}, "assertions": ["exactBytes", "exactCandidates", "fullCLI"]},
+        {"id": {"case": "argument"}, "assertions": ["exactBytes", "exactCandidates", "fullCLI"]},
+        {"id": {"case": "workflow"}, "assertions": ["exactBytes", "exactCandidates", "fullCLI"]},
+        {"id": {"case": "artifact"}, "assertions": ["exactBytes", "exactCandidates", "fullCLI"]},
+        {"id": {"case": "output-local"}, "assertions": ["exactBytes", "exactCandidates", "fullCLI"]}
+      ]
+    },
+    "wf-domain-external-completion": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "resource"}, "assertions": ["completeDiagnosticsAndCounts", "exactBytes", "exactLabels", "noProtocolError"]},
+        {"id": {"case": "template"}, "assertions": ["completeDiagnosticsAndCounts", "exactBytes", "exactLabels", "noProtocolError"]},
+        {"id": {"case": "namespace"}, "assertions": ["exactLabels", "noProtocolError"]},
+        {"id": {"case": "ambiguous"}, "assertions": ["exactLabels", "noProtocolError"]},
+        {"id": {"case": "cluster"}, "assertions": ["completeDiagnosticsAndCounts", "exactBytes", "exactLabels", "noProtocolError"]}
+      ]
+    },
+    "wf-domain-external-outputs": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "output"}, "assertions": ["exactBytes", "exactCandidate", "fullCLI"]},
+        {"id": {"case": "argument"}, "assertions": ["exactBytes", "exactCandidate", "fullCLI"]},
+        {"id": {"case": "static-output"}, "assertions": ["exactDefinition"]},
+        {"id": {"case": "bracket-output"}, "assertions": ["exactDefinition"]}
+      ]
+    },
+    "wf-domain-external-references": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "template-declarationFalse"}, "assertions": ["exactUnion"]},
+        {"id": {"case": "template-declarationTrue"}, "assertions": ["exactUnion"]},
+        {"id": {"case": "template-externalFalse"}, "assertions": ["exactUnion"]},
+        {"id": {"case": "template-externalTrue"}, "assertions": ["exactUnion"]},
+        {"id": {"case": "parameter-declarationFalse"}, "assertions": ["exactUnion"]},
+        {"id": {"case": "parameter-declarationTrue"}, "assertions": ["exactUnion"]},
+        {"id": {"case": "parameter-externalFalse"}, "assertions": ["exactUnion"]},
+        {"id": {"case": "parameter-externalTrue"}, "assertions": ["exactUnion"]}
+      ]
+    },
+    "wf-external-candidates": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "resource-duplicates"}, "assertions": ["a-library.yamldeclarationreferencesFalse", "a-library.yamldeclarationreferencesTrue", "a-library.yamldeclarationrenameRefused", "a-library.yamlinput0referencesFalse", "a-library.yamlinput0referencesTrue", "a-library.yamlinput0renameRefused", "a-library.yamltemplate0referencesFalse", "a-library.yamltemplate0referencesTrue", "a-library.yamltemplate0renameRefused", "argumentdefinition", "argumentreferencesFalse", "argumentreferencesTrue", "argumentrenameRefused", "b-library.yamldeclarationreferencesFalse", "b-library.yamldeclarationreferencesTrue", "b-library.yamldeclarationrenameRefused", "b-library.yamlinput0referencesFalse", "b-library.yamlinput0referencesTrue", "b-library.yamlinput0renameRefused", "b-library.yamltemplate0referencesFalse", "b-library.yamltemplate0referencesTrue", "b-library.yamltemplate0renameRefused", "completeDiagnostics", "countsExit", "entrydefinition", "entryreferencesFalse", "entryreferencesTrue", "entryrenameRefused", "resourcedefinition", "resourcereferencesFalse", "resourcereferencesTrue", "resourcerenameRefused"]},
+        {"id": {"case": "cluster-resource-duplicates"}, "assertions": ["a-library.yamldeclarationreferencesFalse", "a-library.yamldeclarationreferencesTrue", "a-library.yamldeclarationrenameRefused", "a-library.yamlinput0referencesFalse", "a-library.yamlinput0referencesTrue", "a-library.yamlinput0renameRefused", "a-library.yamltemplate0referencesFalse", "a-library.yamltemplate0referencesTrue", "a-library.yamltemplate0renameRefused", "argumentdefinition", "argumentreferencesFalse", "argumentreferencesTrue", "argumentrenameRefused", "b-library.yamldeclarationreferencesFalse", "b-library.yamldeclarationreferencesTrue", "b-library.yamldeclarationrenameRefused", "b-library.yamlinput0referencesFalse", "b-library.yamlinput0referencesTrue", "b-library.yamlinput0renameRefused", "b-library.yamltemplate0referencesFalse", "b-library.yamltemplate0referencesTrue", "b-library.yamltemplate0renameRefused", "completeDiagnostics", "countsExit", "entrydefinition", "entryreferencesFalse", "entryreferencesTrue", "entryrenameRefused", "resourcedefinition", "resourcereferencesFalse", "resourcereferencesTrue", "resourcerenameRefused"]},
+        {"id": {"case": "template-duplicates"}, "assertions": ["a-library.yamldeclarationreferencesFalse", "a-library.yamldeclarationreferencesTrue", "a-library.yamldeclarationrenameRefused", "a-library.yamlinput0referencesFalse", "a-library.yamlinput0referencesTrue", "a-library.yamlinput0renameRefused", "a-library.yamlinput1referencesFalse", "a-library.yamlinput1referencesTrue", "a-library.yamlinput1renameRefused", "a-library.yamltemplate0referencesFalse", "a-library.yamltemplate0referencesTrue", "a-library.yamltemplate0renameRefused", "a-library.yamltemplate1referencesFalse", "a-library.yamltemplate1referencesTrue", "a-library.yamltemplate1renameRefused", "argumentdefinition", "argumentreferencesFalse", "argumentreferencesTrue", "argumentrenameRefused", "completeDiagnostics", "countsExit", "entrydefinition", "entryreferencesFalse", "entryreferencesTrue", "entryrenameRefused", "resourcedefinition", "resourcereferencesFalse", "resourcereferencesTrue", "resourcerenameRefused"]},
+        {"id": {"case": "encoded-template-duplicate"}, "assertions": ["a-library.yamldeclarationreferencesFalse", "a-library.yamldeclarationreferencesTrue", "a-library.yamldeclarationrenameRefused", "a-library.yamlinput0referencesFalse", "a-library.yamlinput0referencesTrue", "a-library.yamlinput0renameRefused", "a-library.yamlinput1referencesFalse", "a-library.yamlinput1referencesTrue", "a-library.yamlinput1renameRefused", "a-library.yamltemplate0referencesFalse", "a-library.yamltemplate0referencesTrue", "a-library.yamltemplate0renameRefused", "argumentdefinition", "argumentreferencesFalse", "argumentreferencesTrue", "argumentrenameRefused", "completeDiagnostics", "countsExit", "entrydefinition", "entryreferencesFalse", "entryreferencesTrue", "entryrenameRefused", "resourcedefinition", "resourcereferencesFalse", "resourcereferencesTrue", "resourcerenameRefused"]},
+        {"id": {"case": "encoded-resource-duplicate"}, "assertions": ["a-library.yamldeclarationreferencesFalse", "a-library.yamldeclarationreferencesTrue", "a-library.yamldeclarationrenameRefused", "a-library.yamlinput0referencesFalse", "a-library.yamlinput0referencesTrue", "a-library.yamlinput0renameRefused", "a-library.yamltemplate0referencesFalse", "a-library.yamltemplate0referencesTrue", "a-library.yamltemplate0renameRefused", "argumentdefinition", "argumentreferencesFalse", "argumentreferencesTrue", "argumentrenameRefused", "b-library.yamlinput0referencesFalse", "b-library.yamlinput0referencesTrue", "b-library.yamlinput0renameRefused", "b-library.yamltemplate0referencesFalse", "b-library.yamltemplate0referencesTrue", "b-library.yamltemplate0renameRefused", "completeDiagnostics", "countsExit", "entrydefinition", "entryreferencesFalse", "entryreferencesTrue", "entryrenameRefused", "resourcedefinition", "resourcereferencesFalse", "resourcereferencesTrue", "resourcerenameRefused"]},
+        {"id": {"case": "task-resource-duplicates"}, "assertions": ["a-library.yamldeclarationreferencesFalse", "a-library.yamldeclarationreferencesTrue", "a-library.yamldeclarationrenameRefused", "a-library.yamlinput0referencesFalse", "a-library.yamlinput0referencesTrue", "a-library.yamlinput0renameRefused", "a-library.yamltemplate0referencesFalse", "a-library.yamltemplate0referencesTrue", "a-library.yamltemplate0renameRefused", "argumentdefinition", "argumentreferencesFalse", "argumentreferencesTrue", "argumentrenameRefused", "b-library.yamldeclarationreferencesFalse", "b-library.yamldeclarationreferencesTrue", "b-library.yamldeclarationrenameRefused", "b-library.yamlinput0referencesFalse", "b-library.yamlinput0referencesTrue", "b-library.yamlinput0renameRefused", "b-library.yamltemplate0referencesFalse", "b-library.yamltemplate0referencesTrue", "b-library.yamltemplate0renameRefused", "completeDiagnostics", "countsExit", "entrydefinition", "entryreferencesFalse", "entryreferencesTrue", "entryrenameRefused", "resourcedefinition", "resourcereferencesFalse", "resourcereferencesTrue", "resourcerenameRefused"]},
+        {"id": {"case": "task-template-duplicates"}, "assertions": ["a-library.yamldeclarationreferencesFalse", "a-library.yamldeclarationreferencesTrue", "a-library.yamldeclarationrenameRefused", "a-library.yamlinput0referencesFalse", "a-library.yamlinput0referencesTrue", "a-library.yamlinput0renameRefused", "a-library.yamlinput1referencesFalse", "a-library.yamlinput1referencesTrue", "a-library.yamlinput1renameRefused", "a-library.yamltemplate0referencesFalse", "a-library.yamltemplate0referencesTrue", "a-library.yamltemplate0renameRefused", "a-library.yamltemplate1referencesFalse", "a-library.yamltemplate1referencesTrue", "a-library.yamltemplate1renameRefused", "argumentdefinition", "argumentreferencesFalse", "argumentreferencesTrue", "argumentrenameRefused", "completeDiagnostics", "countsExit", "entrydefinition", "entryreferencesFalse", "entryreferencesTrue", "entryrenameRefused", "resourcedefinition", "resourcereferencesFalse", "resourcereferencesTrue", "resourcerenameRefused"]},
+        {"id": {"case": "crlf-cluster-task"}, "assertions": ["a-library.yamldeclarationreferencesFalse", "a-library.yamldeclarationreferencesTrue", "a-library.yamldeclarationrenameRefused", "a-library.yamlinput0referencesFalse", "a-library.yamlinput0referencesTrue", "a-library.yamlinput0renameRefused", "a-library.yamltemplate0referencesFalse", "a-library.yamltemplate0referencesTrue", "a-library.yamltemplate0renameRefused", "argumentdefinition", "argumentreferencesFalse", "argumentreferencesTrue", "argumentrenameRefused", "b-library.yamldeclarationreferencesFalse", "b-library.yamldeclarationreferencesTrue", "b-library.yamldeclarationrenameRefused", "b-library.yamlinput0referencesFalse", "b-library.yamlinput0referencesTrue", "b-library.yamlinput0renameRefused", "b-library.yamltemplate0referencesFalse", "b-library.yamltemplate0referencesTrue", "b-library.yamltemplate0renameRefused", "completeDiagnostics", "countsExit", "entrydefinition", "entryreferencesFalse", "entryreferencesTrue", "entryrenameRefused", "resourcedefinition", "resourcereferencesFalse", "resourcereferencesTrue", "resourcerenameRefused"]},
+        {"id": {"case": "unique-control"}, "assertions": ["a-library.yamldeclarationreferencesFalse", "a-library.yamldeclarationreferencesTrue", "a-library.yamldeclarationrenameRefused", "a-library.yamlinput0referencesFalse", "a-library.yamlinput0referencesTrue", "a-library.yamlinput0renameRefused", "a-library.yamltemplate0referencesFalse", "a-library.yamltemplate0referencesTrue", "a-library.yamltemplate0renameRefused", "argumentdefinition", "argumentreferencesFalse", "argumentreferencesTrue", "argumentrenameRefused", "completeDiagnostics", "countsExit", "entrydefinition", "entryreferencesFalse", "entryreferencesTrue", "entryrenameRefused", "resourcedefinition", "resourcereferencesFalse", "resourcereferencesTrue", "resourcerenameRefused"]},
+        {"id": {"case": "namespace-filter"}, "assertions": ["a-library.yamldeclarationreferencesFalse", "a-library.yamldeclarationreferencesTrue", "a-library.yamldeclarationrenameRefused", "a-library.yamlinput0referencesFalse", "a-library.yamlinput0referencesTrue", "a-library.yamlinput0renameRefused", "a-library.yamltemplate0referencesFalse", "a-library.yamltemplate0referencesTrue", "a-library.yamltemplate0renameRefused", "argumentdefinition", "argumentreferencesFalse", "argumentreferencesTrue", "argumentrenameRefused", "completeDiagnostics", "countsExit", "entrydefinition", "entryreferencesFalse", "entryreferencesTrue", "entryrenameRefused", "resourcedefinition", "resourcereferencesFalse", "resourcereferencesTrue", "resourcerenameRefused"]},
+        {"id": {"case": "scope-filter"}, "assertions": ["a-library.yamldeclarationreferencesFalse", "a-library.yamldeclarationreferencesTrue", "a-library.yamldeclarationrenameRefused", "a-library.yamlinput0referencesFalse", "a-library.yamlinput0referencesTrue", "a-library.yamlinput0renameRefused", "a-library.yamltemplate0referencesFalse", "a-library.yamltemplate0referencesTrue", "a-library.yamltemplate0renameRefused", "argumentdefinition", "argumentreferencesFalse", "argumentreferencesTrue", "argumentrenameRefused", "completeDiagnostics", "countsExit", "entrydefinition", "entryreferencesFalse", "entryreferencesTrue", "entryrenameRefused", "resourcedefinition", "resourcereferencesFalse", "resourcereferencesTrue", "resourcerenameRefused"]}
+      ]
+    },
+    "wf-semantic-origins": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "closed-aliased-gvk-Workflow"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "closed-aliased-gvk-WorkflowTemplate"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "closed-aliased-gvk-ClusterWorkflowTemplate"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "closed-aliased-gvk-CronWorkflow"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "closed-merged-gvk"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "closed-explicit-foreign-override"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "unknownEnvelope"]},
+        {"id": {"case": "closed-crlf-non-bmp-exact-sibling"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "closed-merged-required-input"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "closed-merge-sequence-first-wins"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "closed-merge-sequence-reversed"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "closed-explicit-inputs-override"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "closed-alias-argument-value"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "closed-aliased-input-sequence"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "closed-derived-template-name-exact-sibling"}, "assertions": ["closedRenameStillRefused", "completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "unknownEnvelope"]},
+        {"id": {"case": "closed-aliased-template-duplicate"}, "assertions": ["closedRenameStillRefused", "completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query10", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "unknownEnvelope"]},
+        {"id": {"case": "closed-shared-and-unshared-exact-candidate"}, "assertions": ["closedRenameStillRefused", "completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query10", "query11", "query12", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "unknownEnvelope"]},
+        {"id": {"case": "closed-encoded-template-duplicate-control"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "unknownEnvelope"]},
+        {"id": {"case": "open-aliased-gvk-Workflow"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "open-aliased-gvk-WorkflowTemplate"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "open-aliased-gvk-ClusterWorkflowTemplate"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "open-aliased-gvk-CronWorkflow"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "open-merged-gvk"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "open-explicit-foreign-override"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "unknownEnvelope"]},
+        {"id": {"case": "open-crlf-non-bmp-exact-sibling"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "open-merged-required-input"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "open-merge-sequence-first-wins"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "open-merge-sequence-reversed"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "open-explicit-inputs-override"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "open-alias-argument-value"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "open-aliased-input-sequence"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "unknownEnvelope"]},
+        {"id": {"case": "open-derived-template-name-exact-sibling"}, "assertions": ["closedRenameStillRefused", "completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "unknownEnvelope"]},
+        {"id": {"case": "open-aliased-template-duplicate"}, "assertions": ["closedRenameStillRefused", "completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query10", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "unknownEnvelope"]},
+        {"id": {"case": "open-shared-and-unshared-exact-candidate"}, "assertions": ["closedRenameStillRefused", "completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query10", "query11", "query12", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "unknownEnvelope"]},
+        {"id": {"case": "open-encoded-template-duplicate-control"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "unknownEnvelope"]},
+        {"id": {"case": "closed-external-semantic-ownership"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "overlapRenameRefused", "query0", "query1", "query10", "query11", "query12", "query13", "query14", "query15", "query16", "query17", "query18", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "unknownEnvelope"]},
+        {"id": {"case": "open-external-semantic-ownership"}, "assertions": ["completeCLI", "completePublication", "countsExit", "diskBytesUnchanged", "overlapRenameRefused", "query0", "query1", "query10", "query11", "query12", "query13", "query14", "query15", "query16", "query17", "query18", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "unknownEnvelope"]}
+      ]
+    },
+    "wf-semantic-external-origins": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "closed-external-alias-call"}, "assertions": ["completeEnvelope", "fullCLI", "noActionderived", "noCompletionderived", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query13", "query14", "query15", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefusedsiblingUse", "unchangedBytes"]},
+        {"id": {"case": "closed-external-merge-call"}, "assertions": ["completeEnvelope", "fullCLI", "noActionderived", "noCompletionderived", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "renameRefusedsiblingUse", "unchangedBytes"]},
+        {"id": {"case": "closed-external-merged-task"}, "assertions": ["completeEnvelope", "fullCLI", "noActionderived", "noCompletionderived", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "renameRefusedsiblingUse", "unchangedBytes"]},
+        {"id": {"case": "closed-external-merged-task-argument"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefusedargument", "unchangedBytes"]},
+        {"id": {"case": "closed-external-merged-task-duplicate"}, "assertions": ["completeEnvelope", "fullCLI", "noActionderivedTemplate", "noCompletionderivedTemplate", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query13", "query14", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefusedargument", "unchangedBytes"]},
+        {"id": {"case": "closed-external-alias-template"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query13", "query14", "query15", "query16", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefusedargument", "unchangedBytes"]},
+        {"id": {"case": "closed-external-alias-template-duplicate"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query13", "query14", "query15", "query16", "query17", "query18", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefusedargument", "unchangedBytes"]},
+        {"id": {"case": "closed-external-merge-template"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query13", "query14", "query15", "query16", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefusedargument", "unchangedBytes"]},
+        {"id": {"case": "closed-external-merge-template-duplicate"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query13", "query14", "query15", "query16", "query17", "query18", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefusedargument", "unchangedBytes"]},
+        {"id": {"case": "open-external-alias-call"}, "assertions": ["completeEnvelope", "fullCLI", "noActionderived", "noCompletionderived", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query13", "query14", "query15", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefusedsiblingUse", "unchangedBytes"]},
+        {"id": {"case": "open-external-merge-call"}, "assertions": ["completeEnvelope", "fullCLI", "noActionderived", "noCompletionderived", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "renameRefusedsiblingUse", "unchangedBytes"]},
+        {"id": {"case": "open-external-merged-task"}, "assertions": ["completeEnvelope", "fullCLI", "noActionderived", "noCompletionderived", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "renameRefusedsiblingUse", "unchangedBytes"]},
+        {"id": {"case": "open-external-merged-task-argument"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefusedargument", "unchangedBytes"]},
+        {"id": {"case": "open-external-merged-task-duplicate"}, "assertions": ["completeEnvelope", "fullCLI", "noActionderivedTemplate", "noCompletionderivedTemplate", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query13", "query14", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefusedargument", "unchangedBytes"]},
+        {"id": {"case": "open-external-alias-template"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query13", "query14", "query15", "query16", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefusedargument", "unchangedBytes"]},
+        {"id": {"case": "open-external-alias-template-duplicate"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query13", "query14", "query15", "query16", "query17", "query18", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefusedargument", "unchangedBytes"]},
+        {"id": {"case": "open-external-merge-template"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query13", "query14", "query15", "query16", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefusedargument", "unchangedBytes"]},
+        {"id": {"case": "open-external-merge-template-duplicate"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query13", "query14", "query15", "query16", "query17", "query18", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefusedargument", "unchangedBytes"]}
+      ]
+    },
+    "wf-semantic-external-arguments": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "external-aliased-required-input"}, "assertions": ["completeCLI", "envelope", "exactTemplateOrigin", "publication", "unchangedBytes"]},
+        {"id": {"case": "external-alias-supplied-value"}, "assertions": ["completeCLI", "envelope", "exactTemplateOrigin", "publication", "unchangedBytes"]},
+        {"id": {"case": "external-alias-value-direct-input"}, "assertions": ["completeCLI", "envelope", "exactTemplateOrigin", "publication", "unchangedBytes"]}
+      ]
+    },
+    "wf-semantic-shared-edits": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "shared-anchor-edits"}, "assertions": ["afterCLI", "completion0", "completion1", "exactAction", "exactUnrelatedBytes", "fullCLI", "fullPublication", "sharedActions"]}
+      ]
+    },
+    "wf-projected-reference-diagnostics": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "projected-template-list-Workflow"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "projected-template-list-CronWorkflow"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "aliased-spec"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "merged-workflow-arguments-available"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "merged-workflow-arguments-missing"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "argument-override-removes-name"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "dag-ancestor-visible"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "dag-ancestor-absent"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "steps-prior-group"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "steps-same-group"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "aliased-output-set"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "merged-result-container"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "alias-callee-name-missing-output"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "ambiguous-callee-encoded"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "ambiguous-callee-alias"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "ambiguous-dag-call"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "ambiguous-steps-call"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "direct-ancestor-first-control"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "direct-ancestor-first-alternate"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "direct-ancestor-last-control"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "direct-ancestor-last-alternate"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "alias-scalar-simple"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "alias-scalar-bracket"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "alias-scalar-let-shadow"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "alias-scalar-env"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "alias-scalar-dynamic"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "alias-scalar-invalid"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "alias-use-site-scope"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "projected-inheritance-presence-only"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "shared-anchor-use-scope"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]},
+        {"id": {"case": "alias-range-crlf-nonbmp"}, "assertions": ["aliasRenameRefused", "envelope", "exactSiblingDefinition", "exactSiblingReferencesFalse", "exactSiblingReferencesTrue", "fullDiagnostics", "publication", "unchangedBytes"]}
+      ]
+    },
+    "wf-projected-query-context": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "alias-gvk-value"}, "assertions": ["cliEnvelope", "cliExit", "editedCLI", "exactBytes", "exactLabels", "excluded", "noProtocolError", "oneEdit", "required"]},
+        {"id": {"case": "alias-gvk-hover-crlf"}, "assertions": ["cliEnvelope", "cliExit", "exactHoverRange", "hoverProvenance"]},
+        {"id": {"case": "root-merge-value"}, "assertions": ["cliEnvelope", "cliExit", "editedCLI", "exactBytes", "exactLabels", "excluded", "noProtocolError", "oneEdit", "required"]},
+        {"id": {"case": "root-merge-hover"}, "assertions": ["cliEnvelope", "cliExit", "exactHoverRange", "hoverProvenance"]},
+        {"id": {"case": "foreign-base-owned-override"}, "assertions": ["cliEnvelope", "cliExit", "editedCLI", "exactBytes", "exactLabels", "excluded", "noProtocolError", "oneEdit", "required"]},
+        {"id": {"case": "owned-base-foreign-override"}, "assertions": ["cliEnvelope", "cliExit", "exactLabels", "excluded", "noProtocolError", "required"]},
+        {"id": {"case": "owned-base-foreign-hover"}, "assertions": ["cliEnvelope", "cliExit", "foreignFiltered"]},
+        {"id": {"case": "explicit-value-overrides-merge"}, "assertions": ["cliEnvelope", "cliExit", "editedCLI", "exactBytes", "exactLabels", "excluded", "noProtocolError", "oneEdit", "required"]},
+        {"id": {"case": "sequence-merge-explicit-value"}, "assertions": ["cliEnvelope", "cliExit", "editedCLI", "exactBytes", "exactLabels", "excluded", "noProtocolError", "oneEdit", "required"]},
+        {"id": {"case": "inherited-existing-key"}, "assertions": ["cliEnvelope", "cliExit", "excluded", "noProtocolError", "required"]},
+        {"id": {"case": "sequence-existing-key"}, "assertions": ["cliEnvelope", "cliExit", "excluded", "noProtocolError", "required"]},
+        {"id": {"case": "gvk-self-alias-sibling"}, "assertions": ["cliEnvelope", "cliExit", "exactHoverRange", "hoverProvenance"]},
+        {"id": {"case": "strict-duplicate"}, "assertions": ["cliEnvelope", "cliExit", "explicitRefusal", "noPartial", "recovery"]},
+        {"id": {"case": "strict-unknown-alias"}, "assertions": ["cliEnvelope", "cliExit", "explicitRefusal", "noPartial", "recovery"]},
+        {"id": {"case": "strict-selected-duplicate"}, "assertions": ["cliEnvelope", "cliExit", "explicitRefusal", "noPartial", "recovery"]},
+        {"id": {"case": "strict-expanded-query-budget"}, "assertions": ["cliEnvelope", "cliExit", "explicitRefusal", "noPartial", "recovery"]},
+        {"id": {"case": "foreign-kind-key-marker"}, "assertions": ["cliEnvelope", "cliExit", "foreignFiltered"]},
+        {"id": {"case": "foreign-kind-key-completion"}, "assertions": ["cliEnvelope", "cliExit", "exactLabels", "excluded", "noProtocolError", "required"]}
+      ]
+    },
+    "wf-projected-lexical-bindings": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "closed-dependency-direct"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "closed-dependency-merge"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "closed-dependency-alias"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "closed-callee-direct"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "closed-callee-merge"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "closed-callee-alias"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "closed-derived-merge-only"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "closed-overridden-merge"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "closed-duplicate-callee"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query13", "query14", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "closed-duplicate-callee-missing-input"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "closed-workflow-role-ambiguous-input"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "closed-workflow-role-zero-input"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "closed-annotation-value"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "closed-annotation-key"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "open-dependency-direct"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "open-dependency-merge"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "open-dependency-alias"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "open-callee-direct"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "open-callee-merge"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "open-callee-alias"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "open-derived-merge-only"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "open-overridden-merge"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "open-duplicate-callee"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query13", "query14", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "open-duplicate-callee-missing-input"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "open-workflow-role-ambiguous-input"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query10", "query11", "query12", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "open-workflow-role-zero-input"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "open-annotation-value"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]},
+        {"id": {"case": "open-annotation-key"}, "assertions": ["completeEnvelope", "fullCLI", "publicationcaller.yaml", "publicationlibrary.yaml", "query0", "query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "renameRefuseddecl", "unchangedBytes"]}
+      ]
+    },
+    "wf-query-fact-handoff": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "warm"}, "assertions": ["countsExit", "definitions", "exactCLI", "referencesFalse", "referencesTrue", "unknownEnvelope"]},
+        {"id": {"case": "repeat-fresh-context"}, "assertions": ["countsExit", "definitions", "exactCLI", "referencesFalse", "referencesTrue", "unknownEnvelope"]},
+        {"id": {"case": "same-uri-same-length-disk-change"}, "assertions": ["countsExit", "definitions", "definitionsNeverReturnsObsoleteCallee", "exactCLI", "referencesFalse", "referencesFalseNeverReturnsObsoleteCallee", "referencesTrue", "referencesTrueNeverReturnsObsoleteCallee", "unknownEnvelope"]},
+        {"id": {"case": "disk-restored"}, "assertions": ["countsExit", "definitions", "exactCLI", "referencesFalse", "referencesTrue", "unknownEnvelope"]},
+        {"id": {"case": "deleted-without-notification"}, "assertions": ["countsExit", "definitions", "definitionsNeverReturnsObsoleteCallee", "exactCLI", "referencesFalse", "referencesFalseNeverReturnsObsoleteCallee", "referencesTrue", "referencesTrueNeverReturnsObsoleteCallee", "unknownEnvelope"]},
+        {"id": {"case": "nonregular-without-notification"}, "assertions": ["countsExit", "definitions", "definitionsNeverReturnsObsoleteCallee", "exactCLI", "referencesFalse", "referencesFalseNeverReturnsObsoleteCallee", "referencesTrue", "referencesTrueNeverReturnsObsoleteCallee", "unknownEnvelope"]},
+        {"id": {"case": "regular-restored"}, "assertions": ["countsExit", "definitions", "exactCLI", "referencesFalse", "referencesTrue", "unknownEnvelope"]},
+        {"id": {"case": "unsaved-overlay-authority"}, "assertions": ["countsExit", "definitions", "definitionsNeverReturnsObsoleteCallee", "exactCLI", "referencesFalse", "referencesFalseNeverReturnsObsoleteCallee", "referencesTrue", "referencesTrueNeverReturnsObsoleteCallee", "unknownEnvelope"]},
+        {"id": {"case": "close-restores-disk"}, "assertions": ["countsExit", "definitions", "exactCLI", "referencesFalse", "referencesTrue", "unknownEnvelope"]},
+        {"id": {"case": "refused-selected-buffer"}, "assertions": ["explicitRefusal"]},
+        {"id": {"case": "refusal-does-not-revive-callee"}, "assertions": ["countsExit", "definitions", "definitionsNeverReturnsObsoleteCallee", "exactCLI", "referencesFalse", "referencesFalseNeverReturnsObsoleteCallee", "referencesTrue", "referencesTrueNeverReturnsObsoleteCallee", "unknownEnvelope"]},
+        {"id": {"case": "full-replacement-recovers"}, "assertions": ["countsExit", "definitions", "exactCLI", "referencesFalse", "referencesTrue", "unknownEnvelope"]},
+        {"id": {"case": "namespace-option-change"}, "assertions": ["countsExit", "definitions", "definitionsNeverReturnsObsoleteCallee", "exactCLI", "referencesFalse", "referencesFalseNeverReturnsObsoleteCallee", "referencesTrue", "referencesTrueNeverReturnsObsoleteCallee", "unknownEnvelope"]},
+        {"id": {"case": "namespace-option-restored"}, "assertions": ["countsExit", "definitions", "exactCLI", "referencesFalse", "referencesTrue", "unknownEnvelope"]},
+        {"id": {"case": "scope-partition"}, "assertions": ["countsExit", "definitions", "definitionsNeverReturnsObsoleteCallee", "exactCLI", "referencesFalse", "referencesFalseNeverReturnsObsoleteCallee", "referencesTrue", "referencesTrueNeverReturnsObsoleteCallee", "unknownEnvelope"]},
+        {"id": {"case": "scope-restored"}, "assertions": ["countsExit", "definitions", "exactCLI", "referencesFalse", "referencesTrue", "unknownEnvelope"]},
+        {"id": {"case": "invalid-target-after-warm"}, "assertions": ["honestCLI", "queryRefused"]},
+        {"id": {"case": "valid-target-restored"}, "assertions": ["countsExit", "definitions", "exactCLI", "referencesFalse", "referencesTrue", "unknownEnvelope"]},
+        {"id": {"case": "registered-root-isolation"}, "assertions": ["countsExit", "definitions", "definitionsNeverReturnsObsoleteCallee", "exactCLI", "referencesFalse", "referencesFalseNeverReturnsObsoleteCallee", "referencesTrue", "referencesTrueNeverReturnsObsoleteCallee", "unknownEnvelope"]},
+        {"id": {"case": "root-restored"}, "assertions": ["countsExit", "definitions", "exactCLI", "referencesFalse", "referencesTrue", "unknownEnvelope"]},
+        {"id": {"case": "cancel-change-current-query"}, "assertions": ["honestOldTerminal", "newBytesOnly", "oneTerminalEach"]},
+        {"id": {"case": "fresh-context-after-cancel"}, "assertions": ["countsExit", "definitions", "definitionsNeverReturnsObsoleteCallee", "exactCLI", "referencesFalse", "referencesFalseNeverReturnsObsoleteCallee", "referencesTrue", "referencesTrueNeverReturnsObsoleteCallee", "unknownEnvelope"]},
+        {"id": {"case": "restored-after-cancel"}, "assertions": ["countsExit", "definitions", "exactCLI", "referencesFalse", "referencesTrue", "unknownEnvelope"]}
+      ]
+    },
+    "wf-query-marker-collision": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "same-parent-marker"}, "assertions": ["cleanServerExit", "cliEnvelope", "exactSourceRange", "hoverTypeAndProvenance", "noProtocolError", "publication", "sourceUnchanged"]},
+        {"id": {"case": "ordinary-key-control"}, "assertions": ["cleanServerExit", "cliEnvelope", "exactSourceRange", "hoverTypeAndProvenance", "noProtocolError", "publication", "sourceUnchanged"]},
+        {"id": {"case": "quoted-equivalent-marker"}, "assertions": ["cleanServerExit", "cliEnvelope", "exactSourceRange", "hoverTypeAndProvenance", "noProtocolError", "publication", "sourceUnchanged"]},
+        {"id": {"case": "escaped-equivalent-marker"}, "assertions": ["cleanServerExit", "cliEnvelope", "exactSourceRange", "hoverTypeAndProvenance", "noProtocolError", "publication", "sourceUnchanged"]}
+      ]
+    },
+    "wf-scope-glob-boundaries": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "recursive-zero-and-many"}, "assertions": ["complete", "counts", "exactDiagnostics", "exit", "noConfigurationErrors", "selectedTarget"]},
+        {"id": {"case": "leading-recursive"}, "assertions": ["complete", "counts", "exactDiagnostics", "exit", "noConfigurationErrors", "selectedTarget"]},
+        {"id": {"case": "leading-class"}, "assertions": ["complete", "counts", "exactDiagnostics", "exit", "noConfigurationErrors", "selectedTarget"]},
+        {"id": {"case": "leading-question"}, "assertions": ["complete", "counts", "exactDiagnostics", "exit", "noConfigurationErrors", "selectedTarget"]},
+        {"id": {"case": "class-after-prefix"}, "assertions": ["complete", "counts", "exactDiagnostics", "exit", "noConfigurationErrors", "selectedTarget"]},
+        {"id": {"case": "question-boundary"}, "assertions": ["complete", "counts", "exactDiagnostics", "exit", "noConfigurationErrors", "selectedTarget"]},
+        {"id": {"case": "star-boundary"}, "assertions": ["complete", "counts", "exactDiagnostics", "exit", "noConfigurationErrors", "selectedTarget"]},
+        {"id": {"case": "literal-name"}, "assertions": ["complete", "counts", "exactDiagnostics", "exit", "noConfigurationErrors", "selectedTarget"]},
+        {"id": {"case": "exclude-boundary"}, "assertions": ["complete", "counts", "exactDiagnostics", "exit", "noConfigurationErrors", "selectedTarget"]},
+        {"id": {"case": "nonselected-overlap"}, "assertions": ["configurationRejected", "exit", "incomplete", "noPartialAnalysis"]},
+        {"id": {"case": "selected-overlap"}, "assertions": ["configurationRejected", "exit", "incomplete", "noPartialAnalysis"]},
+        {"id": {"case": "nonselected-invalid-recursion"}, "assertions": ["configurationRejected", "exit", "incomplete", "noPartialAnalysis"]},
+        {"id": {"case": "nonselected-invalid-class"}, "assertions": ["configurationRejected", "exit", "incomplete", "noPartialAnalysis"]},
+        {"id": {"case": "nonselected-invalid-backslash"}, "assertions": ["configurationRejected", "exit", "incomplete", "noPartialAnalysis"]}
+      ]
+    },
+    "wf-preflight-budget": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "alias-99902"}, "assertions": ["all101Declarations", "analysisComplete", "cleanServerExit", "cliExit", "configurationErrors", "correctIndexCompleteness", "diagnostics", "exactCurrentSymbols", "filesAnalyzed", "honestInitialCandidates", "notEvaluated", "resourcesAnalyzed"]},
+        {"id": {"case": "refusal-recovery"}, "assertions": ["budgetDiagnosticCleared", "exactCurrentSymbols", "explicitReadyRecovery"]},
+        {"id": {"case": "alias-100000"}, "assertions": ["analysisComplete", "cleanServerExit", "cliExit", "configurationErrors", "correctIndexCompleteness", "diagnostics", "exactCurrentSymbols", "explicitBudgetReason", "filesAnalyzed", "honestInitialCandidates", "notEvaluated", "refusedFileSuppliesNoSymbols", "resourcesAnalyzed"]},
+        {"id": {"case": "plain-100000"}, "assertions": ["all101Declarations", "analysisComplete", "cleanServerExit", "cliExit", "configurationErrors", "correctIndexCompleteness", "diagnostics", "exactCurrentSymbols", "filesAnalyzed", "honestInitialCandidates", "notEvaluated", "resourcesAnalyzed"]},
+        {"id": {"case": "foreign-admitted"}, "assertions": ["all101Declarations", "analysisComplete", "cleanServerExit", "cliExit", "configurationErrors", "correctIndexCompleteness", "diagnostics", "exactCurrentSymbols", "filesAnalyzed", "honestInitialCandidates", "notEvaluated", "resourcesAnalyzed"]}
+      ]
+    },
+    "wf-expr-error-text": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "ascii"}, "assertions": ["exactError"]},
+        {"id": {"case": "tab"}, "assertions": ["exactError"]},
+        {"id": {"case": "multibyte"}, "assertions": ["exactError"]},
+        {"id": {"case": "multiline"}, "assertions": ["exactError"]}
+      ]
+    },
+    "wf-schema-query-sibling": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "unrelated-invalid-enum-key"}, "assertions": ["actual-exactDiagnostics", "actual-exitCounts", "actual-honestIncomplete", "actual-noConfigurationErrors", "exactLabels", "exactUnrelatedBytes", "expected-exactDiagnostics", "expected-exitCounts", "expected-honestIncomplete", "expected-noConfigurationErrors", "noProtocolError", "textEditPresent"]},
+        {"id": {"case": "valid-enum-key-positive"}, "assertions": ["actual-exactDiagnostics", "actual-exitCounts", "actual-honestIncomplete", "actual-noConfigurationErrors", "exactLabels", "exactUnrelatedBytes", "expected-exactDiagnostics", "expected-exitCounts", "expected-honestIncomplete", "expected-noConfigurationErrors", "noProtocolError", "textEditPresent"]}
+      ]
+    },
+    "wf-remediation-matrix": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "one"}, "assertions": ["all_published", "definition_isolated", "dense_semantics_no_errors", "dependency_edit_detected", "parameter_edit_detected", "semantic_edit_detected", "semantic_recovery"]},
+        {"id": {"case": "ten"}, "assertions": ["all_published", "definition_isolated", "dense_semantics_no_errors", "dependency_edit_detected", "parameter_edit_detected", "semantic_edit_detected", "semantic_recovery"]},
+        {"id": {"case": "thirty"}, "assertions": ["all_published", "definition_isolated", "dense_semantics_no_errors", "dependency_edit_detected", "parameter_edit_detected", "semantic_edit_detected", "semantic_recovery"]}
+      ]
+    },
+    "wf-remediation-graph": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "unchanged-query"}, "assertions": ["complete_index_before_warm_queries", "same_exact_definition", "warm_budget"]},
+        {"id": {"case": "changed-dependency"}, "assertions": ["no_stale_definition"]},
+        {"id": {"case": "dependency-recovery"}, "assertions": ["each_response_has_only_current_location", "restored"]},
+        {"id": {"case": "duplicate"}, "assertions": ["ambiguous_reference_not_uniquely_bound", "both_candidates", "deleted_candidate_never_reappears", "remaining_exact_candidate_recovers"]},
+        {"id": {"case": "deleted"}, "assertions": ["no_stale_definition"]},
+        {"id": {"case": "diagnostic-recovery"}, "assertions": ["resolved"]}
+      ]
+    },
+    "wf2-assets": {
+      "selection": "catalog-assets"
+    },
+    "wf5-official": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"name": "valid"}, "assertions": ["exit", "offline", "real_tool_status", "version"]},
+        {"id": {"name": "missing"}, "assertions": ["exit", "offline", "real_tool_status", "version"]},
+        {"id": {"name": "mismatch"}, "assertions": ["exit", "reason"]}
+      ]
+    },
+    "wf5-render": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"name": "real-helm-render"}, "assertions": ["actual_capabilities", "complete_envelope", "defaults", "exit", "generated_location", "helm3", "source_marker", "source_unchanged"]},
+        {"id": {"name": "missing-helm"}, "assertions": ["missingToolRefused"]}
+      ]
+    },
+    "wf-remediation-render": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "valid"}, "assertions": ["exit", "provenance"]},
+        {"id": {"case": "invalid"}, "assertions": ["exit", "generated_diagnostic", "provenance"]},
+        {"id": {"case": "render-failure"}, "assertions": ["exit", "visible_reason"]},
+        {"id": {"case": "changed-input"}, "assertions": ["exit", "stale_refused"]},
+        {"id": {"case": "missing-tool"}, "assertions": ["exit", "visible_reason"]},
+        {"id": {"case": "cancelled"}, "assertions": ["exit", "no_stale_render", "visible_reason"]},
+        {"id": {"case": "deadline"}, "assertions": ["exit", "no_stale_render", "visible_reason"]}
+      ]
+    },
+    "wf-reaudit-query-io": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "local-completion-io"}, "assertions": ["all_candidates_correct", "initial_diagnostics_complete", "no_protocol_errors", "no_scope_reads"]},
+        {"id": {"case": "external-completion-io"}, "assertions": ["exact_scope_candidates", "no_protocol_errors", "no_unrelated_scope_reads", "one_scope_acquisition_per_query"]},
+        {"id": {"case": "configuration-io"}, "assertions": ["no_resource_reads", "valid_config_clean"]}
+      ]
+    },
+    "wf-bounded-aggregate-input": {
+      "identities": [{}]
+    },
+    "wf-bounded-render-deadline": {
+      "identities": [{}]
+    },
+    "wf-bounded-cancel": {
+      "identities": [{}]
+    },
+    "wf-bounded-active-latency": {
+      "identities": [{}]
+    },
+    "wf-query-handoff-retention": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {}, "assertions": ["all100Scopes", "all140CurrentResponsePairs", "cleanExit", "diskInputsRemainUnchanged", "indexReady", "singleServerRSSWithinPairBudget", "steadyGrowthWithin10Percent"]}
+      ]
+    },
+    "wf-bounded-expressions": {
+      "identities": [{"case": "parentheses-256"}, {"case": "parentheses-257"}, {"case": "deep-parentheses"}, {"case": "long-unary"}, {"case": "right-associative"}, {"case": "left-associative"}, {"case": "many-lets"}, {"case": "large-literal"}, {"case": "large-malformed"}, {"case": "large-literal-malformed"}, {"case": "near-limit-left-depth"}, {"case": "near-limit-wide-array"}]
+    },
+    "wf-bounded-expression-lsp": {
+      "identities": [{"case": "accepted-256"}, {"case": "depth-257"}, {"case": "unary-depth"}, {"case": "let-depth"}, {"case": "large-literal"}, {"case": "malformed"}, {"case": "large-literal-malformed"}, {"case": "wide-independent-lets"}, {"case": "wide-independent-powers"}, {"case": "wide-independent-conditionals"}]
+    },
+    "wf-bounded-process": {
+      "identities": [{"case": "helm-nonzero"}, {"case": "helm-inherited-pipe"}, {"case": "helm-flood"}, {"case": "helm-cancel"}, {"case": "helm-deadline"}, {"case": "helm-version-cancel"}, {"case": "argo-nonzero"}, {"case": "argo-inherited-pipe"}, {"case": "argo-flood"}, {"case": "argo-cancel"}, {"case": "argo-deadline"}, {"case": "argo-version-cancel"}, {"case": "argo-help-cancel"}]
+    },
+    "wf-bounded-snapshot-budget-exact": {
+      "identities": [{"case": "exact-128-MiB"}]
+    },
+    "wf-bounded-snapshot-budget-refusal": {
+      "identities": [{"case": "128-MiB-plus-one"}, {"case": "exact-buffer-boundary"}, {"case": "summaries-at-full-buffer-budget"}, {"case": "buffers-reserved-before-dependency"}, {"case": "cross-root-buffer-overflow"}, {"case": "buffer-budget-recovery"}]
+    },
+    "wf-semantic-origin-budget": {
+      "identities": [{"case": "exact-files"}, {"case": "over-files"}, {"case": "exact-stream"}, {"case": "over-stream"}, {"case": "over-scopes"}, {"case": "selected-scope"}, {"case": "plain-over"}, {"case": "mixed-graph-plain"}, {"case": "exact-merge-files"}, {"case": "over-merge-files"}, {"case": "exact-literal-merge-files"}, {"case": "over-literal-merge-files"}, {"case": "many-graph-files"}, {"case": "cold-summary-over-aggregate"}, {"case": "cold-summary-recovery"}, {"case": "warm-summary-exact"}, {"case": "warm-summary-over-aggregate"}, {"case": "warm-summary-repeat-over"}, {"case": "warm-summary-recovery"}, {"case": "summary-after-cancel"}, {"case": "two-root-summaries"}, {"case": "selected-root-independent"}, {"case": "two-root-summary-recovery"}, {"case": "fix-candidates-independent-results"}, {"case": "fix-applied-clean"}, {"case": "unrelated-graph-does-not-block-fix"}, {"case": "linked-exact-fix-candidates"}, {"case": "overbudget-fix-refusal"}, {"case": "linked-fix-recovery"}, {"case": "budget-after-cancel"}]
+    },
+    "wf-bounded-full": {
+      "identities": [{"sample": 0}, {"sample": 1}, {"sample": 2}, {"sample": 3}, {"sample": 4}]
+    },
+    "wf-bounded-lsp-cold": {
+      "identities": [{"sample": 0}, {"sample": 1}, {"sample": 2}, {"sample": 3}, {"sample": 4}]
+    },
+    "wf-bounded-lsp-load": {
+      "identities": [{"case": "cold-two-version-publication"}, {"case": "1000-existing-queries"}, {"case": "600-edits-60-seconds"}, {"case": "active-diagnostic-latency"}, {"case": "10000-open-edit-close"}, {"case": "shutdown"}]
+    },
+    "wf-bounded-tool-scan": {
+      "identities": [{"case": "helm"}, {"case": "argo"}]
+    },
+    "wf-schema-query-load": {
+      "identities": [{"case": "1000-queries"}, {"case": "shutdown"}]
+    },
+    "wf-domain-external-load": {
+      "identities": [{"case": "required-external-definitions"}]
+    },
+    "wf-bounded-lsp-probe": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "cold-publication"}, "assertions": ["cleanDiagnostics", "withinFiveSeconds"]},
+        {"id": {"case": "definition-0"}, "assertions": ["exactDefinition", "within100ms"]},
+        {"id": {"case": "definition-1"}, "assertions": ["exactDefinition", "within100ms"]},
+        {"id": {"case": "definition-2"}, "assertions": ["exactDefinition", "within100ms"]},
+        {"id": {"case": "definition-3"}, "assertions": ["exactDefinition", "within100ms"]},
+        {"id": {"case": "definition-4"}, "assertions": ["exactDefinition", "within100ms"]},
+        {"id": {"case": "definition-5"}, "assertions": ["exactDefinition", "within100ms"]},
+        {"id": {"case": "definition-6"}, "assertions": ["exactDefinition", "within100ms"]},
+        {"id": {"case": "definition-7"}, "assertions": ["exactDefinition", "within100ms"]},
+        {"id": {"case": "definition-8"}, "assertions": ["exactDefinition", "within100ms"]},
+        {"id": {"case": "definition-9"}, "assertions": ["exactDefinition", "within100ms"]}
+      ]
+    },
+    "wf-external-candidate-density": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {}, "assertions": ["allExact", "allQueries", "allWithinQueryBudget", "cleanShutdown", "completeCLIDiagnostics", "countsCompletenessExit", "indexReady", "initialFullDiagnostics", "unknownEnvelope"]}
+      ]
+    },
+    "wf-inherited-parameter-density": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {}, "assertions": ["allExact", "allQueries", "allWithinQueryBudget", "cleanShutdown", "completeCLIDiagnostics", "countsCompletenessExit", "indexReady", "initialDiagnostics", "unchangedBytes", "unknownEnvelope"]}
+      ]
+    },
+    "wf-exit-query-density": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {}, "assertions": ["allExact", "allQueries", "allWithinQueryBudget", "cleanShutdown", "completeCLIDiagnostics", "countsCompletenessExit", "indexReady", "initialDiagnostics", "unchangedBytes", "unknownEnvelope"]}
+      ]
+    },
+    "wf-remediation-load": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "single-scope"}, "assertions": ["all_current_diagnostics", "first_within_budget", "queries_correct", "type_error_retained", "valid_graph_no_errors", "warm_p95", "warm_p99", "within_completion_budget"]},
+        {"id": {"case": "lifecycle-growth"}, "assertions": ["disk_recovered"]}
+      ]
+    },
+    "wf-remediation-retention": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "bounded-retention"}, "assertions": ["all_versions_correct", "growth_plateau"]}
+      ]
+    },
+    "wf-persistent-workspace-50000": {
+      "assertionKey": "checks",
+      "linuxAssertions": ["peak_rss_under_512_mib"],
+      "rows": [
+        {"id": {}, "assertions": ["clean_shutdown", "complete_input_read", "cumulative_input_exceeds_retained_text", "current_workflow_local_diagnostic_before_discovery", "discovery_finishes_without_worker_reset", "first_publication_under_two_seconds", "indexed_location_maps_to_source", "no_missing_target_claim_during_discovery", "peak_rss_under_512_mib", "query_observation_cannot_hide_diagnostic_update", "readiness_within_budget", "reconciliation_reuses_unchanged_summaries", "retained_text_bounded", "second_discovery_pass_is_complete", "signature_change_invalidates_caller", "unchanged_events_do_not_reparse_workspace", "unchanged_events_read_only_related_inputs", "unknown_unwatched_uri_converges"]}
+      ]
+    }
+  }
+}

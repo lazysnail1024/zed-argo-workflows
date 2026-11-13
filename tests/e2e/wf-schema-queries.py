@@ -28,7 +28,7 @@ class Client(m.LSP):
 def complete(case,snippets):
  name=case['name']+('-snippet-client' if snippets else '-plain-client');text=case['marked'].replace(MARK,'');dest,work=m.setup(name,{'case.yaml':text});path=work/'case.yaml';client=None
  try:
-  Client.snippets=snippets;client=Client(dest,work);client.open(path,text);position=m.pos(case['marked'],MARK);r=client.request('textDocument/completion',{'textDocument':{'uri':path.as_uri()},'position':position});items=r.get('result',[]);labels=[x['label'] for x in items];matches=[x for x in items if x['label']==case['label']];checks={'candidate':len(matches)==1,'existingExcluded':not any(x in labels for x in case.get('excluded',[]))}
+  Client.snippets=snippets;client=Client(dest,work);client.open(path,text);position=m.pos(case['marked'],MARK);r=client.request('textDocument/completion',{'textDocument':{'uri':path.as_uri()},'position':position});items=r.get('result',[]);labels=[x['label'] for x in items];matches=[x for x in items if x['label']==case['label']];checks={'candidate':len(matches)==1,'existingExcluded':not any(x in labels for x in case.get('excluded',[]))};checks.update(plainTextUsable=False,exactTextEditPresent=False,exactBytes=False,actualCLICompleteResource=False,acceptedTarget=False,exactActualDiagnostics=False)
   if 'labels' in case:checks['exactEnum']=sorted(labels)==sorted(case['labels'])
   if matches:
    item=matches[0];checks['plainTextUsable']=item.get('insertTextFormat',1)==1;edit=item.get('textEdit');checks['exactTextEditPresent']=bool(edit)

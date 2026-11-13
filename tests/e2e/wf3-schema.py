@@ -6,7 +6,7 @@ for name in ['mixed','valid','duplicate']:
  command=[str(binary),'check','--root',str(root/'tests/fixtures/schema'),'--file',str(root/'tests/fixtures/schema'/(name+'.yaml')),'--target-version',e['targetVersion'],'--format','json'];p=subprocess.run(command,capture_output=True,timeout=20);(out/(name+'.stdout')).write_bytes(p.stdout);(out/(name+'.stderr')).write_bytes(p.stderr);checks={'exit':p.returncode==e['exitCode']}
  try:
   v=json.loads(p.stdout);checks['partial']=v['analysisComplete'] is False;diags=[d for d in v['diagnostics'] if d['code']=='SCHEMA_TYPE'];checks['type_error']=len(diags)==(1 if name=='mixed' else 0)
-  if name=='mixed':checks['position']=diags[0]['range']['start']=={'line':e[name]['typeErrorLine'],'character':e[name]['typeErrorColumn']};checks['ownership']=all('mixed.yaml' in d['uri'] for d in v['diagnostics'])
+  if name=='mixed':checks['position']=len(diags)==1 and diags[0]['range']['start']=={'line':e[name]['typeErrorLine'],'character':e[name]['typeErrorColumn']};checks['ownership']=all('mixed.yaml' in d['uri'] for d in v['diagnostics'])
   if name=='duplicate':checks['strict']=any('duplicate' in x.lower() for x in v['notEvaluated'])
  except Exception as err:checks['parse']=str(err)
  results.append({'name':name,'command':command,'exitCode':p.returncode,'assertions':checks,'pass':all(x is True for x in checks.values())})
