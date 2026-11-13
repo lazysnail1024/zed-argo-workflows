@@ -2,7 +2,7 @@
 """The GUI source fixture: caller runtime name does not identify a template target."""
 import importlib.util,pathlib,sys,traceback
 p=pathlib.Path(__file__).with_name('wf-audit-gaps.py');sp=importlib.util.spec_from_file_location('wire',p);m=importlib.util.module_from_spec(sp);sp.loader.exec_module(m)
-fixture=p.parents[1]/'fixtures/helm-static-source';files={str(f.relative_to(fixture)):f.read_text() for f in fixture.rglob('*') if f.is_file()}
+fixture=p.parents[1]/'fixtures/helm-static-source';files={f.relative_to(fixture).as_posix():f.read_text() for f in fixture.rglob('*') if f.is_file()}
 try:
  d,w=m.setup('source',files,config='');f=w/'templates/workflow.yaml';library=w/'templates/library.yaml';text=files['templates/workflow.yaml'];target=files['templates/library.yaml'];c=m.LSP(d,w)
  try:
