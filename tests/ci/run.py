@@ -217,7 +217,9 @@ def verify_result_contract(name, path):
         assertion_key = expected["assertionKey"]
         observed = [{"id": identity, "assertions": sorted(row[assertion_key])}
                     for identity, row in zip(identities, actual)]
-        required = expected["rows"]
+        # Assertion names describe an unordered mapping. Normalize both sides
+        # while preserving duplicates, so reordering cannot hide or add checks.
+        required = [{**row, "assertions": sorted(row["assertions"])} for row in expected["rows"]]
     canonical = lambda values: sorted(json.dumps(value, sort_keys=True) for value in values)
     if canonical(observed) != canonical(required):
         raise ValueError(f"{name}: incomplete or changed case/assertion selection")

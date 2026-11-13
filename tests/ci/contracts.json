@@ -1291,7 +1291,7 @@
     "wf-query-handoff-retention": {
       "assertionKey": "assertions",
       "rows": [
-        {"id": {}, "assertions": ["all100Scopes", "indexReady", "all140CurrentResponsePairs", "cleanExit", "diskInputsRemainUnchanged", "singleServerRSSWithinPairBudget", "steadyGrowthWithin10Percent"]}
+        {"id": {}, "assertions": ["all100Scopes", "all140CurrentResponsePairs", "cleanExit", "diskInputsRemainUnchanged", "indexReady", "singleServerRSSWithinPairBudget", "steadyGrowthWithin10Percent"]}
       ]
     },
     "wf-bounded-expressions": {

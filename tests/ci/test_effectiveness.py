@@ -91,6 +91,30 @@ class EvidenceTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     ci.verify_result_contract('wf2-targets', self.path)
 
+    def test_parent_contract_normalizes_order_without_losing_assertions(self):
+        from unittest.mock import patch
+        folder = self.root / 'tests/ci'
+        folder.mkdir(parents=True)
+        declared = {'assertionKey': 'assertions', 'rows': [
+            {'id': {'case': 'known-case'}, 'assertions': ['naturalExit', 'correctValue']}]}
+        contract_path = folder / 'contracts.json'
+        contract_path.write_text(json.dumps({'consumers': {'order-control': declared}}))
+        self.write(self.control)
+        with patch.object(ci, 'ROOT', self.root):
+            ci.verify_result_contract('order-control', self.path)
+            for damage in ('duplicate', 'missing', 'additional'):
+                changed = copy.deepcopy(declared)
+                names = changed['rows'][0]['assertions']
+                if damage == 'duplicate':
+                    names.append('naturalExit')
+                elif damage == 'missing':
+                    names.remove('naturalExit')
+                else:
+                    names.append('unselectedAssertion')
+                contract_path.write_text(json.dumps({'consumers': {'order-control': changed}}))
+                with self.subTest(damage=damage), self.assertRaises(ValueError):
+                    ci.verify_result_contract('order-control', self.path)
+
     def test_resource_receipt_requires_unchanged_limits_and_no_oom(self):
         snapshot = {'memory.max': str(512 * 1024 ** 2), 'memory.swap.max': '0',
                     'cpu.max': '400000 100000', 'affinity': [0, 1, 2, 3], 'cgroup': '/test',
