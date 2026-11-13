@@ -8,6 +8,6 @@ This alpha adds configuration-free chart discovery and explicit Helm rendering w
 - CLI `render-check --file path/to/template.yaml` uses the same bounded implementation. Helm 3 and 4 are checked explicitly; cancellation terminates Helm descendants. Rendering never runs on save.
 - This release also includes the upstream bounded query, schema deadline, closed-file authority and CI evidence validation fixes merged since alpha.3.
 
-Native executables and archives cover Linux amd64/arm64, macOS amd64/arm64 and Windows amd64, with license/source provenance and SHA256SUMS. The forthcoming independent Zed adapter `zed-v0.0.1-alpha.5` will pin native `v0.0.1-alpha.4`.
+Native executables and archives cover Linux amd64/arm64, macOS amd64/arm64 and Windows amd64, with license/source provenance and SHA256SUMS. The independent Zed adapter `zed-v0.0.1-alpha.5` pins native `v0.0.1-alpha.4`.
 
 Use the Helm extension for Helm syntax; see the README for one-time language associations and known source-navigation limits. Separate visible roots remain separate indexes in Zed 1.28.1; open a common parent for cross-repository navigation. This remains an alpha, not a Zed extension-store publication.
