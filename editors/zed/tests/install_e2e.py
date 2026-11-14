@@ -58,13 +58,16 @@ def check_identity(folder, version):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--report", type=Path)
+    parser.add_argument("--source-commit", help="Require the current published candidate source")
     parser.add_argument("--version", default=SOURCE_VERSION,
                         help="Exact published adapter fixture; defaults to the source version, never falls back")
     args = parser.parse_args()
     version = args.version
     archive_name = f"{REPO.split('/')[-1]}-{version}.zip"
+    sys.path.insert(0, str(ROOT.parents[1] / 'tests/ci'))
+    from control import identity as execution_identity
     cases = []
-    report = {"repository": REPO, "sourceAdapterVersion": SOURCE_VERSION,
+    report = {"executionIdentity": execution_identity(), "testSha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), "installerSha256": hashlib.sha256(SCRIPT.read_bytes()).hexdigest(), "repository": REPO, "sourceAdapterVersion": SOURCE_VERSION,
               "exercisedReleaseVersion": version, "platform": sys.platform,
               "scope": "filesystem-only with explicit released fixture; candidate package tested separately; Zed GUI not launched",
               "passed": False, "cases": cases}
@@ -134,6 +137,14 @@ def main():
         # Exercise the actual online download path (shell curl / Windows Invoke-WebRequest).
         run("online-real-release")
         check_identity(target, version)
+        if args.source_commit:
+            installed_manifest = json.loads((target / "MANIFEST.json").read_text())
+            assert installed_manifest["sourceCommit"] == args.source_commit, "Installed source differs from release workflow"
+            assert version == SOURCE_VERSION, "Current publication version differs from checkout"
+            assert installed_manifest["nativeServerVersion"] == (ROOT / "native-server-version").read_text().strip(), "Installed native pin differs from source"
+            report["sourceCommit"] = args.source_commit
+            report["installedManifest"] = installed_manifest
+            save_report()
         original = snapshot(target)
         assert original and previous.exists() is False
         original_timestamp = (target / "extension.wasm").stat().st_mtime_ns

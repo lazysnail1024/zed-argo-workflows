@@ -1,36 +1,12 @@
 #!/usr/bin/env python3
 import json,pathlib,tempfile,subprocess,sys,hashlib,threading,queue,time
-root=pathlib.Path(__file__).resolve().parents[2];binary=pathlib.Path(sys.argv[1]).resolve();out=pathlib.Path(sys.argv[2]) if len(sys.argv)>2 else root/'artifacts/wf3-lsp';out.mkdir(parents=True,exist_ok=True);e=json.loads((root/'tests/e2e/wf3-lsp.expected.json').read_text());assertions={};sent=[];received=[];raw=bytearray();stderr=bytearray()
+from support.session import Session
+root=pathlib.Path(__file__).resolve().parents[2];binary=pathlib.Path(sys.argv[1]).resolve();out=pathlib.Path(sys.argv[2]) if len(sys.argv)>2 else root/'artifacts/wf3-lsp';out.mkdir(parents=True,exist_ok=True);e=json.loads((root/'tests/e2e/wf3-lsp.expected.json').read_text());case=json.loads((root/'tests/fixtures/contracts/stdio-buffer-lifecycle/case.json').read_text());assertions={};sent=[];received=[];raw=bytearray();stderr=bytearray()
 with tempfile.TemporaryDirectory(prefix='wf-lsp-') as d:
- work=pathlib.Path(d);file=work/'workflow.yaml';file.write_bytes((root/'tests/fixtures/schema/valid.yaml').read_bytes());(work/'.argo-workflows-ls.yaml').write_bytes('schemaVersion: 1\ntargetVersion: "3.6.0"\n'.encode('utf-8'));uri=file.as_uri();proc=subprocess.Popen([str(binary),'serve','--stdio'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE);q=queue.Queue()
- def reader():
-  try:
-   while True:
-    headers={}
-    while True:
-     line=proc.stdout.readline();raw.extend(line)
-     if not line:raise EOFError()
-     if line==b'\r\n':break
-     k,v=line.decode().strip().split(':',1);headers[k.lower()]=v.strip()
-    payload=proc.stdout.read(int(headers['content-length']));raw.extend(payload);v=json.loads(payload);received.append(v);q.put(v)
-  except Exception as err:q.put(err)
- threading.Thread(target=reader,daemon=True).start()
- def send(method,params=None,id=None):
-  m={'jsonrpc':'2.0','method':method}
-  if params is not None:m['params']=params
-  if id is not None:m['id']=id
-  data=json.dumps(m).encode();sent.append(m);proc.stdin.write(f'Content-Length: {len(data)}\r\n\r\n'.encode()+data);proc.stdin.flush()
- def wait(predicate):
-  end=time.monotonic()+15
-  while True:
-   remaining=end-time.monotonic()
-   if remaining<=0:raise TimeoutError('LSP response deadline exceeded')
-   v=q.get(timeout=remaining)
-   if isinstance(v,Exception):raise v
-   if predicate(v):return v
+ work=pathlib.Path(d);file=work/'workflow.yaml';file.write_bytes((root/'tests/fixtures/schema/valid.yaml').read_bytes());(work/'.argo-workflows-ls.yaml').write_bytes('schemaVersion: 1\ntargetVersion: "3.6.0"\n'.encode('utf-8'));uri=file.as_uri();session=Session([str(binary),'serve','--stdio'],out);proc=session.proc;send=session.send;wait=session.wait;sent=session.sent;received=session.received;raw=session.raw;stderr=session.stderr
  try:
   send('initialize',{'processId':None,'rootUri':work.as_uri(),'capabilities':{}},1);v=wait(lambda x:x.get('id')==1);cap=v['result']['capabilities'];assertions['sync']=cap['textDocumentSync']['change']==e['syncKind'];assertions['encoding']=cap.get('positionEncoding','utf-16')==e['positionEncoding'];send('initialized',{})
-  bad=(root/'tests/fixtures/schema/mixed.yaml').read_text();send('textDocument/didOpen',{'textDocument':{'uri':uri,'languageId':'yaml','version':1,'text':bad}});v=wait(lambda x:x.get('method')=='textDocument/publishDiagnostics' and x['params']['uri']==uri and x['params'].get('version')==1);ds=v['params']['diagnostics'];assertions['buffer']=len(ds)==1 and ds[0]['code']==e['code'] and ds[0]['range']['start']=={'line':e['line'],'character':e['character']}
+  bad=(root/'tests/fixtures/schema/mixed.yaml').read_text();send('textDocument/didOpen',{'textDocument':{'uri':uri,'languageId':'yaml','version':1,'text':bad}});v=wait(lambda x:x.get('method')=='textDocument/publishDiagnostics' and x['params']['uri']==uri and x['params'].get('version')==1);ds=v['params']['diagnostics'];assertions['buffer']=len(ds)==1 and ds[0]['code']==e['code'] and all(ds[0].get(k)==value for k,value in case['requiredDiagnostic'].items())
   send('textDocument/didChange',{'textDocument':{'uri':uri,'version':2},'contentChanges':[{'range':{'start':{'line':6,'character':15},'end':{'line':6,'character':20}},'text':'2'}]});v=wait(lambda x:x.get('method')=='textDocument/publishDiagnostics' and x['params']['uri']==uri and x['params'].get('version')==2);assertions['incremental']=v['params']['diagnostics']==[]
   send('textDocument/completion',{'textDocument':{'uri':uri},'position':{'line':6,'character':2}},10);v=wait(lambda x:x.get('id')==10);labels={x['label'] for x in v['result']};assertions['field_completion']='activeDeadlineSeconds' in labels and 'parallelism' not in labels
   send('textDocument/hover',{'textDocument':{'uri':uri},'position':{'line':6,'character':4}},11);v=wait(lambda x:x.get('id')==11);hover=v['result']['contents']['value'];assertions['field_hover']='integer' in hover and '3.6.0' in hover
@@ -48,6 +24,6 @@ with tempfile.TemporaryDirectory(prefix='wf-lsp-') as d:
   send('textDocument/didClose',{'textDocument':{'uri':uri}});v=wait(lambda x:x.get('method')=='textDocument/publishDiagnostics' and x['params']['uri']==uri and 'version' not in x['params']);assertions['close_disk']=v['params']['diagnostics']==[]
   send('shutdown',None,3);v=wait(lambda x:x.get('id')==3);assertions['shutdown']=v.get('result','missing') is None;send('exit');proc.wait(timeout=5);assertions['exit']=proc.returncode==e['cleanExit']
  except Exception as err:assertions['exception']=str(err);proc.kill();proc.wait()
- stderr.extend(proc.stderr.read());(out/'input-buffer.yaml').write_bytes((bad if 'bad' in locals() else '').encode('utf-8'));(out/'input-disk.yaml').write_bytes(file.read_bytes());(out/'stdout.raw').write_bytes(raw);(out/'stderr.raw').write_bytes(stderr)
+ session.close();(out/'input-buffer.yaml').write_bytes((bad if 'bad' in locals() else '').encode('utf-8'));(out/'input-disk.yaml').write_bytes(file.read_bytes());(out/'stdout.raw').write_bytes(raw);(out/'stderr.raw').write_bytes(stderr)
 sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
-(out/'manifest.json').write_text(json.dumps({'command':sys.argv,'serverCommand':[str(binary),'serve','--stdio'],'binarySha256':sha(binary),'testSha256':sha(pathlib.Path(__file__)),'expectedSha256':sha(root/'tests/e2e/wf3-lsp.expected.json'),'inputHashes':{p.name:sha(p) for p in out.glob('input*')}},indent=2));(out/'traffic.json').write_text(json.dumps({'sent':sent,'received':received},indent=2));(out/'results.json').write_text(json.dumps([{'name':'stdio-buffer-lifecycle','exitCode':proc.returncode,'assertions':assertions,'pass':bool(assertions) and all(x is True for x in assertions.values())}],indent=2));sys.exit(0 if assertions and all(x is True for x in assertions.values()) else 1)
+(out/'manifest.json').write_text(json.dumps({'command':sys.argv,'serverCommand':[str(binary),'serve','--stdio'],'binarySha256':sha(binary),'testSha256':sha(pathlib.Path(__file__)),'expectedSha256':sha(root/'tests/e2e/wf3-lsp.expected.json'),'helperSha256':sha(root/'tests/e2e/support/session.py'),'windowsJobSha256':hashlib.sha256((root/'tests/e2e/support/windows_job.py').read_bytes()).hexdigest(),'caseSha256':sha(root/'tests/fixtures/contracts/stdio-buffer-lifecycle/case.json'),'inputHashes':{p.name:sha(p) for p in out.glob('input*')}},indent=2));(out/'traffic.json').write_text(json.dumps({'sent':sent,'received':received},indent=2));(out/'results.json').write_text(json.dumps([{'name':'stdio-buffer-lifecycle','exitCode':proc.returncode,'assertions':assertions,'pass':bool(assertions) and all(x is True for x in assertions.values())}],indent=2));sys.exit(0 if assertions and all(x is True for x in assertions.values()) else 1)

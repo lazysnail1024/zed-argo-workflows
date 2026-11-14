@@ -519,7 +519,7 @@
       "rows": [
         {"id": {"name": "startup"}, "assertions": ["current_diagnostic_before_full_discovery", "current_diagnostic_under_two_seconds", "fix_replaces_only_misspelled_key", "local_fix_available_during_discovery", "local_fix_resolves_exact_open_version"]},
         {"id": {"name": "churn"}, "assertions": ["every_unrelated_edit_preserves_useful_hover", "foreground_p95_under_250_ms"]},
-        {"id": {"name": "lanes"}, "assertions": ["heavy_lane_resumes_after_cancellation", "heavy_query_completes_correctly", "heavy_queue_is_bounded", "light_capacity_reserved_under_heavy_saturation", "light_query_has_useful_result", "light_result_precedes_heavy_result", "one_terminal_response_per_heavy_request"]},
+        {"id": {"name": "lanes"}, "assertions": ["heavy_lane_resumes_after_cancellation", "heavy_query_completes_correctly", "heavy_queue_is_bounded", "light_capacity_reserved_under_heavy_saturation", "light_query_has_useful_result", "light_result_precedes_heavy_result", "one_terminal_response_per_heavy_request", "cancellation_terminal_observed", "cancelled_state_equals_fresh"]},
         {"id": {"name": "fences"}, "assertions": ["fresh_buffer_result_remains_available", "own_buffer_change_rejects_active_and_queued_results", "same_path_root_replacement_rejects_old_requests"]}
       ]
     },
@@ -1452,6 +1452,20 @@
       "assertionKey": "assertions",
       "rows": [
         {"id": {"case": "cancel-reaps-descendants"}, "assertions": ["cancelled", "helm_reaped", "child_reaped"]}
+      ]
+    },
+    "wf-equivalence": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"name": "incremental-final-overlay"}, "assertions": ["complete_final_state", "independent_oracle", "repeated_query_equivalent"]},
+        {"id": {"name": "edit-undo"}, "assertions": ["complete_final_state", "independent_oracle", "repeated_query_equivalent"]},
+        {"id": {"name": "target-isolation"}, "assertions": ["complete_final_state", "independent_oracle", "repeated_query_equivalent"]},
+        {"id": {"name": "root-isolation"}, "assertions": ["complete_final_state", "independent_oracle", "repeated_query_equivalent"]},
+        {"id": {"name": "repeat-event"}, "assertions": ["complete_final_state", "independent_oracle", "repeated_query_equivalent"]},
+        {"id": {"name": "delete-recreate"}, "assertions": ["complete_final_state", "independent_oracle", "repeated_query_equivalent"]},
+        {"id": {"name": "seed-17"}, "assertions": ["complete_final_state", "independent_oracle", "repeated_query_equivalent"]},
+        {"id": {"name": "seed-29"}, "assertions": ["complete_final_state", "independent_oracle", "repeated_query_equivalent"]},
+        {"id": {"name": "seed-43"}, "assertions": ["complete_final_state", "independent_oracle", "repeated_query_equivalent"]}
       ]
     }
   }

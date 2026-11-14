@@ -144,12 +144,25 @@ def lanes():
         # barrier completes only after that worker and its final result drain.
         barrier = c.request('textDocument/definition', {
             'textDocument': {'uri': current.as_uri()}, 'position': position(SMALL, 'entrypoint: work', 12)})
+        # Compare the recovered query with a fresh process at the same final files.
+        with client('lanes-cold', {'current.yaml': SMALL, 'large.yaml': big}) as (cold, cold_work):
+            cold_current = cold_work / 'current.yaml'
+            cold.open(cold_current, SMALL)
+            cold.open(cold_work / 'large.yaml', big)
+            cold.index_ready(cold_work)
+            cold_result = cold.request('textDocument/definition', {
+                'textDocument': {'uri': cold_current.as_uri()},
+                'position': position(SMALL, 'entrypoint: work', 12)})
+            recovered = json.dumps(barrier.get('result'), sort_keys=True).replace(work.as_uri(), 'ROOT')
+            direct = json.dumps(cold_result.get('result'), sort_keys=True).replace(cold_work.as_uri(), 'ROOT')
         a.result('lanes', {
             'light_result_precedes_heavy_result': order == [2001, 2000],
             'light_query_has_useful_result': meaningful_hover(quick),
             'heavy_query_completes_correctly': 'error' not in slow and bool(slow.get('result')),
             'light_capacity_reserved_under_heavy_saturation': meaningful_hover(admitted),
             'heavy_queue_is_bounded': any(r.get('error', {}).get('message') == 'request queue is full' for r in replies),
+            'cancellation_terminal_observed': any(r.get('error', {}).get('code') == -32800 for r in replies),
+            'cancelled_state_equals_fresh': 'error' not in cold_result and recovered == direct,
             'heavy_lane_resumes_after_cancellation': 'error' not in barrier and bool(barrier.get('result')),
             'one_terminal_response_per_heavy_request': all(sum(r['message'].get('id') == ident for r in c.received) == 1 for ident in ids),
         }, {'lightMilliseconds': elapsed * 1000, 'order': order, 'light': quick, 'heavy': slow,

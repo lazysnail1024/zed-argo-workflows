@@ -35,7 +35,9 @@ jobs:
         SOURCE_COMMIT: ${{ github.sha }}
       run: python scripts/release.py version --source-commit "$SOURCE_COMMIT" --requested-version "$REQUESTED_VERSION" >> "$GITHUB_OUTPUT"
   native:
-    needs: prepare
+    needs:
+    - prepare
+    - ordinary
     name: Native / ${{ matrix.platform }}
     strategy:
       fail-fast: false
@@ -75,6 +77,8 @@ jobs:
       with:
         persist-credentials: false
         ref: ${{ github.sha }}
+    - name: Fix full execution plan
+      run: python tests/ci/control.py plan --workflow native --output artifacts/native-plan.json
     - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
       with:
         go-version-file: go.mod
@@ -84,22 +88,45 @@ jobs:
       with:
         python-version: 3.14.0
     - name: Reject incomplete version shards and fabricated success evidence
-      run: python -m unittest discover -s tests/ci -p 'test_*.py' -v
+      run: |-
+        python -m unittest discover -s tests/ci -p 'test_*.py' -v
+        python tests/ci/control_e2e.py --output artifacts/ci/control-e2e
+        python tests/ci/receipt_e2e.py --output artifacts/ci/receipt-e2e
+        python tests/e2e/session_e2e.py --output artifacts/ci/session-e2e
+        python tests/ci/trends_e2e.py --output artifacts/ci/trends-e2e
     - name: Build actual native server and record source/toolchain identity
       id: build
       run: python tests/ci/run.py build --platform "${{ matrix.platform }}" --release-version "${{ needs.prepare.outputs.version }}" --output artifacts/ci/build
+      if: matrix.platform != 'linux/amd64'
+    - name: Download same-attempt ordinary bytes
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: ordinary-linux-amd64-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/ci/build
+      if: matrix.platform == 'linux/amd64'
+    - name: Verify exact producer before starting any consumer
+      id: import
+      run: python tests/ci/run.py import-build --binary artifacts/ci/build/argo-workflows-ls --manifest artifacts/ci/build/build.json --manifest-sha256
+        "${{ needs.ordinary.outputs.manifest }}" --release-version "${{ needs.prepare.outputs.version }}" --platform linux/amd64 --output artifacts/ci/import
+      if: matrix.platform == 'linux/amd64'
     - name: Race-check shared catalog lifecycle and file authority
       if: matrix.platform == 'linux/amd64'
       run: go test -mod=vendor -race -count=1 ./internal/analysis ./internal/assets ./internal/lsp ./internal/workspace
     - name: Execute CLI and stdio LSP semantic consumers
-      if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+      if: ${{ !cancelled() && (steps.build.outcome == 'success' || steps.import.outcome == 'success') }}
       run: python tests/ci/run.py suite --suite native --binary artifacts/ci/build/${{ matrix.binary }} --output artifacts/ci/native
+    - name: Verify aggregate portability with original native reports
+      if: matrix.platform == 'linux/amd64'
+      run: python tests/ci/portability_e2e.py --native artifacts/ci/native --output artifacts/ci/portability-e2e
+    - name: Verify relocated original native lane evidence
+      if: matrix.platform == 'linux/amd64'
+      run: python tests/ci/archive_e2e.py --evidence artifacts/ci --output artifacts/archive-e2e
     - name: Generate and validate the editor-independent native archive
       id: package
-      if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+      if: ${{ !cancelled() && (steps.build.outcome == 'success' || steps.import.outcome == 'success') }}
       run: python tests/ci/run.py package --binary artifacts/ci/build/${{ matrix.binary }} --output artifacts/ci/package
     - name: Verify native release staging and aggregate refusal controls
-      if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+      if: ${{ !cancelled() && (steps.build.outcome == 'success' || steps.import.outcome == 'success') }}
       run: python tests/e2e/release-distribution.py --platform "${{ matrix.platform }}" --output artifacts/ci/release-e2e
     - name: Prove native release works without any editor checkout
       if: matrix.platform == 'linux/amd64'
@@ -111,7 +138,11 @@ jobs:
       if: matrix.platform == 'linux/amd64'
       run: python tests/e2e/wf-multi-version-ablation.py artifacts/ci/build/argo-workflows-ls artifacts/ci/multi-version-ablation
     - name: Stage exact native release assets
-      run: python scripts/release.py stage --build artifacts/ci/build/build.json --version "${{ needs.prepare.outputs.version }}" --source-commit "${{ github.sha }}" --output artifacts/ci/release-assets
+      run: python scripts/release.py stage --build artifacts/ci/build/build.json --version "${{ needs.prepare.outputs.version }}" --source-commit "${{ github.sha
+        }}" --output artifacts/ci/release-assets
+    - name: Retain separate CI timing observations
+      if: always()
+      run: python tests/ci/trends.py --inputs artifacts/ci/native/logs --output artifacts/ci/timings.json
     - name: Retain per-platform release assets
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
@@ -119,6 +150,7 @@ jobs:
         path: artifacts/ci/release-assets/
         if-no-files-found: error
         retention-days: 30
+        compression-level: 0
     - name: Retain native logs, failed fixtures and packages
       if: always()
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -128,8 +160,21 @@ jobs:
         include-hidden-files: true
         if-no-files-found: error
         retention-days: 30
+        compression-level: 0
+    - name: Record exact selected lane evidence
+      shell: bash
+      run: python tests/ci/control.py receipt --plan artifacts/native-plan.json --lane "native-${{ matrix.artifact }}" --evidence artifacts/ci --output
+        artifacts/receipt/native-${{ matrix.artifact }}.json
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: native-receipt-native-${{ matrix.artifact }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/receipt/
+        if-no-files-found: error
+        compression-level: 0
   extended:
-    needs: prepare
+    needs:
+    - prepare
+    - ordinary
     name: Linux semantic / shard ${{ matrix.shard }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
@@ -147,6 +192,8 @@ jobs:
       with:
         persist-credentials: false
         ref: ${{ github.sha }}
+    - name: Fix full execution plan
+      run: python tests/ci/control.py plan --workflow native --output artifacts/native-plan.json
     - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
       with:
         go-version-file: go.mod
@@ -154,16 +201,26 @@ jobs:
     - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
       with:
         python-version: 3.14.0
-    - name: Build actual native server
+    - name: Download same-attempt ordinary bytes
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: ordinary-linux-amd64-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/ci/build
+    - name: Verify exact producer before starting any consumer
       id: build
-      run: python tests/ci/run.py build --platform linux/amd64 --release-version "${{ needs.prepare.outputs.version }}" --output artifacts/ci/build
+      run: python tests/ci/run.py import-build --binary artifacts/ci/build/argo-workflows-ls --manifest artifacts/ci/build/build.json --manifest-sha256
+        "${{ needs.ordinary.outputs.manifest }}" --release-version "${{ needs.prepare.outputs.version }}" --platform linux/amd64 --output artifacts/ci/import
     - name: Install checksum-pinned offline oracle tools
       run: python tests/ci/install-tools.py --output artifacts/ci/tools
     - name: Execute extended existing consumers
-      run: python tests/ci/run.py suite --suite extended --shard ${{ matrix.shard }}/3 --tools artifacts/ci/tools --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/extended
+      run: python tests/ci/run.py suite --suite extended --shard ${{ matrix.shard }}/3 --tools artifacts/ci/tools --binary artifacts/ci/build/argo-workflows-ls
+        --output artifacts/ci/extended
     - name: Verify actual and synthetic schema query boundaries separately
       if: ${{ !cancelled() && steps.build.outcome == 'success' && matrix.shard == 0 }}
       run: python tests/ci/run.py schema --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/schema
+    - name: Retain separate CI timing observations
+      if: always()
+      run: python tests/ci/trends.py --inputs artifacts/ci/extended/logs --output artifacts/ci/timings.json
     - name: Retain semantic evidence including failed runs
       if: always()
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -173,8 +230,21 @@ jobs:
         include-hidden-files: true
         if-no-files-found: error
         retention-days: 30
+        compression-level: 0
+    - name: Record exact selected lane evidence
+      shell: bash
+      run: python tests/ci/control.py receipt --plan artifacts/native-plan.json --lane "extended-${{ matrix.shard }}" --evidence artifacts/ci --output artifacts/receipt/extended-${{
+        matrix.shard }}.json
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: native-receipt-extended-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/receipt/
+        if-no-files-found: error
+        compression-level: 0
   resources:
-    needs: prepare
+    needs:
+    - prepare
+    - ordinary
     name: Linux resources / ${{ matrix.suite }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -193,6 +263,8 @@ jobs:
       with:
         persist-credentials: false
         ref: ${{ github.sha }}
+    - name: Fix full execution plan
+      run: python tests/ci/control.py plan --workflow native --output artifacts/native-plan.json
     - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
       with:
         go-version-file: go.mod
@@ -200,10 +272,20 @@ jobs:
     - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
       with:
         python-version: 3.14.0
-    - name: Build outside measured cgroups
-      run: python tests/ci/run.py build --platform linux/amd64 --release-version "${{ needs.prepare.outputs.version }}" --output artifacts/ci/build
+    - name: Download same-attempt ordinary bytes
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: ordinary-linux-amd64-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/ci/build
+    - name: Verify exact producer before starting any consumer
+      id: build
+      run: python tests/ci/run.py import-build --binary artifacts/ci/build/argo-workflows-ls --manifest artifacts/ci/build/build.json --manifest-sha256
+        "${{ needs.ordinary.outputs.manifest }}" --release-version "${{ needs.prepare.outputs.version }}" --platform linux/amd64 --output artifacts/ci/import
     - name: Execute existing consumers with enforced CPU, memory and swap limits
       run: python tests/ci/resources.py --suite ${{ matrix.suite }} --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/resources
+    - name: Retain separate CI timing observations
+      if: always()
+      run: python tests/ci/trends.py --inputs artifacts/ci/resources/logs --output artifacts/ci/timings.json
     - name: Retain resource measurements, limits, raw traffic and failed inputs
       if: always()
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -213,6 +295,17 @@ jobs:
         include-hidden-files: true
         if-no-files-found: error
         retention-days: 30
+        compression-level: 0
+    - name: Record exact selected lane evidence
+      shell: bash
+      run: python tests/ci/control.py receipt --plan artifacts/native-plan.json --lane "resources-${{ matrix.suite }}" --evidence artifacts/ci --output
+        artifacts/receipt/resources-${{ matrix.suite }}.json
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: native-receipt-resources-${{ matrix.suite }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/receipt/
+        if-no-files-found: error
+        compression-level: 0
   mutations:
     name: Mutation gate / ${{ matrix.group }}
     runs-on: ubuntu-24.04
@@ -233,6 +326,8 @@ jobs:
       with:
         persist-credentials: false
         ref: ${{ github.sha }}
+    - name: Fix full execution plan
+      run: python tests/ci/control.py plan --workflow native --output artifacts/native-plan.json
     - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
       with:
         go-version-file: go.mod
@@ -245,6 +340,20 @@ jobs:
       run: python tests/ci/install-tools.py --output artifacts/ci/tools
     - name: Require passing baselines and specific semantic mutation detection
       run: python tests/ci/run.py mutations --group ${{ matrix.group }} --output artifacts/ci/mutations --tools artifacts/ci/tools
+    - name: Retain separate CI timing observations
+      if: always()
+      env:
+        MUTATION_GROUP: ${{ matrix.group }}
+      run: |-
+        python - <<'PY_TIMINGS'
+        import os, subprocess, sys
+        from pathlib import Path
+        names = ['driver']
+        if os.environ['MUTATION_GROUP'] == 'audit':
+            names += [name+'-driver' for name in ('shared-yaml-projection', 'catalog-queries', 'responsive-editing', 'shared-lifecycle')]
+        for name in names:
+            subprocess.run([sys.executable, 'tests/ci/trends.py', '--inputs', str(Path('artifacts/ci/mutations')/name), '--output', str(Path('artifacts/ci')/('timings-'+name+'.json'))], check=True)
+        PY_TIMINGS
     - name: Retain mutation diffs, binaries, baseline and mutant evidence
       if: always()
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -254,26 +363,60 @@ jobs:
         include-hidden-files: true
         if-no-files-found: error
         retention-days: 30
+        compression-level: 0
+    - name: Record exact selected lane evidence
+      shell: bash
+      run: python tests/ci/control.py receipt --plan artifacts/native-plan.json --lane "mutations-${{ matrix.group }}" --evidence artifacts/ci --output
+        artifacts/receipt/mutations-${{ matrix.group }}.json
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: native-receipt-mutations-${{ matrix.group }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/receipt/
+        if-no-files-found: error
+        compression-level: 0
   acceptance:
-    name: Acceptance gate
+    name: ${{ github.event_name == 'pull_request' && 'Acceptance gate' || format('Acceptance gate ({0})', github.event_name) }}
     if: always()
     needs:
+    - prepare
+    - ordinary
     - native
     - extended
     - resources
     - mutations
+    - candidate
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-    - name: Require every platform and mandatory gate
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        pattern: native-receipt-*-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/receipts
+    - name: Require current plan, every lane and successful dependencies
       env:
         RESULTS: ${{ toJSON(needs) }}
-      run: "python3 - <<'PY'\nimport json, os\nresults = json.loads(os.environ['RESULTS'])\nexpected = {'native', 'extended', 'resources', 'mutations'}\nfailures = {name: result['result'] for name, result in results.items() if result['result'] != 'success'}\nwith open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as out:\n    out.write('## Automated acceptance\\n\\n')\n    for name, result in results.items():\n        out.write(f\"- {name}: {result['result']}\\n\")\n    out.write('\\nReal Zed editor acceptance: **not executed by this workflow**.\\n')\nif set(results) != expected or failures:\n    raise SystemExit('Mandatory checks did not all succeed: ' + json.dumps(failures))\nPY\n"
+      run: |-
+        python tests/ci/control.py plan --workflow native --output artifacts/native-plan.json
+        python tests/ci/control.py gate --plan artifacts/native-plan.json --receipts artifacts/receipts --output artifacts/gate.json
+    - if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: native-gate-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/gate.json
+        if-no-files-found: error
+        compression-level: 0
   candidate:
     name: Verify complete native distribution
     needs:
     - prepare
-    - acceptance
+    - native
+    - extended
+    - resources
+    - mutations
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -290,7 +433,8 @@ jobs:
         pattern: workflows-release-*
         path: artifacts/candidate-inputs/native
     - name: Verify all native platforms, original licenses, source identity and checksums
-      run: python scripts/release.py collect --inputs artifacts/candidate-inputs/native --version "${{ needs.prepare.outputs.version }}" --source-commit "${{ github.sha }}" --output artifacts/native-distribution
+      run: python scripts/release.py collect --inputs artifacts/candidate-inputs/native --version "${{ needs.prepare.outputs.version }}" --source-commit
+        "${{ github.sha }}" --output artifacts/native-distribution
     - name: Retain the complete verified native distribution
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
@@ -298,19 +442,80 @@ jobs:
         path: artifacts/native-distribution/
         if-no-files-found: error
         retention-days: 30
+        compression-level: 0
     - name: Summarize the native acceptance boundary
-      run: 'cat >> "$GITHUB_STEP_SUMMARY" <<''EOF''
-
+      run: |-
+        cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
         ## Native LSP distribution verified
 
-
         Five native hosts executed CLI/LSP consumers and verified the exact source identity,
-
         original licenses, packaged bytes and SHA-256 inventories.
-
         The Zed adapter has its own workflow and release lifecycle.
-
-        EOF'
+        EOF
+  ordinary:
+    name: Produce ordinary Linux server
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CC: gcc-13
+    outputs:
+      manifest: ${{ steps.identity.outputs.manifest }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+    - name: Record ordinary cache input identity
+      shell: bash
+      run: |-
+        mkdir -p artifacts/cache
+        python - <<'PY_CACHE'
+        import json, os, subprocess
+        from pathlib import Path
+        record = {'compiler': subprocess.check_output([os.environ['CC'], '--version'], text=True), 'runnerImage': {key: os.environ.get(key) for key in ('ImageOS', 'ImageVersion')}, 'CGO_ENABLED': '1', 'GOFLAGS': '', 'buildMode': 'release', 'trimpath': True, 'moduleMode': 'vendor', 'MACOSX_DEPLOYMENT_TARGET': os.environ.get('MACOSX_DEPLOYMENT_TARGET')}
+        Path('artifacts/cache/compiler.json').write_text(json.dumps(record, sort_keys=True))
+        PY_CACHE
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+      with:
+        go-version-file: go.mod
+        cache: true
+        cache-dependency-path: |-
+          go.mod
+          go.sum
+          vendor/**/*
+          artifacts/cache/compiler.json
+          contracts/toolkit.lock.json
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: 3.14.0
+    - name: Build and test once outside all consumer measurements
+      run: python tests/ci/run.py build --platform linux/amd64 --release-version "${{ needs.prepare.outputs.version }}" --output artifacts/ci/build
+    - name: Bind producer manifest
+      id: identity
+      shell: bash
+      run: |-
+        python - <<'PY_ID'
+        import hashlib, os
+        from pathlib import Path
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+            stream.write('manifest='+hashlib.sha256(Path('artifacts/ci/build/build.json').read_bytes()).hexdigest()+'\n')
+        PY_ID
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: ordinary-linux-amd64-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/ci/build/
+        if-no-files-found: error
+        compression-level: 0
+    - name: Refuse substituted ordinary producers
+      run: python tests/ci/import_e2e.py --build artifacts/ci/build --version "${{ needs.prepare.outputs.version }}" --output artifacts/ci/import-controls
+    - if: failure()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: ordinary-build-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/ci/build/
+        if-no-files-found: error
+        compression-level: 0
 'on':
   pull_request: null
   push:

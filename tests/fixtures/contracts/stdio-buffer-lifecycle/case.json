@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "caseId": "stdio-buffer-lifecycle",
+  "owner": "native/wf3-lsp",
+  "oracle": "LSP 3.17 UTF-16 and independent Workflow 3.6.0 CRD fixture expectations",
+  "targetVersion": "3.6.0",
+  "disk": "tests/fixtures/schema/valid.yaml",
+  "overlay": "tests/fixtures/schema/mixed.yaml",
+  "expected": "tests/e2e/wf3-lsp.expected.json",
+  "operations": ["initialize", "open-v1", "incremental-repair-v2", "completion", "hover", "definition", "references", "symbols", "reject-stale-v1", "change-v3", "invalid-config", "repair-config", "close", "shutdown", "exit"],
+  "requiredDiagnostic": {"code":"SCHEMA_TYPE", "severity":1,"source":"argo-workflows","range":{"start":{"line":6,"character":15},"end":{"line":6,"character":20}}},
+  "completionEvidence": "Versioned publishDiagnostics and no WF_ANALYSIS_UNAVAILABLE diagnostic; empty output is accepted only from the matching document/version publication.",
+  "sessionFailures": ["malformed-frame", "short-frame", "early-exit", "no-response", "stderr-over-quota", "stale-version-after-final"]
+}

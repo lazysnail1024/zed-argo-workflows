@@ -75,7 +75,7 @@ it waits up to 45 minutes for the exact native pin to be published with all five
 platform executables and `SHA256SUMS`, then creates its tag and publishes the ZIP.
 The native release can precede the adapter release and use a different commit;
 no Go build is part of the adapter workflow. Existing releases and drafts are
-never replaced. See [release automation](docs/distribution.md#发布自动化)
+never replaced. See [release automation](docs/distribution.md)
 for waiting and failure behavior.
 
 The precompiled ZIP is the ordinary alpha installation path and does not need a
@@ -137,3 +137,54 @@ tools with `python3 tests/ci/install-tools.py --output artifacts/tools`, then ru
 --tools artifacts/tools --output artifacts/extended` (join the command lines).
 The adapter WASI acceptance downloads its pinned native release; publish and
 verify that native release before validating a new adapter pin.
+
+### CI identity, reuse and evidence
+
+The native workflow builds the ordinary Linux release once and imports its exact
+bytes into the Linux native, three semantic and four resource jobs. The producer
+manifest includes the source tree, Go/C environment, native headers, dependencies,
+linker flags, product version, runner image, run ID and attempt. Consumers verify
+the manifest digest supplied by the producer job before executing the absolute
+binary path. Partial reruns that inherit a producer from an earlier attempt are
+rejected; rerun the complete producer and consumer group. Synthetic schema, slow
+I/O, mutation, race, offline distribution and other platform builds remain
+independent. Only the ordinary producer uses a compiler/input-scoped build cache.
+
+`Acceptance gate`, `Zed acceptance gate`, and `Installer acceptance gate` are
+independent required-check candidates. Each compares its complete plan to the
+same workflow's job results and retained report bytes. A missing, cancelled,
+skipped or duplicate selected lane fails. Branch rules must require the exact
+hosted check names and GitHub Actions source after their PR events are verified;
+local control results do not establish branch protection.
+
+Useful local commands (use a new output directory for each execution):
+
+```sh
+python tests/ci/control.py baseline --output artifacts/baseline.json
+python tests/ci/control_e2e.py --output artifacts/control-e2e
+python tests/e2e/session_e2e.py --output artifacts/session-e2e
+python tests/e2e/wf-equivalence.py /absolute/server artifacts/equivalence
+python tests/ci/trends.py --inputs artifacts/ci --output artifacts/timing.json
+```
+
+The baseline exporter reads frozen Git objects, including the original resource
+consumer source and exact assertion inventory. Timing summaries keep first
+failures and original command hashes; they do not replace product thresholds.
+A performance comparison needs five warm and three cold complete runs. An
+insufficient sample set is reported explicitly. The change classifier is staged
+in observation mode: every active plan remains full until hosted gate and reuse
+acceptance is established. Unknown paths, snippets, tests, dependencies, rename,
+delete and unavailable diffs always select full.
+
+The `stdio-buffer-lifecycle` fixture owns the migrated schema/navigation case.
+The session helper only handles framing, deadlines, bounded transcripts and
+process cleanup. Equivalence consumers retain final overlays, targets, versions,
+ranges, diagnostic severity and root identity. Repeated-query agreement does not
+claim a cache hit. The existing saturation consumer also compares the state after
+an observed cancellation with a fresh server.
+
+The historical alpha.4 file installer remains a separate regression fixture.
+`Published Zed adapter installation` verifies a successful same-repository adapter
+release, exact source tag/version, asset inventory and installed source/native pin.
+It uses read-only credentials and cannot publish. Neither file installation nor
+stdio acceptance proves activation in Zed.
