@@ -10,7 +10,8 @@ from control import ROOT, identity, sha, require, git
 def input_digest():
  paths=['go.mod','go.sum','vendor/modules.txt','contracts/toolkit.lock.json','tests/ci/contracts.json']
  values={p:sha(ROOT/p) for p in paths}
- values['nativeHeaders']=hashlib.sha256('\n'.join(str(p.relative_to(ROOT))+':'+sha(p) for p in sorted(p for p in (ROOT/'vendor').rglob('*') if p.is_file())).encode()).hexdigest()
+ vendor={p.relative_to(ROOT).as_posix():sha(p) for p in (ROOT/'vendor').rglob('*') if p.is_file()}
+ values['nativeHeaders']=hashlib.sha256('\n'.join(name+':'+vendor[name] for name in sorted(vendor)).encode()).hexdigest()
  return values
 
 def linux_runtime(binary):

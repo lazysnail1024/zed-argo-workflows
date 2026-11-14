@@ -96,6 +96,31 @@ for flavor in ('host', 'windows-relative-paths'):
  # Neither relocation nor canonical separators may hide payload corruption.
  (extracted/('payload-'+lane)/'nested'/'consumer'/'stdout.log').write_bytes(b'changed evidence\n')
  run(flavor+'-archive-corruption',gate_command,1)
+# Isolated cross-platform input identity: real files, independent equality and
+# change-sensitivity expectations. See FAILURE_MODES for the boundary rationale.
+fingerprint_root=a.output/'fingerprint-input';(fingerprint_root/'vendor'/'group').mkdir(parents=True)
+for name in ('go.mod','go.sum','vendor/modules.txt','contracts/toolkit.lock.json','tests/ci/contracts.json','vendor/Z.h','vendor/a.h','vendor/group.txt','vendor/group/a.h'):
+ destination=fingerprint_root/name;destination.parent.mkdir(parents=True,exist_ok=True);destination.write_bytes(('fixture '+name+'\n').encode())
+fingerprint_results={}
+for name in ('host','windows','bytes','added','deleted','renamed'):
+ changed=fingerprint_root/'vendor'/'a.h';saved_input=changed.read_bytes()
+ if name=='bytes':changed.write_bytes(saved_input+b'changed\n')
+ if name=='added':(fingerprint_root/'vendor'/'new.h').write_bytes(b'new dependency\n')
+ if name=='deleted':changed.unlink()
+ if name=='renamed':changed.rename(fingerprint_root/'vendor'/'renamed.h')
+ code="import sys,json;from pathlib import Path,PureWindowsPath;sys.path.insert(0,sys.argv[1]);import build_identity;build_identity.ROOT=Path(sys.argv[2]);"
+ if name=='windows':
+  code+="relative=Path.relative_to;Path.relative_to=lambda self,*args,**kw: PureWindowsPath(relative(self,*args,**kw).as_posix());Path.__lt__=lambda self,other: PureWindowsPath(self.as_posix())<PureWindowsPath(other.as_posix());"
+ code+="print(json.dumps(build_identity.input_digest(),sort_keys=True))"
+ command=[sys.executable,'-c',code,str(ROOT/'tests/ci'),str(fingerprint_root)]
+ result=subprocess.run(command,cwd=ROOT,env=env,capture_output=True)
+ (a.output/('fingerprint-'+name+'.stdout')).write_bytes(result.stdout);(a.output/('fingerprint-'+name+'.stderr')).write_bytes(result.stderr)
+ actual=json.loads(result.stdout) if result.returncode==0 else None;fingerprint_results[name]=actual
+ expected=(actual==fingerprint_results['host']) if name in ('host','windows') else (actual!=fingerprint_results['host'])
+ rows.append({'case':'input-fingerprint-'+name,'command':command,'exitCode':result.returncode,'pass':result.returncode==0 and expected})
+ if name=='renamed':(fingerprint_root/'vendor'/'renamed.h').rename(changed)
+ changed.write_bytes(saved_input)
+ if name=='added':(fingerprint_root/'vendor'/'new.h').unlink()
 (a.output/'results.json').write_text(json.dumps(rows,indent=2))
 (a.output/'manifest.json').write_text(json.dumps({'command':sys.argv,'testSha256':hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),'scenarioSha256':hashlib.sha256((ROOT/'tests/ci/scenarios/identity-gates.json').read_bytes()).hexdigest(),'identity':{k:env[k] for k in ('GITHUB_SHA','GITHUB_RUN_ID','GITHUB_RUN_ATTEMPT','GITHUB_REPOSITORY')}},indent=2))
 raise SystemExit(0 if all(r['pass'] for r in rows) else 1)
