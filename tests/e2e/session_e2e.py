@@ -4,7 +4,9 @@ import argparse, hashlib, json, pathlib, sys, os, signal
 from support.session import Session
 p=argparse.ArgumentParser();p.add_argument('--output',type=pathlib.Path,required=True);a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
 peers={'early-exit-child':"import subprocess,sys;from pathlib import Path;p=subprocess.Popen([sys.executable,'-c','import time;time.sleep(20)']);Path(sys.argv[1]).write_text(str(p.pid))",'malformed-frame':"import sys;sys.stdout.buffer.write(b'Content-Length: nope\\r\\n\\r\\n');sys.stdout.flush()",'short-frame':"import sys;sys.stdout.buffer.write(b'Content-Length: 20\\r\\n\\r\\n{}');sys.stdout.flush()",'early-exit':'pass','no-response':'import time;time.sleep(20)','stderr-over-quota':"import sys,time;sys.stderr.buffer.write(b'x'*2097152);sys.stderr.flush();time.sleep(20)"}
-if os.name!='nt':peers['cleanup-signal-race']='import time;time.sleep(20)'
+if os.name!='nt':
+ peers['cleanup-signal-race']='import time;time.sleep(20)'
+ peers['cleanup-pipe-eof-wait-race']='pass'
 if sys.platform.startswith('linux'):
  peers.update({'cleanup-exited-group-race':'pass','cleanup-live-group-denied':'import time;time.sleep(20)','cleanup-exited-group-denied':'pass','cleanup-exited-existing-group':peers['early-exit-child']})
 rows=[]
@@ -21,6 +23,18 @@ for name,source in peers.items():
   def killpg(pid,sig):
    signals.append([pid,sig])
    if len(signals)>1:raise PermissionError(1,'Operation not permitted: already signaled group')
+   return real_killpg(pid,sig)
+  def wait(*args,**kwargs):wait_started[0]=True;return real_wait(*args,**kwargs)
+  s.proc.poll=lambda:real_poll() if wait_started[0] else None
+  s.proc.wait=wait;os.killpg=killpg
+ if name=='cleanup-pipe-eof-wait-race':
+  # Preserve real EOF, wait/reap and group probing; inject observed scheduling.
+  for t in s.threads:t.join(timeout=2)
+  assert not any(t.is_alive() for t in s.threads),'peer pipes did not reach EOF'
+  wait_started=[False]
+  def killpg(pid,sig):
+   signals.append([pid,sig])
+   if len(signals)==1:raise PermissionError(1,'Operation not permitted: exiting group leader')
    return real_killpg(pid,sig)
   def wait(*args,**kwargs):wait_started[0]=True;return real_wait(*args,**kwargs)
   s.proc.poll=lambda:real_poll() if wait_started[0] else None

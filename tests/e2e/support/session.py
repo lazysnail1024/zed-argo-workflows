@@ -85,10 +85,11 @@ class Session:
   if os.name!='nt':
    try:os.killpg(self.proc.pid,signal.SIGKILL)
    except ProcessLookupError:pass
-   except PermissionError:
+   except PermissionError as error:
     # Darwin can report EPERM for an exited, unreaped group leader.
     # Reap first, then accept only proof the group no longer exists.
-    if self.proc.poll() is None:raise
+    try:self.proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:raise error
     try:os.killpg(self.proc.pid,0)
     except ProcessLookupError:pass
     else:raise
