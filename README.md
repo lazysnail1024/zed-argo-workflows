@@ -146,3 +146,5 @@ Analysis is local: it does not access a cluster, execute controllers or render H
 implicitly. The alpha includes automated CLI/LSP and package checks; real Zed GUI
 acceptance is recorded separately. [Development and tests](DEVELOPMENT.md) ·
 [Documentation](docs/README.md) · [Architecture](docs/architecture.md) · [MIT license](LICENSE)
+
+<!-- Temporary documentation-only CI verification. -->
