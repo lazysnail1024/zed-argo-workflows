@@ -1,230 +1,229 @@
 # 自动化验收
 
-本页描述当前可执行门禁。某个候选是否通过，应查看该源码 commit 对应的完整运行结果；
-文档中的门禁配置本身不等于验收通过。原生、adapter 与真实 Zed GUI 的证据分别记录。
+本页描述当前源码的执行入口、证明范围和失败判定。某个候选是否通过，应查看该源码 commit
+对应的完整 GitHub Actions 运行；门禁配置、测试清单和本地执行结果都不等于 hosted 验收通过。
 
 ## Workflow 与职责
 
-| 入口 | 执行范围 |
+| 入口 | 执行范围与汇总 |
 | --- | --- |
-| [native.yml](../.github/workflows/native.yml) | 五个平台实际构建/执行 Go 服务；Linux 语义、资源与 mutation；汇总 `Acceptance gate` 并校验完整原生分发 |
-| [zed.yml](../.github/workflows/zed.yml) | Linux/macOS/Windows 的 Rust 安装器测试；Linux/Windows 的 WASI 安装运行时；独立 WASM、package 和隔离负向控制；汇总 `Zed acceptance gate` |
-| [zed-install.yml](../.github/workflows/zed-install.yml) | 三个操作系统使用已发布 Zed adapter `0.0.1-alpha.4`（固定原生 LSP `0.0.1-alpha.3`）做真实 Release 文件系统安装、替换、回滚和校验 |
-| [release.yml](../.github/workflows/release.yml)、[zed-release.yml](../.github/workflows/zed-release.yml) | 对固定源码和版本运行各自门禁后发布；发布规则见 [分发](distribution.md) |
+| [native.yml](../.github/workflows/native.yml) | 五平台 Go 构建和实际执行，Linux race、语义、资源与 mutation；完整原生分发及 `Acceptance gate`。 |
+| [zed.yml](../.github/workflows/zed.yml) | 三操作系统 Rust 安装器、Linux/Windows WASI runtime、独立 WASM/package 与隔离控制；`Zed acceptance gate`。 |
+| [zed-install.yml](../.github/workflows/zed-install.yml) | 三操作系统使用固定已发布 adapter `0.0.1-alpha.4` 和其原生 pin `0.0.1-alpha.3` 做文件系统安装、替换、回滚及拒绝控制；`Installer acceptance gate`。 |
+| [zed-released-install.yml](../.github/workflows/zed-released-install.yml) | 在同仓库 adapter 发布 workflow 完成后核对实际发布 commit、tag、版本和资产，在三操作系统安装该精确版本；`Published installation aggregate`。 |
+| [release.yml](../.github/workflows/release.yml)、[zed-release.yml](../.github/workflows/zed-release.yml) | 精确源码和独立版本的发布门禁、不可变 tag 与资产发布；详见 [分发](distribution.md)。 |
 
-原生支持 Linux amd64/arm64、macOS amd64/arm64、Windows amd64；Go 版本来自
-[go.mod](../go.mod)，CGO parser 要求 C 编译器。Rust 使用 adapter 的固定工具链和 `--locked`。
-原生 workflow 不构建 Rust、不依赖 editor checkout；adapter workflow 不构建 Go。
-验收 workflow 使用只读权限，发布 job 单独声明所需的写入权限。固定 action commit、
-禁用持久 checkout 凭据、命令/job 超时与并发取消规则均由实际 YAML 定义。
-必须任务失败、取消或跳过不会通过 aggregate gate；
-是否把 gate 设为合并必需项由仓库 branch rules 决定。
+固定发布包的回归 fixture 与本次实际发布后的验收是不同入口。后者仅在上游成功且身份匹配时
+执行安装；上游失败、跳过安装或证据缺失均不能成为发布验收通过。以上安装入口不启动 Zed GUI。
 
-## 原生门禁
+原生矩阵为 Linux amd64/arm64、macOS amd64/arm64、Windows amd64。Go 版本来自
+[go.mod](../go.mod)，CGO parser 需要 C 编译器；Rust 使用 adapter 的固定工具链和 `--locked`。
+原生 workflow 不构建 Rust，adapter workflow 不构建 Go。验收使用只读权限，发布 job 单独
+声明写入权限。固定 action commit、checkout 凭据策略、超时和并发取消规则以 workflow 为准。
 
-| 门禁 | 当前检查内容 |
-| --- | --- |
-| Native matrix | vendor 原生构建、`go vet`；analysis/assets/lsp/workspace 单元测试；实际 CLI/stdio 消费者、版本矩阵、原生打包与 release staging |
-| Linux race | 同一组 Go 包的 `-race`，覆盖 catalog 生命周期和共享文件权威 |
-| Linux semantic，三个 shard | 现有模板/引用/继承/DAG/编辑/生命周期测试，来源资产，固定且校验 hash 的 Argo/Helm 工具；真实 schema 与合成查询 fixture 分开记录 |
-| Linux resources：adversarial | aggregate input、表达式、alias/merge、buffer/snapshot、子进程输出上限、取消与后代回收 |
-| Linux resources：load | 10,000 文件/50 MiB；CLI 完整计数、冷启动、活跃诊断、查询、600 次持续编辑、10,000 次 open/edit/close 与内存保留 |
-| Linux resources：index | 每个 10,000/50,000 WorkflowTemplate 规模五个新进程，每文件 4 KiB padding；完整首轮/维护轮次、当前文件响应、漏事件收敛与 RSS |
-| Linux resources：queries | 完整候选集/继承参数/exit-role 的 100 ms 请求预算；既有冷 publication/definition、单 scope 负载与真实进程内存保留 |
-| Mutation：core/audit/contracts/legacy/resources | 同源通过基线后，验证指定语义、publication/cache 或资源保护移除会触发对应断言 |
-| Complete native distribution | 五平台原生身份、源码、校验和、原始 license/provenance 与包库存完整性 |
+## 变更选择与必需门禁
 
-精确消费者清单由 [tests/ci/run.py](../tests/ci/run.py) 的 `NATIVE`/`EXTENDED` 维护；
-资源清单由 [resources.py](../tests/ci/resources.py) 维护，不复制一份易过期的测试计数。
-当前 3.5.0 与 3.6.0 都是受支持的精确 target；混合 scope 负载要求完整计数、正确版本、
-无实验性标记及实际期望的诊断/退出码。
+[selection.py](../tests/ci/selection.py) 仅在 PR 的完整源码 diff **全部为修改**
+`README.md` 和/或 `DEVELOPMENT.md` 时选择文档 lane。`docs/**`、新增、删除、重命名、
+混合路径、不可用或过大的 diff，以及非 PR 事件均选择完整计划。已知 checkout 与 event head
+不匹配直接失败；缺少用于比较的 Git 对象按完整计划处理。
 
-### 多版本完整性
+文档 lane 执行真实 `git diff --check` 和选择器控制，保留 source/run/attempt 身份及原始输出。
+它明确排除产品 lane，但三个汇总 gate 仍运行。`Acceptance gate`、`Zed acceptance gate` 和
+`Installer acceptance gate` 对照选定计划核验全部 job 状态与 receipt：选定任务缺失、重复、
+失败、取消或跳过，以及被排除任务意外运行，都失败。文档 lane 成功只证明该文档检查。
 
-每个平台实际消费当前离线目录的 146 个版本、1,052 个版本/资源对。
-四个串行 shard 分别包含 37/37/36/36 个版本，每条命令仍有 300 秒上限；
-单版本原生进程 watchdog 为 20 秒，产品分析 deadline 为五秒。
-聚合器逐版本核对顺序、集合、hash、计时、原始 CLI 报告和退出状态；
-最后 shard 保留非矩阵的 CLI/LSP、CEL 规范化和缺失 kind 断言。
-[版本消费者](../tests/e2e/wf-multi-version.py) 和
-[聚合器反例自测](../tests/ci/test_multi_version.py) 同时必需。
+计划、receipt 和 payload 的生产及复验入口是 [control.py](../tests/ci/control.py)。计划绑定
+base/head/tested commits、完整 changed-path digest、选中 lane 和排除 job；测试 checkout
+只能是 event head 或其精确双亲 test merge。仓库 branch rules 必须要求实际 hosted check
+名称与 GitHub Actions 来源；本地 gate 不能证明远端保护规则生效。
 
-### 持续索引与证据边界
+## 构建复用与来源身份
 
-[wf-index-boundaries](../tests/e2e/wf-index-boundaries.py)、
-[wf-mixed-parent-index](../tests/e2e/wf-mixed-parent-index.py)、
-[wf-persistent-workspace](../tests/e2e/wf-persistent-workspace.py) 和
-[wf-persistent-slowio](../tests/e2e/wf-persistent-slowio.py) 进入 native suite。
-它们验证已知变化立即失效、未知无 watcher 文件经真实维护发现、准确最终位置、
-源签名变化、当前 buffer 优先与超五秒 discovery 继续运行。
-慢 I/O 消费者单独构建有身份记录的读取延迟 overlay，不放宽生产 deadline。
+普通 Linux release 由 `ordinary` producer 构建一次，Linux native、三个 semantic shard 和
+四个 resource job 消费该精确 binary。producer manifest 记录 source tree、Go/C 环境、原生
+headers、依赖、linker flags、产品版本、runner image、run ID 和 attempt。消费者使用 producer
+job 提供的 manifest digest 验证后执行绝对路径；不能自行提供一份新 manifest 代替来源验证。
+[身份实现](../tests/ci/build_identity.py)、[导入控制](../tests/ci/import_e2e.py)
 
-[wf-symbol-query-budget](../tests/e2e/wf-symbol-query-budget.py) 进入 native suite：
-10,001 个真实文件产生 20,002 个模板/参数展示符号，验证稳定的前 20,000 项、末尾低命中、
-零命中，以及取消突发与当前文件 didChange/hover 并发后的正确位置、单次终态和恢复；
-active/queued workspace 查询不得交付编辑前的位置，恢复后检查 workspace 与当前文档的相同位置。
-`catalog_symbols_test.go` 另以可控小预算验证零命中计费、锁等待取消、分页身份移除与旧位置拒绝；
-`index_queries_test.go` 验证多个候选查询共享请求预算。
-`catalog_query_race_test.go` 用真实 Documents/WorkQueue/Index 票据与显式屏障复现双向读取交错：
-旧 worker 的被动重排不能撤销新读取，新的字节观测必须撤销旧解析，真实后续 watch 即使同字节
-也必须拒绝旧 proof。同 URI 只串行读取/发布窗口；取消、其他 URI、删除重建与 didOpen 独立验证。
-audit mutation group 同时移除正确的输出上限、注入分页漏项，要求上述真实消费者报告指定语义失败，编译失败或超时不能算通过。
-这些测试不替代资源 suite 现有的 10,000 文件/20,000 符号五次冷索引验收。
+仅普通 producer 使用按编译器和输入身份限定的 build cache。合成 schema、慢 I/O overlay、
+mutation、race、离线分发及其他平台构建独立执行。部分 rerun 若继承前一次 attempt 的 producer
+会被拒绝，需要重跑完整 producer/consumer 组。release-mode build 从精确 commit 的临时
+worktree 构建，避免 ignored Go/C/embed 文件污染；这不宣称二进制可逐字节复现。
 
-`internal/lsp/catalog_test.go` 的正向用例覆盖共享 Documents、队列及完整扫描的接入。
-[ablate-shared-lifecycle.py](../tests/e2e/ablate-shared-lifecycle.py) 的七项控制由 audit mutation lane 调用；
-必须先看到所有指定 Go 测试通过，再以实际测试名和断言消息确认故障，panic 或编译失败不能算检测。
+## 测试家族与执行边界
 
-三个 density 消费者在计时第一条查询前，被动观察当前 root、精确文件数、空队列及当前打开文本
-字节数匹配的 `Ready` 回执；第一条诊断通知可能只有本地分析，不能当成完整索引证明。
-外部歧义场景还要求实际的跨文件诊断；无诊断场景分别记录当前版本诊断与索引就绪，不把空数组
-声称为完整诊断 worker 的完成证明。原查询列表、精确返回内容及每请求 100 ms 保持原值；
-不发送预热查询、不重试失败查询，缺就绪回执会超时失败。CLI 完整性与计数继续单独断言。
-[就绪观察](../tests/e2e/query_density_support.py)、[密集候选](../tests/e2e/wf-external-candidate-density.py)
+[tests/ci/inventory.json](../tests/ci/inventory.json) 为 first-party Python、Go 和 Rust 测试入口
+登记角色、现行 gate、调用路径与行为合同。[test_inventory.py](../tests/ci/test_inventory.py)
+扫描真实文件，新增、删除或改名却未分类会失败。helper、fixture builder、兼容入口不额外计为
+行为覆盖；完整消费者选择以 [run.py](../tests/ci/run.py) 的 `NATIVE`/`EXTENDED` 和
+[resources.py](../tests/ci/resources.py) 为准。
 
-100 scope 的保留测试同样先被动观察 10,000 文件、空队列和零打开字节的初始 `Ready`，
-再执行原来的 20/100/20 阶段、140 对请求与 1.10 增长比例。索引就绪的 60 秒包含 initialize，
-原有 RSS 采样覆盖这段等待，等待期间样本仍计入峰值；没有额外查询或调整中位数窗口。
-因此对比的是索引完成后的查询保留，不把目录尚在增长的中间状态当成稳定基线。
-父级同时核对四个消费者使用的协议 helper 和就绪 helper 的源码 hash。
-
-## 全部测试家族与正交分工
-
-[完整入口清单](../tests/ci/inventory.json) 为每个 first-party Python、Go 与 Rust 测试文件记录
-角色、现行 gate、调用路径和行为合同。`test_inventory.py` 在构建前扫描实际文件；新增、删除或改名
-而未分类的入口会直接失败。helper、fixture builder 和兼容别名有独立角色，不能计为行为用例。
-该清单描述执行路由；某次运行是否通过仍以那个源码 commit 的原始证据为准。
-
-| 家族 | 行为 oracle | CI 路由及正交维度 |
+| 家族 | 验证内容 | 当前路由 |
 | --- | --- | --- |
-| Go analysis/assets/workspace | 实际 schema 缓存、索引预算、取消、输入流与版本身份 | 五平台单元测试，Linux 追加 race |
-| Go LSP catalog/request | 可控调度下的旧票据、维护、readiness、共享文件权威和取消 | 五平台单元测试；Linux 定点移除 guard 验证断言 |
-| CLI/stdio 平台合同 | 真进程退出、精确诊断、位置、编辑字节、取消终态和恢复 | 保留五平台现有 NATIVE 选择；不把全部 Linux 专项乘以五 |
-| 版本与离线资产 | 146 个精确版本、1,052 个版本/资源对、原始 schema hash | 每个平台完整版本目录；分 shard 不削减版本覆盖 |
-| 语义组合 | 作用域、继承、DAG、参数、外部引用、合法/非法目标和 YAML 拒绝 | Linux EXTENDED；每个场景控制其独立输入维度 |
-| Schema 查询 | 真实版本 schema 和人工构造的边界 schema | Linux schema gate；两种 fixture 的二进制与结果分开 |
-| 真实 Argo/Helm | 固定 hash 的实际工具、版本拒绝、render capability 和源文件归属 | Linux 集成合同；工具失败与语义失败分别记录 |
-| 资源和进程树 | 明确受限的 CPU/RAM/swap、输入/输出边界、后代回收 | Linux adversarial；正边界与超一边界各自独立 |
-| 大工作区与持续索引 | 完整文件/资源/符号数量、发布、维护、内存保留与实际请求延时 | Linux load/index；queries 追加原有密集候选与保留合同 |
-| Mutation | 同源正常 baseline、唯一源选择器、完整案例和断言集合、指定失败 | Linux core/audit/contracts/legacy/resources；编译/异常/超时不算 kill |
-| CI 自测 | 每次只破坏一个证据条件，其他字段保留可信通过 baseline | 构建前：空/缺行/重复/错 hash/缺 assertion/worker 缺席/OOM 回执反例 |
-| 原生分发 | 实际解压、运行身份、源码/法律文件/平台库存及 checksum | 五平台包消费与聚合拒绝；Linux 原生源码隔离 |
-| Zed Rust 安装器 | 注入 Host 的安装、身份、缓存、替换、回滚 | 三操作系统 Rust tests；无 GUI 覆盖声明 |
-| Zed WASI / 文件系统 | 真实 guest 执行、native probe、HTTP 与句柄，以及固定发布包安装 | Linux/Windows WASI；三个操作系统真实 release 文件系统安装 |
-| Zed package / snippets | 实际打包 bytes 与精确展开 snippet 由原生 CLI 消费 | package 的每种坏条件有正常 baseline；snippet 只移除一个 Workflow spec |
+| Go analysis/assets/lsp/workspace | schema 与事实缓存、票据/输入权威、readiness、预算和取消 | 五平台单元测试；Linux 追加 race。 |
+| CLI/stdio 平台合同 | 实际退出码、精确诊断、位置、编辑后字节、取消终态和恢复 | 五平台 native suite。 |
+| 离线版本 catalog | 完整精确版本/kind 集合、原始来源 hash、自动兼容及 query 语义 | 每个平台完整版本消费者。 |
+| Workflows 语义 | 模板/继承、DAG、参数、外部引用、局部和跨文件编辑、生命周期 | Linux extended 的三个 shard。 |
+| Schema 查询 | 实际 CRD graph 与人工构造的 query 边界 | Linux schema gate，两类 fixture 分开记录。 |
+| Argo/Helm 集成 | 固定 hash 的真实工具、版本拒绝、render capability、源文件归属和取消 | Linux 工具消费者；静态 Helm 导航进入 native suite。 |
+| 资源与规模 | 输入/输出限制、后代回收、完整索引、延迟、内存峰值与保留 | Linux adversarial/load/index/queries。 |
+| Mutation | 通过基线、唯一源选择器、成功编译及指定行为断言失败 | Linux core/audit/contracts/legacy/resources。 |
+| CI 自测 | 缺行、重复、错误 hash、缺 assertion、源身份/receipt/payload 错配 | 构建前自测和实际消费者证据控制。 |
+| 原生分发 | 实际解压与运行、来源/平台/版本、法律文件、checksum 和资产库存 | 五平台包消费及聚合拒绝；Linux 源码隔离。 |
+| Zed 安装器 | Host 协议、真实 WASI/native probe、Windows 句柄与缓存激活 | 三系统 Rust；Linux/Windows WASI。 |
+| Zed package/snippets | 包 bytes、来源身份、精确 snippet 展开由 native CLI 消费 | 独立 package 与负向控制。 |
+| 已发布包安装 | 文件系统安装、校验、替换、失败恢复与回滚 | 固定 fixture 和精确本次 release 两个入口。 |
 
-正交化不删除兼容性版本或平台合同。相同 baseline 可由同 suite/参数/环境的多个 mutation 共用；
-每个 mutant 只修改一个 guard 或一项语义规则，随后仍要求相同完整案例集合。
-密集候选、继承参数和 exit-role 的 100 ms 请求预算保留原始定义：从发送 LSP 请求到收到对应终态，
-不把 fixture 生成或进程退出算入请求时间。语义正确而超预算仍是失败，不以总通过行数掩盖性能问题。
+同一完整基线可供相同 suite/参数/环境下的多个 mutation 复用；每个 mutant 只修改一个保护
+或语义规则，仍核验完整 case/assertion inventory。跨平台合同与兼容性版本不会因分组而减少。
+
+### 版本完整性
+
+当前离线 catalog 包含 146 个精确版本和 1,052 个实际版本/kind 对。版本消费者在每个平台
+使用四个串行 shard，分别包含 37/37/36/36 个版本；每条命令 300 秒、单版本原生进程
+watchdog 20 秒，产品分析 deadline 仍为五秒。聚合器核对顺序、集合、hash、计时、原始 CLI
+报告和退出状态，最后一个 shard 保留其他 CLI/LSP、CEL 及缺失 kind 断言。
+[版本消费者](../tests/e2e/wf-multi-version.py)、[聚合自测](../tests/ci/test_multi_version.py)
+
+### 索引与请求
+
+持续索引消费者覆盖已知输入立即失效、漏 watcher 的维护发现、精确最终位置、buffer 优先及
+超五秒 discovery 继续收敛；慢 I/O 使用单独有来源身份的读取 overlay。workspace-symbol
+消费者检查 20,000 项输出边界、尾部低命中、零命中成本、并发编辑和取消后的恢复。
+确定性 Go 测试覆盖同 URI 读票据交错、旧 worker、分页删除和跨 scope 预算。
+[索引边界](../tests/e2e/wf-index-boundaries.py)、[持续 workspace](../tests/e2e/wf-persistent-workspace.py)、
+[慢 I/O](../tests/e2e/wf-persistent-slowio.py)、[符号预算](../tests/e2e/wf-symbol-query-budget.py)、
+[读票据交错](../internal/lsp/catalog_query_race_test.go)
+
+密集候选、继承参数和 exit-role 消费者在第一条计时查询前被动观察当前 root、完整文件数、
+空队列和当前打开字节的 `Ready` 回执；本地诊断不能代替完整索引证明。每请求 100 ms 从发送
+到对应终态计算，同时核对精确内容；不通过预热查询、重试或快速错误满足延迟要求。
+跨 scope 保留测试同样先确认索引就绪，再执行 20/100/20 阶段和原 1.10 增长比例，等待阶段
+仍计入 RSS 峰值。[就绪观察](../tests/e2e/query_density_support.py)、
+[保留测试](../tests/e2e/wf-query-handoff-retention.py)
 
 ## 真实资源约束
 
-[resources.py](../tests/ci/resources.py) 使用 systemd transient service，并在 service 内读取和验证
-`memory.max`、`memory.swap.max`、`cpu.max` 与四 CPU affinity；在消费者退出后再次读取，
-要求限制未变化且 `memory.events` 的 `oom`/`oom_kill` 均为零。缺少退出后回执或后代被 OOM 杀死都失败。
-构建在测量组外完成；
-没有权限、cgroup v2 或足够 CPU 时，资源验收失败，不降级成无约束测试。
+[resources.py](../tests/ci/resources.py) 使用 systemd transient service，在 service 内读取
+并验证 `memory.max`、`memory.swap.max`、`cpu.max` 和四 CPU affinity，消费者退出后再次
+读取；限制变化、缺少退出回执或 `memory.events` 的 `oom`/`oom_kill` 非零都失败。构建在
+测量组外完成。缺少权限、cgroup v2 或足够 CPU 时不降级成无约束的通过结果。
 
-| 负载 | 环境与断言 |
+| 负载 | 环境与主要断言 |
 | --- | --- |
-| adversarial | 通常 512 MiB/no swap；合法精确 128 MiB snapshot case 保留独立 1 GiB 环境 |
-| 固定 load / queries | 四 CPU、最多 8 GiB、no swap，消费者保持现有语义/延时/计数要求 |
-| 持续 index | 四 CPU、8 GiB/no swap；10k/50k 的每轮收敛分别 60/300 秒，server RSS ≤ 512 MiB |
+| adversarial | 通常 512 MiB/no swap；精确 128 MiB snapshot 正边界独立使用 1 GiB。输入、表达式、alias/merge、输出预算和取消后代回收。 |
+| load | 四 CPU、最多 8 GiB/no swap；10,000 文件/50 MiB，CLI 完整计数、冷启动、诊断、查询、持续编辑和 open/edit/close 保留。 |
+| index | 四 CPU、8 GiB/no swap；10k/50k 规模各五个新进程，首轮及维护收敛分别 60/300 秒，server RSS ≤ 512 MiB。 |
+| queries | 四 CPU、最多 8 GiB/no swap；完整候选、继承、exit-role 的 100 ms 请求，冷 publication/definition 与跨 scope 保留。 |
 
-内存环境、逻辑输入限额、Go 软目标和原生进程 RSS 是不同指标。
-测试同时保存它们；受约束的固定 fixture 通过不能外推成任意磁盘/编辑器的性能保证。
-Linux FIFO、inotify、`/proc` 和进程组控制不代表 Windows/macOS 对应系统机制已被验证。
+逻辑输入限额、Go 软内存目标、cgroup 限制和实际进程 RSS 分别记录。固定 fixture 的通过
+不能外推任意磁盘或编辑器性能；Linux FIFO、inotify、`/proc` 和进程组控制也不代表其他系统
+机制已被验证。
 
-## 结果判定和防虚假通过
+## 证据与防虚假通过
 
-进程退出成功和语义证据必须同时满足。报告非空、预期 case 集合完整、`pass`/`passed` 和
-所有 assertion 都是布尔 `true`；字符串、缺报告、空选择、prepare-only、异常与超时都失败。
-普通消费者的 case 身份与 assertion 集合由父 runner 的
-[contracts.json](../tests/ci/contracts.json) 独立选择，不能用成功前缀替代完整运行；资源样本同样核对固定选择。
-资产版本来自 `compat/catalog.lock.json`，不能由子报告自行删减。
-所有证据还必须匹配本次消费者与实际原生二进制的 SHA-256；已有输出目录不能复用。
-family 测试验证子 worker 的结果，不能仅相信父进程记录。LSP 消费者有绝对响应 deadline，
-取消要返回一次 `-32800`，无关消息不能延长等待。
+普通消费者同时要求成功退出、非空且完整的预期 case 集合、精确布尔 `pass`/`passed` 和全部
+assertion。期望集合由父 runner 的 [contracts.json](../tests/ci/contracts.json) 独立选择，
+版本集合来自 catalog lock，不能接受子报告的成功前缀。字符串、缺报告、空选择、prepare-only、
+异常和 timeout 均失败；源码和实际 binary hash 必须匹配，新输出目录不得复用。
 
-[ablate-ci.py](../tests/e2e/ablate-ci.py) 使用同一个隔离源码构建基线和 mutant；
-源选择器必须唯一匹配，mutant 必须成功编译，case/assertion 集合相同且指定语义断言改变。
-编译错误、崩溃、timeout、空报告、缺测试或无关失败不算 mutation 检测。
-历史 `ablate-*` 文件保留为当前严格 mutation runner 的薄兼容入口；已迁移的旧路径不重复计为覆盖。
-其中 43 个历史 selector 归并为 38 项登记观察、37 种源代码故障配方；
-模板/资源基数共用一个 guard 的两种独立资源场景，其余重复 selector 复用已有合同。
-父 runner 从当前 registry 独立取得完整变体集合，子 driver 自报的成功前缀不能通过。
-`query-snapshot-bytes` 直接使用 `facts_store_test.go` 中同 URI、同 revision、不同字节的
-独立边界；外层 catalog 的 hash/revision 校验不能让旧 LSP 失效路径冒充该 guard 的证据。
-该变体分别编译同源正常和单故障 Go 测试二进制，以结构化事件核对精确测试/子测试选择、
-正常 PASS 和指定断言 FAIL；编译失败、panic、timeout、缺测试或额外选择均不算 kill。
-原生测试进程单独执行并保留退出码，再把原始流转换为 JSON；转换器不能把信号或退出码 2
-归一成普通断言失败。只有 `OutputType=error` 的指定断言计入检测，普通同文日志不算。
-原来的 23 项 `wf-query-fact-handoff` CLI/LSP 用例仍由 semantic lane 独立执行。
-过去只编译优化候选的 bounded 入口现在运行实际进程输出与子进程回收合同；
-依赖历史源码包并把任意 signal 当作检测的 toolkit 入口改为当前 256 层 YAML 的边界控制。
-源码修改只发生在临时副本，发布依赖和产品预算不变。
+[ablate-ci.py](../tests/e2e/ablate-ci.py) 在同一隔离源码上运行正常基线和单故障变体。源选择器
+必须唯一匹配、编译成功、case/assertion 集合相同并出现指定语义失败；编译错误、panic、signal、
+timeout、缺测试或无关失败不算 kill。薄 `ablate-*` 兼容入口调用当前严格 runner，不能重复算覆盖。
+`query-snapshot-bytes` 使用 [facts_store_test.go](../internal/analysis/facts_store_test.go)
+的同 URI/revision、不同字节边界；真实测试退出码先保留，再转换结构化事件，只有指定 assertion
+错误能证明检测。相关 CLI/LSP 事实交接消费者仍独立执行。
 
-报告冻结、非 Workflow 归属、维护 publication、精确编辑字节和候选 generation 等教训，
-以及各自的回归测试，统一见 [经验教训](lessons-learned.md)。
+### 原始协议、输入与生命周期
 
-## 打包身份与验收留证
+`wf3-lsp` 与 `wf-equivalence` 保留 raw stdio、解析 traffic、完整输入快照和进程生命周期。
+[materials.py](../tests/ci/materials.py) 从 checkout 的 fixture/expected hash、父合同输入和原始
+LSP frames 独立复验，receipt 生成和下载后的 aggregate 都调用它。session helper 只负责
+framing、deadline、有界 transcript 与进程清理，行为期望留在消费者及 fixture。
 
-release-mode build 从精确 commit 的临时 worktree 构建，防止本地 ignored Go/C/embed 文件混入。
-二进制 Go VCS metadata、源码 commit、catalog hash、构建模式和原始 dependency/schema/runtime
-法律文本都必须一致。包消费测试实际解压并运行 native identity，独立检查文件库存、hash、权限和拒绝路径。
-这是来源校验，不是声明 Go 二进制可逐字节复现。
+生命周期 oracle 从匹配的诊断 publication 开始，观察到下一次相关文档/配置/root 失效；
+最终 close 阶段一直观察至 shutdown 和排空 EOF。区间内所有当前版本 publication 必须一致，
+旧版本不当作当前结果；sleep 和无关响应不能充当完成屏障。下载后的 verifier 从原始事件重建
+期望和阶段边界，不只相信子进程给出的 timeline。两 root 等价性同时要求第二 root 发现及
+各 root 的精确 Definition URI/range，新进程重建相同 roots 与最终 overlay。
 
-各 job 以 `always()` 上传 `artifacts/ci/` 等证据，通常保留 30 天：原始 stdout/stderr、
-命令/timeout 回执、JSON 断言、协议流量、源码/二进制 hash、工具链、实际资源限制和产物。
-job 在上传前被终止时不能承诺完整 artifact；该次 GitHub job log 仍需检查。
+Linux native lane 在真实普通 binary 上执行
+[material_effectiveness_e2e.py](../tests/ci/material_effectiveness_e2e.py) 和
+[oracle_effectiveness_e2e.py](../tests/ci/oracle_effectiveness_e2e.py)。代理转发实际协议，只注入
+指定的新/旧诊断、root-add 遗漏或错误 root 位置；协议正确性及消费者拒绝能力分别验证。
 
-## 运行入口
+### 上传与下载后复验
 
-使用固定 Go/Rust、Python 与 C 编译器，并为每次运行选择新的输出目录。
-下面是原生构建和常用语义入口；Windows 使用 `.exe` 文件名。
+成功 native lane 将完整 evidence 转移到一个 receipt payload，包含隐藏配置输入；失败 lane
+保留原 evidence。只过滤已知 compiler/interpreter scratch，不删除语义输入。文本 payload
+使用 ZIP 压缩级别 6；release archives 与 ordinary imports 仍有各自独立消费者。
+
+下载全部选中 lane 后，[downloaded_material_e2e.py](../tests/ci/downloaded_material_e2e.py)
+先要求原始完整 gate 通过，再重新生成真实 Linux receipt、归档解包并复验 gate。缺文件、
+错误 fixture/input/lifecycle 即使重新计算外层 hash 也必须以指定原因拒绝。原 payload 不被
+修改。归档耗时不等于 hosted 传输或整个 workflow 加速。
+
+各 job 尝试以 `always()` 上传证据，保留期以 YAML 为准，通常 30 天。记录包含原始输出、
+命令及 timeout 回执、JSON 断言、协议、输入/源码/binary hash、工具链和实际资源限制。
+若 job 在上传前终止，需结合 GitHub job log，不能声称 artifact 必然完整。
+
+## 本地运行入口
+
+使用仓库固定 Go/Rust、Python 和 C 编译器，并为每次执行选择新输出目录。Windows binary
+使用 `.exe` 后缀；需要 release 身份时，从干净 commit 按 workflow 传入 release version。
 
 ```sh
-python tests/ci/run.py build --output artifacts/ci/build
-python tests/ci/run.py suite --suite native \
+python3 tests/ci/run.py build --output artifacts/ci/build
+python3 tests/ci/run.py suite --suite native \
   --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/native
-python tests/ci/run.py package \
+python3 tests/ci/run.py package \
   --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/package
-python tests/ci/install-tools.py --output artifacts/ci/tools
-python tests/ci/run.py suite --suite extended --tools artifacts/ci/tools \
+python3 tests/ci/install-tools.py --output artifacts/ci/tools
+python3 tests/ci/run.py suite --suite extended --tools artifacts/ci/tools \
   --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/extended
-python tests/ci/run.py schema \
+python3 tests/ci/run.py schema \
   --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/schema
-python tests/ci/run.py mutations --group core --output artifacts/ci/mutations-core
-python tests/ci/run.py mutations --group audit --output artifacts/ci/mutations-audit
-python tests/ci/run.py mutations --group contracts --tools artifacts/ci/tools --output artifacts/ci/mutations-contracts
-python tests/ci/run.py mutations --group legacy --output artifacts/ci/mutations-legacy
-python tests/e2e/ablate-shared-lifecycle.py artifacts/ci/shared-lifecycle
+python3 tests/ci/run.py mutations --group core --output artifacts/ci/mutations-core
+python3 tests/ci/run.py mutations --group audit --output artifacts/ci/mutations-audit
+python3 tests/ci/run.py mutations --group contracts --tools artifacts/ci/tools --output artifacts/ci/mutations-contracts
+python3 tests/ci/run.py mutations --group legacy --tools artifacts/ci/tools --output artifacts/ci/mutations-legacy
 ```
 
-Linux 资源入口额外需要 systemd、cgroup v2、四 CPU 和非交互 sudo：
+Linux 资源入口还要求 systemd、cgroup v2、四 CPU 和非交互 sudo：
 
 ```sh
-python tests/ci/resources.py --suite adversarial \
+python3 tests/ci/resources.py --suite adversarial \
   --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/adversarial
-python tests/ci/resources.py --suite load \
+python3 tests/ci/resources.py --suite load \
   --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/load
-python tests/ci/resources.py --suite index \
+python3 tests/ci/resources.py --suite index \
   --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/index
-python tests/ci/resources.py --suite queries \
+python3 tests/ci/resources.py --suite queries \
   --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/queries
-python tests/ci/run.py mutations --group resources --output artifacts/ci/mutations-resources
+python3 tests/ci/run.py mutations --group resources --output artifacts/ci/mutations-resources
 ```
 
-Rust/WASI/package 入口见 [开发指南](../DEVELOPMENT.md)。需要交付身份的构建必须从干净 commit
-按 workflow 传入 release version；普通开发构建不因此变成可发布 release。
+CI 控制与时间数据入口：
+
+```sh
+python3 tests/ci/control.py baseline --output artifacts/baseline.json
+python3 tests/ci/control_e2e.py --output artifacts/control-e2e
+python3 tests/ci/selection_e2e.py --output artifacts/selection-e2e
+python3 tests/e2e/session_e2e.py --output artifacts/session-e2e
+python3 tests/ci/trends.py --inputs artifacts/ci --output artifacts/timing.json
+```
+
+baseline exporter 读取冻结 Git objects；时间汇总保留首个失败和原命令 hash，不替代产品门槛。
+性能对比要求五个 warm 和三个 cold 完整样本，不足时显式报告。Rust/WASI 入口见
+[开发指南](../DEVELOPMENT.md)。
 
 ## 与真实编辑器验收的关系
 
-Native CI 证明实际 CLI/stdio 和包行为；原生 Rust 测试证明注入 Host 边界下的安装协议；
-WASI 消费者证明实际安装代码、原生 identity probe 和受控 Windows 文件句柄的交互；
-文件系统安装测试证明安装/回滚过程。它们都不启动完整 Zed GUI。
+Native CI 证明实际 CLI/stdio 和包行为；Rust Host 测试证明安装协议；WASI 消费者证明 guest、
+原生 probe 和受控文件句柄交互；文件安装测试证明安装与回滚。它们都不等同完整 Zed GUI。
 
-真实编辑器验收需要记录 Zed/OS、adapter/native 身份、设置和日志，并观察首次下载、
-离线缓存启动、诊断/补全/跳转、允许和拒绝的 Rename、Quick Fix/undo、配置恢复和
-YAML/Helm 服务共存。详细使用和排障见 [分发与安装](distribution.md)。
+真实编辑器验收记录 Zed/OS、adapter/native 身份、设置和日志，观察首次下载、离线缓存、
+诊断/补全/导航、允许与拒绝的 Rename、Quick Fix/undo、配置恢复和 YAML/Helm 共存。
+操作清单见 [分发与安装](distribution.md)，已发生问题的根因和回归依据见
+[经验教训](lessons-learned.md)。

@@ -19,7 +19,6 @@ Windows 不允许删除共享的句柄可以同时阻止移动和清理。确认
 **防回归。** 原 Rust `FakeHost` 不执行下载的 EXE，因而 Windows runner 通过也不能覆盖真实句柄行为。
 现在同时检查原生 Rust 协议测试与 WASI 运行时：固定路径、未完成目录、并发安装、旧缓存和
 受控 Windows 禁止删除句柄；后者仍不代表真实 Zed GUI 或原用户的句柄来源。
-[修复 PR #9](https://github.com/lazysnail1024/zed-argo-workflows/pull/9)、
 [安装器](../editors/zed/src/distribution.rs)、
 [运行时消费测试](../editors/zed/tests/cache_runtime_e2e.py)、
 [负向对照](../editors/zed/tests/ablate_distribution.py)
@@ -36,7 +35,6 @@ Windows 不允许删除共享的句柄可以同时阻止移动和清理。确认
 
 **防回归。** 用无效配置、六 root 慢分析控制、八种资源和未保存的归属变化检查实际 stdio publication，
 包括 Workflow 改成普通 YAML 后清空旧诊断；移除 ownership 检查必须触发指定失败。
-[PR #11](https://github.com/lazysnail1024/zed-argo-workflows/pull/11)、
 [publication.go](../internal/lsp/publication.go)、
 [归属测试](../tests/e2e/wf-diagnostic-ownership.py)、
 [deadline 测试](../tests/e2e/wf-diagnostic-deadline.py)
@@ -53,7 +51,6 @@ CLI 保留一次性收集，通过最多四个 parser、每批 64 KiB 的有界�
 
 **防回归。** `wf-persistent-slowio` 在真实单文件读边界加 15 ms，保留生产 deadline 并持续编辑，
 要求 discovery 超过五秒后仍能 Ready；dense-resource 测试检查当前文件响应、完整收敛和进程 RSS。
-[冷扫描问题 PR #4](https://github.com/lazysnail1024/zed-argo-workflows/pull/4)、
 [catalog](../internal/lsp/catalog.go)、[预解析](../internal/analysis/preparse.go)、
 [慢 I/O 控制](../tests/e2e/wf-persistent-slowio.py)、[持续索引](../tests/e2e/wf-persistent-workspace.py)
 
@@ -72,7 +69,6 @@ root 移除也不能关闭仍由编辑器持有的文本。拒绝输入若不推
 过时 version、配置 1 MiB、拒绝恢复、root 移除、obsolete sweep、close observation 和取消扫描。
 [七个独立负向控制](../tests/e2e/ablate-shared-lifecycle.py) 先要求相同 Go 测试基线通过，
 每个 mutant 单独编译并命中指定断言；编译失败、panic、超时和找不到测试不能算检测成功。
-[共享接入 PR #13](https://github.com/lazysnail1024/zed-argo-workflows/pull/13)
 
 ## 5. 查询返回正确，不代表外部诊断已发布
 
@@ -86,7 +82,6 @@ root 移除也不能关闭仍由编辑器持有的文本。拒绝输入若不推
 
 **防回归。** 同时观察 query/no-query 客户端和真实维护轮次，检查无 watcher 的创建与删除、
 空闲 token、配置修复和最终应用字节；I/O 测试确认本地查询零资源读、外部查询不读无关 scope。
-[PR #2](https://github.com/lazysnail1024/zed-argo-workflows/pull/2)、
 [诊断确认](../internal/lsp/catalog_inputs.go)、[query cache](../internal/lsp/query_cache.go)、
 [维护测试](../tests/e2e/wf-reaudit-reconciliation.py)、[动作测试](../tests/e2e/wf-reaudit-actions.py)、
 [I/O 测试](../tests/e2e/wf-reaudit-query-io.py)
@@ -101,7 +96,6 @@ root 移除也不能关闭仍由编辑器持有的文本。拒绝输入若不推
 缺失 target 也必须保留依赖，才能在其后来出现时更新调用方。
 
 **防回归。** 检查最终替换字节、未修改的 metadata、歧义拒绝和缺失资源创建后的失效，不能只检查“有返回值”。
-[PR #2](https://github.com/lazysnail1024/zed-argo-workflows/pull/2)、
 [Rename 审计](../tests/e2e/wf-reaudit-rename.py)、[语义来源](../internal/analysis/semantic_origin.go)、
 [摘要位置测试](../internal/analysis/index_test.go)
 
@@ -148,7 +142,6 @@ schema 检查冷/暖加载、版本语义和原有 10,000 文件 deadline。
 
 **防回归。** 真实消费进程读取首字节后暂停超过五秒，再排空 stdout；完整 JSON 成功/错误和 human
 输出分别应返回 0/1/0。恢复旧检查的 mutation 必须命中三个 `exitMatchesPublishedOutcome` 断言。
-[PR #5](https://github.com/lazysnail1024/zed-argo-workflows/pull/5)、
 [报告入口](../cmd/argo-workflows-ls/main.go)、[反压测试](../tests/e2e/wf-report-deadline.py)、
 [真实超时/计数测试](../tests/e2e/wf-bounded-external-counts.py)
 
@@ -163,9 +156,8 @@ schema 检查冷/暖加载、版本语义和原有 10,000 文件 deadline。
 版本/资源对，无重复遗漏；最后 shard 保留其他 CLI/LSP 语义断言。
 首轮合成自测还暴露 macOS `/var` 与 `/private/var` 路径别名，证据根统一 canonicalize。
 
-**防回归。** 12 个聚合验证器自测拒绝缺 shard、遗漏/重复版本、字符串 true、伪造 CLI 报告、
+**防回归。** 聚合验证器自测拒绝缺 shard、遗漏/重复版本、字符串 true、伪造 CLI 报告、
 缺少原始输出、指标越界和身份不匹配；每个原生平台仍运行真实版本消费者。
-[PR #10](https://github.com/lazysnail1024/zed-argo-workflows/pull/10)、
 [聚合验证](../tests/ci/run.py)、[自测](../tests/ci/test_multi_version.py)、
 [版本消费者](../tests/e2e/wf-multi-version.py)
 
@@ -181,7 +173,6 @@ schema 资源控制接受已完成有效样本与明确分析 deadline 样本的
 其他错误码、异常诊断和不相关 incomplete 都不能代替证据。
 
 **防回归。** 同时检查正向与反向分类器；保存源码/二进制 hash、原始输出和命令回执。
-[CI 加固 PR #1](https://github.com/lazysnail1024/zed-argo-workflows/pull/1)、
 [mutation 门禁](../tests/e2e/ablate-ci.py)、[版本消融及 self-test](../tests/e2e/wf-multi-version-ablation.py)、
 [当前证据验证](../tests/ci/run.py)
 
@@ -196,8 +187,6 @@ schema 资源控制接受已完成有效样本与明确分析 deadline 样本的
 时序测试等待对应输入版本与内容的结果，不能拿旧空 publication 或短暂静默充当通过。
 
 **防回归。** 五个平台实际运行 CLI/stdio 与打包验证，检查版本/范围/应用字节和 exact source identity。
-[PR #1](https://github.com/lazysnail1024/zed-argo-workflows/pull/1)、
-[PR #7](https://github.com/lazysnail1024/zed-argo-workflows/pull/7)、
 [file URI](../internal/fileuri/fileuri.go)、[字节规则](../.gitattributes)、
 [CLI/LSP 生命周期](../tests/e2e/wf-remediation-lifecycle.py)、[包验证](../tests/e2e/native-package.py)
 
