@@ -98,7 +98,7 @@ def receipt(args):
   require(all(p.stat().st_mtime_ns>=started['startedNs'] for p in files),'report predates this execution')
  require(files,'missing lane evidence')
  validate_evidence(value['workflow'],args.lane,args.evidence)
- evidence={str(p.relative_to(args.evidence)):sha(p) for p in files}
+ evidence={p.relative_to(args.evidence).as_posix():sha(p) for p in files}
  payload=args.output.parent/('payload-'+args.lane)
  require(not args.output.exists() and not payload.exists(),'refusing old lane receipt')
  for source in files:

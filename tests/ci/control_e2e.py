@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Exercise real command-line planning and gate refusal controls; retain every exit."""
-import argparse, copy, hashlib, json, os, pathlib, subprocess, sys
+import argparse, copy, hashlib, json, os, pathlib, shutil, subprocess, sys, zipfile
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 p = argparse.ArgumentParser(); p.add_argument('--output', type=pathlib.Path, required=True); a=p.parse_args()
 a.output.mkdir(parents=True, exist_ok=False)
@@ -65,6 +65,37 @@ for writer in ('native','windows-text'):
  (a.output/('wire-'+writer+'.stdout')).write_bytes(result.stdout);(a.output/('wire-'+writer+'.stderr')).write_bytes(result.stderr)
  wire_paths.append(destination);wire_exits.append(result.returncode);wire_commands.append(command)
 rows.append({'case':'canonical-plan-wire-bytes','commands':wire_commands,'exitCodes':wire_exits,'pass':wire_exits==[0,0] and all(path.exists() for path in wire_paths) and wire_paths[0].read_bytes()==wire_paths[1].read_bytes() and b'\r' not in wire_paths[0].read_bytes()})
+# Transfer an actual producer receipt and nested evidence through a ZIP, then
+# consume the extracted bytes with the strict CLI gate. On POSIX, additionally
+# exercise Windows relative-path serialization at the producer boundary.
+needs.write_text(json.dumps({k:{'result':'success'} for k in value['jobs']}))
+for flavor in ('host', 'windows-relative-paths'):
+ folder=a.output/('archive-'+flavor);folder.mkdir()
+ started=folder/'started.json';run(flavor+'-start',['start','--output',str(started)],0)
+ evidence=folder/'input';evidence.mkdir()
+ (evidence/'report.json').write_bytes(saved)
+ nested=evidence/'nested'/'consumer';nested.mkdir(parents=True)
+ (nested/'stdout.log').write_bytes(b'independent nested consumer evidence\n')
+ produced=folder/'produced';produced.mkdir();lane=json.loads(original)['lane']
+ command=[sys.executable,str(ROOT/'tests/ci/control.py'),'receipt','--plan',str(plan),'--lane',lane,'--evidence',str(evidence),'--started',str(started),'--output',str(produced/(lane+'.json'))]
+ if flavor=='windows-relative-paths':
+  shim="import sys,runpy;from pathlib import Path,PureWindowsPath;original=Path.relative_to;Path.relative_to=lambda self,*args,**kw: PureWindowsPath(original(self,*args,**kw).as_posix());sys.argv=sys.argv[1:];sys.path.insert(0,str(Path(sys.argv[0]).parent));runpy.run_path(sys.argv[0],run_name='__main__')"
+  command=[sys.executable,'-c',shim,*command[1:]]
+ result=subprocess.run(command,cwd=ROOT,env=env,capture_output=True)
+ (folder/'producer.stdout').write_bytes(result.stdout);(folder/'producer.stderr').write_bytes(result.stderr)
+ archive=folder/'evidence.zip'
+ with zipfile.ZipFile(archive,'w') as bundle:
+  for source in produced.rglob('*'):
+   if source.is_file():bundle.write(source,source.relative_to(produced).as_posix())
+ extracted=folder/'extracted';shutil.copytree(receipts,extracted)
+ with zipfile.ZipFile(archive) as bundle:bundle.extractall(extracted)
+ gate_command=['gate','--plan',str(plan),'--receipts',str(extracted),'--needs',str(needs),'--output',str(folder/'gate.json')]
+ run(flavor+'-archive-gate',gate_command,0)
+ record=json.loads((produced/(lane+'.json')).read_text()) if result.returncode==0 else {}
+ rows.append({'case':flavor+'-portable-nested-evidence','command':command,'exitCode':result.returncode,'archiveSha256':hashlib.sha256(archive.read_bytes()).hexdigest(),'pass':result.returncode==0 and record.get('evidence',{}).get('nested/consumer/stdout.log')==hashlib.sha256((nested/'stdout.log').read_bytes()).hexdigest()})
+ # Neither relocation nor canonical separators may hide payload corruption.
+ (extracted/('payload-'+lane)/'nested'/'consumer'/'stdout.log').write_bytes(b'changed evidence\n')
+ run(flavor+'-archive-corruption',gate_command,1)
 (a.output/'results.json').write_text(json.dumps(rows,indent=2))
 (a.output/'manifest.json').write_text(json.dumps({'command':sys.argv,'testSha256':hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),'scenarioSha256':hashlib.sha256((ROOT/'tests/ci/scenarios/identity-gates.json').read_bytes()).hexdigest(),'identity':{k:env[k] for k in ('GITHUB_SHA','GITHUB_RUN_ID','GITHUB_RUN_ATTEMPT','GITHUB_REPOSITORY')}},indent=2))
 raise SystemExit(0 if all(r['pass'] for r in rows) else 1)
