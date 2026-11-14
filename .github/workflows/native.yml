@@ -76,7 +76,7 @@ jobs:
     - name: Apply intentional upstream failure after artifact retention
       run: python p02/harness.py finish --output p02-out
   acceptance:
-    name: ${{ matrix.check }}
+    name: ${{ github.event_name == 'pull_request' && matrix.check || format('{0} ({1})', matrix.check, github.event_name) }}
     strategy:
       fail-fast: false
       matrix:
