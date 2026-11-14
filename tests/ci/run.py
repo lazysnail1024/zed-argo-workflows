@@ -38,7 +38,7 @@ NATIVE = (
     "wf-index-boundaries", "wf-mixed-parent-index", "wf-persistent-workspace",
     "wf-persistent-slowio",
     "wf-shared-yaml-projection", "wf-responsive-editing",
-    "wf-resource-rename", "wf-catalog-queries", "wf-symbol-query-budget",
+    "wf-resource-rename", "wf-catalog-queries", "wf-symbol-query-budget", "wf-equivalence",
 )
 EXTENDED = (
     "wf2-targets", "wf3-yaml", "wf4-external-lsp",
@@ -127,7 +127,8 @@ def command(argv, evidence, *, timeout=300, env=None, cwd=ROOT):
     """Retain raw output even on timeout; a timeout is always a failed command."""
     evidence.mkdir(parents=True, exist_ok=True)
     argv = [str(x) for x in argv]
-    record = {"command": argv, "cwd": str(cwd), "timeoutSeconds": timeout,
+    from control import identity
+    record = {"executionIdentity": identity(), "command": argv, "cwd": str(cwd), "timeoutSeconds": timeout,
               "started": False, "timedOut": False, "exitCode": None, "pass": False}
     save(evidence / "command.json", record)
     started = time.monotonic()
@@ -144,6 +145,8 @@ def command(argv, evidence, *, timeout=300, env=None, cwd=ROOT):
                 record["exitCode"] = process.returncode
         except (OSError, subprocess.SubprocessError):
             record["error"] = traceback.format_exc()
+    record["stdoutSha256"] = sha(evidence / "stdout.log")
+    record["stderrSha256"] = sha(evidence / "stderr.log")
     record["seconds"] = round(time.monotonic() - started, 3)
     record["pass"] = record["started"] and not record["timedOut"] and record["exitCode"] == 0
     save(evidence / "command.json", record)
@@ -190,8 +193,11 @@ def validate_results(path, *, pass_key="pass", assertion_key="assertions", requi
 RESULT_ID_KEYS = ("case", "name", "version", "assertion", "sample", "tool")
 
 
-def verify_result_contract(name, path):
+def verify_result_contract(name, path, *, producer_platform=None):
     """Compare against the parent-owned selection, never the child's declaration."""
+    producer_platform = producer_platform or host_platform()
+    if producer_platform not in ("linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64", "windows/amd64"):
+        raise ValueError("unsupported producer platform")
     contracts = json.loads((ROOT / "tests/ci/contracts.json").read_text(encoding="utf-8"))["consumers"]
     expected = contracts[name]
     actual = json.loads(path.read_text(encoding="utf-8"))
@@ -206,7 +212,7 @@ def verify_result_contract(name, path):
                        for version in ("3.5.0", "3.6.0", "4.1.6")]
         expected = {"assertionKey": "assertions", "rows": [
             {"id": identity, "assertions": [identity["assertion"]]} for identity in identities]}
-    if expected.get("linuxAssertions") and platform.system() != "Linux":
+    if expected.get("linuxAssertions") and not producer_platform.startswith("linux/"):
         # /proc-backed memory observations belong to the existing Linux contract.
         # The portable semantic and timing assertions remain mandatory elsewhere.
         expected["rows"] = [{**row, "assertions": [key for key in row["assertions"]
@@ -244,6 +250,13 @@ def verify_consumer_identity(name, destination, binary):
         values = [record[key] for record in records for key in keys if key in record]
         if not values or any(value != expected for value in values):
             raise ValueError(f"{name}: evidence does not match the selected {label}")
+    if name in ("wf3-lsp", "wf-equivalence"):
+        values = [record.get("helperSha256") for record in records if "helperSha256" in record]
+        if not values or any(value != sha(E2E / "support/session.py") for value in values):
+            raise ValueError("session helper identity mismatch")
+        values = [record.get("windowsJobSha256") for record in records if "windowsJobSha256" in record]
+        if not values or any(value != sha(E2E / "support/windows_job.py") for value in values):
+            raise ValueError("Windows process owner identity mismatch")
     if name in ("wf-external-candidate-density", "wf-inherited-parameter-density", "wf-exit-query-density",
                 "wf-query-handoff-retention"):
         # These consumers share framing and the readiness precondition. Bind
@@ -256,13 +269,15 @@ def verify_consumer_identity(name, destination, binary):
                 raise ValueError(f"{name}: evidence does not match the selected query helper {helper}")
 
 
-def consumer_results(name, destination, binary=None):
+def consumer_results(name, destination, binary=None, *, producer_platform=None):
     if binary is not None:
         verify_consumer_identity(name, destination, binary)
+    from materials import verify as verify_materials
+    verify_materials(name, destination, ROOT, sha, require)
     if name not in AGGREGATED:
         key = "checks" if name in ("wf-mixed-parent-index", "wf-persistent-workspace") else "assertions"
         count = validate_results(destination / "results.json", assertion_key=key)
-        verify_result_contract(name, destination / "results.json")
+        verify_result_contract(name, destination / "results.json", producer_platform=producer_platform)
         return count
     key = AGGREGATED[name]
     rows = json.loads((destination / "results.json").read_text(encoding="utf-8"))
@@ -290,7 +305,7 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def verify_multi_version_shards(destination, binary, shard_count=MULTI_VERSION_SHARDS):
+def verify_multi_version_shards(destination, binary, shard_count=MULTI_VERSION_SHARDS, write_measurements=True, *, execution_binary=None, execution_destination=None):
     """Independently gate every exact release and its real CLI evidence.
 
     A partial shard returning zero is NOT acceptance. Only the disjoint, ordered
@@ -301,6 +316,8 @@ def verify_multi_version_shards(destination, binary, shard_count=MULTI_VERSION_S
     require(len(versions) == 146 and len(set(versions)) == 146, "locked release inventory changed")
     require(2 <= shard_count <= 8, "invalid multi-version shard count")
     binary = binary.resolve()
+    execution_binary = str(binary) if execution_binary is None else execution_binary
+    execution_destination = destination.resolve() if execution_destination is None else execution_destination
     fingerprint = {"binarySha256": sha(binary),
                    "testSha256": sha(E2E / "wf-multi-version.py"),
                    "catalogSha256": sha(ROOT / "compat/catalog.lock.json")}
@@ -356,7 +373,7 @@ def verify_multi_version_shards(destination, binary, shard_count=MULTI_VERSION_S
                     f"{version}: native CLI analysis or process deadline regression")
             evidence = shard / f"release-{version}"
             command_record = json.loads((evidence / "check.command.json").read_text(encoding="utf-8"))
-            argv = [str(binary), "check", "--root", str((evidence / "input").resolve()), "--format", "json"]
+            argv = [execution_binary, "check", "--root", str(execution_destination / f"shard-{index}" / f"release-{version}" / "input"), "--format", "json"]
             require(command_record.get("argv") == argv and command_record.get("exitCode") == 0 and
                     command_record.get("timedOut") is False,
                     f"{version}: CLI did not execute cleanly against the selected release")
@@ -387,7 +404,8 @@ def verify_multi_version_shards(destination, binary, shard_count=MULTI_VERSION_S
                     "p95": statistics.quantiles(milliseconds, n=100, method="inclusive")[94],
                     "maximum": max(milliseconds)},
                 "scope": "all exact release CLI executions; runner process timing is observational"}
-    save(destination / "performance.json", measured)
+    if write_measurements:
+        save(destination / "performance.json", measured)
     return {"caseCount": case_count, "releaseCount": len(timings),
             "resourceVersionPairs": total_pairs, "performance": measured["analysisMilliseconds"]}
 
@@ -416,7 +434,8 @@ def multi_version_consumer(args):
 
 
 def summary(output, rows, classification):
-    result = {"classification": classification, "platform": host_platform(), "tests": rows,
+    from control import identity
+    result = {"identity": identity(), "runnerSha256": sha(Path(__file__)), "classification": classification, "platform": host_platform(), "tests": rows,
               "pass": bool(rows) and all(row["pass"] is True for row in rows),
               "editorAcceptance": "not-executed"}
     save(output / "summary.json", result)
@@ -520,7 +539,19 @@ def build(args):
             "serverVersion": release_version, "sourceCommit": metadata["sourceCommit"],
             "dirty": False, "buildMode": "release"}.items()):
         raise ValueError("release identity differs from the requested source/version")
-    save(output / "build.json", metadata | {"binary": str(binary), "binarySha256": sha(binary), "identity": identity})
+    from build_identity import enrich
+    save(output / "build.json", enrich(metadata, binary, identity, linker_flags))
+    return True
+
+
+def import_build(args):
+    from build_identity import verify
+    receipt = verify(args.binary, args.manifest, args.manifest_sha256, args.release_version, args.platform)
+    save(args.output / "import.json", receipt)
+    # Keep packaging compatibility while rebasing only the local path.
+    record = json.loads(args.manifest.read_text())
+    record["binary"] = str(args.binary)
+    save(args.output / "local-build.json", record)
     return True
 
 
@@ -719,6 +750,12 @@ def main():
     p = sub.add_parser("build")
     p.add_argument("--platform")
     p.add_argument("--release-version", default="", help="Build the pinned clean stable release from its exact source commit")
+    p = sub.add_parser("import-build")
+    p.add_argument("--binary", type=Path, required=True)
+    p.add_argument("--manifest", type=Path, required=True)
+    p.add_argument("--manifest-sha256", required=True)
+    p.add_argument("--release-version", required=True)
+    p.add_argument("--platform", required=True)
     p = sub.add_parser("suite")
     p.add_argument("--suite", choices=("native", "extended"), required=True)
     p.add_argument("--binary", type=Path, required=True)
@@ -741,7 +778,7 @@ def main():
         args.tools = args.tools.resolve()
     args.output.mkdir(parents=True, exist_ok=True)
     try:
-        return 0 if globals()[args.action](args) else 1
+        return 0 if globals()[args.action.replace("-", "_")](args) else 1
     except Exception:
         save(args.output / "fatal.json", {"pass": False, "error": traceback.format_exc()})
         traceback.print_exc()

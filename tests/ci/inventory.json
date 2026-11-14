@@ -47,7 +47,8 @@
         "tests/e2e/wf-responsive-editing.py",
         "tests/e2e/wf-resource-rename.py",
         "tests/e2e/wf-catalog-queries.py",
-        "tests/e2e/wf-symbol-query-budget.py"
+        "tests/e2e/wf-symbol-query-budget.py",
+        "tests/e2e/wf-equivalence.py"
       ]
     },
     {
@@ -434,6 +435,65 @@
       "files": [
         "editors/zed/tests/snippets_e2e.py",
         "editors/zed/tests/ablate_snippets.py"
+      ]
+    },
+    {
+      "name": "acceptance-ledger",
+      "role": "driver",
+      "gate": "native and adapter acceptance ledgers",
+      "via": [
+        ".github/workflows/native.yml",
+        ".github/workflows/zed.yml",
+        ".github/workflows/zed-install.yml"
+      ],
+      "contract": "Same-run source, producer, selected lanes and actual report bytes; fail closed on missing evidence.",
+      "files": [
+        "tests/ci/control.py",
+        "tests/ci/control_e2e.py",
+        "tests/ci/build_identity.py",
+        "tests/ci/import_e2e.py",
+        "tests/ci/runtime_e2e.py",
+        "tests/ci/selection_e2e.py",
+        "tests/ci/selection.py",
+        "tests/ci/trends.py",
+        "tests/ci/evidence.py",
+        "tests/ci/materials.py",
+        "tests/ci/lifecycle_evidence_faults.py",
+        "tests/ci/material_effectiveness_e2e.py",
+        "tests/ci/oracle_effectiveness_e2e.py",
+        "tests/ci/downloaded_material_e2e.py",
+        "tests/ci/receipt_e2e.py",
+        "tests/ci/trends_e2e.py",
+        "tests/ci/portability_e2e.py",
+        "tests/ci/archive_e2e.py"
+      ]
+    },
+    {
+      "name": "stdio-support",
+      "role": "helper",
+      "gate": "native transport and lifecycle controls",
+      "via": [
+        "tests/e2e/wf3-lsp.py",
+        ".github/workflows/native.yml"
+      ],
+      "contract": "Owned stdio child, framing, bounded logs, deadlines and exact version waits.",
+      "files": [
+        "tests/e2e/support/session.py",
+        "tests/e2e/support/audit_proxy.py",
+        "tests/e2e/session_e2e.py",
+        "tests/e2e/support/windows_job.py"
+      ]
+    },
+    {
+      "name": "published-install-identity",
+      "role": "driver",
+      "gate": "published file installation",
+      "via": [
+        ".github/workflows/zed-released-install.yml"
+      ],
+      "contract": "Trusted publication source and exact released tag, assets and installed manifest.",
+      "files": [
+        "editors/zed/tests/released_identity.py"
       ]
     }
   ]

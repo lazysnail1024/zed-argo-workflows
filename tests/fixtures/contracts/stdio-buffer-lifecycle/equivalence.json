@@ -1,0 +1,7 @@
+{
+ "schemaVersion":1,
+ "oracle":"The final saved files, unsaved overlay, document version and active target determine identical diagnostics and navigation in a fresh server. The fixture independently requires SCHEMA_TYPE at line 6 columns 15 through 20, severity 1; main resolves to line 8 column 12.",
+ "cases":["incremental-final-overlay","edit-undo","target-isolation","root-isolation","repeat-event","delete-recreate","seed-17","seed-29","seed-43"],
+ "cacheClaim":"Repeated-query equivalence only: no public cache-hit counter exists in this session contract.",
+ "cancellationOwnership":"Existing wf-responsive-editing saturation and wf-bounded-cancel real constrained consumers remain mandatory. Cancellation-to-cold equivalence is not implied by those independent cases."
+}

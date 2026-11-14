@@ -11,11 +11,19 @@ for name,expr,positive in cases:
  if selected and name not in selected:continue
  folder=out/name;folder.mkdir(exist_ok=True);work=folder/'input';work.mkdir(exist_ok=True);(work/'.argo-workflows-ls.yaml').write_text('schemaVersion: 1\ntargetVersion: "3.6.0"\nreferencePolicy: closed\n')
  text='apiVersion: argoproj.io/v1alpha1\nkind: Workflow\nmetadata: {name: bounded}\nspec:\n  entrypoint: main\n  templates:\n    - name: main\n      inputs:\n        parameters: [{name: alpha, default: supplied}]\n      container:\n        image: alpine\n        args: ['+json.dumps('{{='+expr+'}}')+']\n';(work/'case.yaml').write_text(text)
- command=[str(binary),'check','--root',str(work),'--format','json'];start=time.monotonic();peak=0;killed=False
+ command=[str(binary),'check','--root',str(work),'--format','json'];memory_before=int((cg/'memory.current').read_text());start=time.monotonic();peak=0;killed=False;peak_stat={};peak_rss=0
  with (folder/'stdout.raw').open('wb') as so,(folder/'stderr.raw').open('wb') as se:
   p=subprocess.Popen(command,stdout=so,stderr=se,start_new_session=True)
   while p.poll() is None:
-   peak=max(peak,int((cg/'memory.current').read_text()))
+   current=int((cg/'memory.current').read_text())
+   if current>peak:
+    peak=current
+    peak_stat={key:int(value) for key,value in (line.split() for line in (cg/'memory.stat').read_text().splitlines())}
+    try:
+     status=pathlib.Path('/proc')/str(p.pid)/'status'
+     values={line.split(':',1)[0]:line.split(':',1)[1].strip() for line in status.read_text().splitlines() if ':' in line}
+     peak_rss=max(peak_rss,int(values.get('VmRSS','0 kB').split()[0])*1024)
+    except (OSError,ValueError):pass
    if peak>384*1024**2 or time.monotonic()-start>7:killed=True;os.killpg(p.pid,signal.SIGKILL);break
    time.sleep(.005)
   p.wait()
@@ -35,5 +43,5 @@ for name,expr,positive in cases:
          'positiveCompleted':not positive or (report.get('filesAnalyzed')==1 and report.get('resourcesAnalyzed')==1 and diagnostics==[] and reasons==[]),
          'negativeExplained':positive or reason_matches,
          'negativeDiagnostic':positive or (len(reasons)==1 and len(diagnostics)==1 and diagnostics[0].get('code')=='WF_REFERENCE_INCOMPLETE' and diagnostics[0].get('severity')=='Warning' and diagnostics[0].get('uri')==(work/'case.yaml').as_uri() and diagnostics[0].get('message')=='Reference analysis incomplete: '+reasons[0])}
- rows.append({'case':name,'positive':positive,'command':command,'exitCode':p.returncode,'seconds':elapsed,'peakCgroupBytes':peak,'harnessKilled':killed,'assertions':checks,'pass':all(checks.values())});(out/'results.json').write_text(json.dumps(rows,indent=2)+'\n')
+ rows.append({'case':name,'positive':positive,'command':command,'exitCode':p.returncode,'seconds':elapsed,'peakCgroupBytes':peak,'memoryBeforeBytes':memory_before,'peakMemoryStat':peak_stat,'peakObservedProcessRSSBytes':peak_rss,'harnessKilled':killed,'assertions':checks,'pass':all(checks.values())});(out/'results.json').write_text(json.dumps(rows,indent=2)+'\n')
 sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest();(out/'manifest.json').write_text(json.dumps({'binarySha256':sha(binary),'testSha256':sha(pathlib.Path(__file__)),'cgroup':cgpath,'memory.max':limit},indent=2)+'\n');sys.exit(0 if len(rows)==(len(selected) if selected else len(cases)) and all(r['pass'] for r in rows) else 1)

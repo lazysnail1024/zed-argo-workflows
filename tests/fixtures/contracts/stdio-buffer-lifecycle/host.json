@@ -1,0 +1,10 @@
+{
+ "schemaVersion":1,
+ "evidenceKind":"source-dev-host",
+ "caseId":"stdio-buffer-lifecycle",
+ "fixture":"tests/fixtures/schema/mixed.yaml",
+ "targetVersion":"3.6.0",
+ "requiredEvidence":["operator","platform","displaySession","zedVersion","sourceCommit","adapterSHA256","nativeSHA256","launchCommand","actualServerPath","diagnosticScreenshot","definitionScreenshot","finalTextSHA256","restartCacheEvidence","rawLog"],
+ "manualSteps":["Install the exact candidate as a development extension in an isolated Zed profile.","Open the mixed fixture and verify only the Workflow parallelism scalar is diagnosed at line 7 columns 16 through 21.","Navigate from entrypoint main to the template declaration at line 9 column 13.","Replace wrong with integer 2; observe the diagnostic clear, then undo and observe its return.","Restart Zed and verify the same native binary digest and visible diagnostic.","Record not-run for every unexecuted step; stdio traffic alone cannot satisfy a screenshot or activation assertion."],
+ "result":"not-run"
+}

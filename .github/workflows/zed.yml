@@ -1,33 +1,85 @@
 name: Zed adapter acceptance
-
-on:
-  pull_request:
-    paths: ['editors/zed/**', '.github/workflows/zed*.yml']
-  push:
-    branches: [main]
-    paths: ['editors/zed/**', '.github/workflows/zed*.yml']
-  workflow_dispatch:
-  workflow_call:
-    inputs:
-      release_version:
-        description: Optional exact adapter version for a tagged release
-        type: string
-        default: ''
-    outputs:
-      version:
-        description: Independently versioned Zed adapter
-        value: ${{ jobs.package.outputs.version }}
-
 permissions:
   contents: read
-
 jobs:
+  selection:
+    name: Classify complete source changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.plan.outputs.selection }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+        fetch-depth: 0
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: 3.14.0
+    - id: plan
+      run: |-
+        python tests/ci/control.py plan --workflow zed --output artifacts/zed-plan.json
+        python -c "import json,os;open(os.environ['GITHUB_OUTPUT'],'a').write('selection='+json.load(open('artifacts/zed-plan.json'))['selection']+'\n')"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: zed-plan-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/zed-plan.json
+        if-no-files-found: error
+  docs:
+    name: Validate selection and documentation
+    needs:
+    - selection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+        fetch-depth: 0
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: 3.14.0
+    - name: Verify real Git selection and refusal behavior
+      run: python tests/ci/selection_e2e.py --output artifacts/selection-e2e
+    - name: Validate selected documentation with raw evidence
+      if: needs.selection.outputs.mode == 'docs'
+      run: |-
+        python tests/ci/control.py plan --workflow zed --output artifacts/zed-plan.json
+        python tests/ci/control.py start --output artifacts/docs-start.json
+        python tests/ci/control.py docs --plan artifacts/zed-plan.json --output artifacts/docs-check
+        python tests/ci/control.py receipt --plan artifacts/zed-plan.json --lane docs --started artifacts/docs-start.json --evidence artifacts/docs-check --output artifacts/docs-receipt/docs.json
+    - if: needs.selection.outputs.mode == 'docs'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: zed-receipt-docs-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/docs-receipt/
+        if-no-files-found: error
+    - if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: zed-selection-controls-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/selection-e2e/
+        if-no-files-found: error
+    - if: always() && needs.selection.outputs.mode == 'docs'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: zed-docs-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+        path: |-
+          artifacts/docs-check/
+          artifacts/zed-plan.json
+          artifacts/docs-start.json
+        if-no-files-found: error
   rust:
     name: Installer acceptance (${{ matrix.runner }})
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-24.04, macos-15, windows-2025]
+        runner:
+        - ubuntu-24.04
+        - macos-15
+        - windows-2025
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     defaults:
@@ -35,34 +87,54 @@ jobs:
         shell: bash
         working-directory: editors/zed
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Install the pinned Rust toolchain
-        run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --target wasm32-wasip2
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        if: matrix.runner != 'macos-15'
-        with:
-          python-version: '3.14.0'
-      - name: Check formatting and actual installer tests
-        run: |
-          mkdir -p ../../artifacts/zed-rust
-          cargo fmt --all -- --check
-          cargo test --locked 2>&1 | tee ../../artifacts/zed-rust/tests.log
-      - name: Execute WASI installer, real native probes and Windows sharing controls
-        if: matrix.runner != 'macos-15'
-        run: python tests/cache_runtime_e2e.py --output ../../artifacts/zed-wasi
-      - name: Retain Rust evidence
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.1
-        with:
-          name: zed-argo-workflows-zed-rust-${{ matrix.runner }}
-          path: |
-            artifacts/zed-rust/
-            artifacts/zed-wasi/
-          if-no-files-found: ignore
-          retention-days: 30
-
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+    - name: Bind fresh job execution
+      shell: bash
+      working-directory: .
+      run: |-
+        python tests/ci/control.py start --output artifacts/lane-start.json
+        python tests/ci/control.py plan --workflow zed --output artifacts/zed-plan.json
+    - name: Install the pinned Rust toolchain
+      run: rustup toolchain install 1.99.1 --profile minimal --component rustfmt --target wasm32-wasip2
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      if: matrix.runner != 'macos-15'
+      with:
+        python-version: 3.14.0
+    - name: Check formatting and actual installer tests
+      run: |
+        mkdir -p ../../artifacts/zed-rust
+        cargo fmt --all -- --check
+        cargo test --locked 2>&1 | tee ../../artifacts/zed-rust/tests.log
+    - name: Execute WASI installer, real native probes and Windows sharing controls
+      if: matrix.runner != 'macos-15'
+      run: python tests/cache_runtime_e2e.py --output ../../artifacts/zed-wasi
+    - name: Retain Rust evidence
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: zed-argo-workflows-zed-rust-${{ matrix.runner }}
+        path: |
+          artifacts/zed-rust/
+          artifacts/zed-wasi/
+        if-no-files-found: ignore
+        retention-days: 30
+    - name: Record exact selected lane evidence
+      shell: bash
+      run: python tests/ci/control.py receipt --plan artifacts/zed-plan.json --lane "rust-${{ matrix.runner }}" --started artifacts/lane-start.json --evidence
+        artifacts/zed-rust --output artifacts/receipt/rust-${{ matrix.runner }}.json
+      working-directory: .
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: zed-receipt-rust-${{ matrix.runner }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/receipt/
+        if-no-files-found: error
+        compression-level: 0
+    needs:
+    - selection
+    if: needs.selection.outputs.mode == 'full'
   package:
     name: Standalone WASM package and ablations
     runs-on: ubuntu-24.04
@@ -74,60 +146,116 @@ jobs:
         shell: bash
         working-directory: editors/zed
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: '3.14.0'
-      - name: Validate the independent adapter version
-        id: version
-        env:
-          REQUESTED_VERSION: ${{ inputs.release_version }}
-        run: |
-          resolved=$(python package.py)
-          printf '%s\n' "$resolved" >> "$GITHUB_OUTPUT"
-          if [[ -n "$REQUESTED_VERSION" && "$resolved" != "version=$REQUESTED_VERSION" ]]; then
-            echo 'Requested adapter version differs from its manifest.' >&2
-            exit 1
-          fi
-      - name: Install the pinned Rust toolchain
-        run: rustup toolchain install 1.99.1 --profile minimal --target wasm32-wasip2
-      - name: Build the standalone WASM component
-        run: cargo build --locked --release --target wasm32-wasip2
-      - name: Exercise real package creation, extraction, notices and refusals
-        run: python tests/package_e2e.py --wasm target/wasm32-wasip2/release/zed_argo_workflows.wasm --output ../../artifacts/zed/package-e2e
-      - name: Prove independence and detect removed package guards
-        run: python tests/ablate_distribution.py --output ../../artifacts/zed/distribution-ablation
-      - name: Package the exact clean adapter source
-        env:
-          SOURCE_COMMIT: ${{ github.sha }}
-        run: python package.py --wasm target/wasm32-wasip2/release/zed_argo_workflows.wasm --output ../../artifacts/zed-release --source-commit "$SOURCE_COMMIT"
-      - name: Retain the verified installable adapter
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.1
-        with:
-          name: zed-argo-workflows-zed-adapter-${{ github.sha }}
-          path: artifacts/zed-release/
-          if-no-files-found: error
-          retention-days: 30
-      - name: Retain successful and failed package evidence
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.1
-        with:
-          name: zed-argo-workflows-zed-package-evidence
-          path: artifacts/zed/
-          if-no-files-found: ignore
-          retention-days: 30
-
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+    - name: Bind fresh job execution
+      shell: bash
+      working-directory: .
+      run: |-
+        python tests/ci/control.py start --output artifacts/lane-start.json
+        python tests/ci/control.py plan --workflow zed --output artifacts/zed-plan.json
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: 3.14.0
+    - name: Validate the independent adapter version
+      id: version
+      env:
+        REQUESTED_VERSION: ${{ inputs.release_version }}
+      run: |
+        resolved=$(python package.py)
+        printf '%s\n' "$resolved" >> "$GITHUB_OUTPUT"
+        if [[ -n "$REQUESTED_VERSION" && "$resolved" != "version=$REQUESTED_VERSION" ]]; then
+          echo 'Requested adapter version differs from its manifest.' >&2
+          exit 1
+        fi
+    - name: Install the pinned Rust toolchain
+      run: rustup toolchain install 1.99.1 --profile minimal --target wasm32-wasip2
+    - name: Build the standalone WASM component
+      run: cargo build --locked --release --target wasm32-wasip2
+    - name: Exercise real package creation, extraction, notices and refusals
+      run: python tests/package_e2e.py --wasm target/wasm32-wasip2/release/zed_argo_workflows.wasm --output ../../artifacts/zed/package-e2e
+    - name: Prove independence and detect removed package guards
+      run: python tests/ablate_distribution.py --output ../../artifacts/zed/distribution-ablation
+    - name: Package the exact clean adapter source
+      env:
+        SOURCE_COMMIT: ${{ github.sha }}
+      run: python package.py --wasm target/wasm32-wasip2/release/zed_argo_workflows.wasm --output ../../artifacts/zed-release --source-commit "$SOURCE_COMMIT"
+    - name: Retain the verified installable adapter
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: zed-argo-workflows-zed-adapter-${{ github.sha }}
+        path: artifacts/zed-release/
+        if-no-files-found: error
+        retention-days: 30
+    - name: Retain successful and failed package evidence
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: zed-argo-workflows-zed-package-evidence
+        path: artifacts/zed/
+        if-no-files-found: ignore
+        retention-days: 30
+    - name: Record exact selected lane evidence
+      shell: bash
+      run: python tests/ci/control.py receipt --plan artifacts/zed-plan.json --lane "package" --started artifacts/lane-start.json --evidence artifacts/zed-release
+        --output artifacts/receipt/package.json
+      working-directory: .
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: zed-receipt-package-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/receipt/
+        if-no-files-found: error
+        compression-level: 0
+    needs:
+    - selection
+    if: needs.selection.outputs.mode == 'full'
   acceptance:
-    name: Zed acceptance gate
+    name: ${{ github.event_name == 'pull_request' && 'Zed acceptance gate' || format('Zed acceptance gate ({0})', github.event_name) }}
     if: always()
-    needs: [rust, package]
+    needs:
+    - rust
+    - package
+    - selection
+    - docs
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Require every independent adapter check
-        env:
-          RUST_RESULT: ${{ needs.rust.result }}
-          PACKAGE_RESULT: ${{ needs.package.result }}
-        run: test "$RUST_RESULT" = success && test "$PACKAGE_RESULT" = success
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+        fetch-depth: 0
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        pattern: zed-receipt-*-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/receipts
+    - name: Require current plan, every lane and successful dependencies
+      env:
+        RESULTS: ${{ toJSON(needs) }}
+      run: |-
+        python tests/ci/control.py plan --workflow zed --output artifacts/zed-plan.json
+        python tests/ci/control.py gate --plan artifacts/zed-plan.json --receipts artifacts/receipts --output artifacts/gate.json
+    - if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: zed-gate-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/gate.json
+        if-no-files-found: error
+'on':
+  pull_request: null
+  push:
+    branches:
+    - main
+  workflow_dispatch: null
+  workflow_call:
+    inputs:
+      release_version:
+        description: Optional exact adapter version for a tagged release
+        type: string
+        default: ''
+    outputs:
+      version:
+        description: Independently versioned Zed adapter
+        value: ${{ jobs.package.outputs.version }}

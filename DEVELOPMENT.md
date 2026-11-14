@@ -75,7 +75,7 @@ it waits up to 45 minutes for the exact native pin to be published with all five
 platform executables and `SHA256SUMS`, then creates its tag and publishes the ZIP.
 The native release can precede the adapter release and use a different commit;
 no Go build is part of the adapter workflow. Existing releases and drafts are
-never replaced. See [release automation](docs/distribution.md#发布自动化)
+never replaced. See [release automation](docs/distribution.md)
 for waiting and failure behavior.
 
 The precompiled ZIP is the ordinary alpha installation path and does not need a
@@ -137,3 +137,98 @@ tools with `python3 tests/ci/install-tools.py --output artifacts/tools`, then ru
 --tools artifacts/tools --output artifacts/extended` (join the command lines).
 The adapter WASI acceptance downloads its pinned native release; publish and
 verify that native release before validating a new adapter pin.
+
+### CI identity, reuse and evidence
+
+The native workflow builds the ordinary Linux release once and imports its exact
+bytes into the Linux native, three semantic and four resource jobs. The producer
+manifest includes the source tree, Go/C environment, native headers, dependencies,
+linker flags, product version, runner image, run ID and attempt. Consumers verify
+the manifest digest supplied by the producer job before executing the absolute
+binary path. Partial reruns that inherit a producer from an earlier attempt are
+rejected; rerun the complete producer and consumer group. Synthetic schema, slow
+I/O, mutation, race, offline distribution and other platform builds remain
+independent. Only the ordinary producer uses a compiler/input-scoped build cache.
+
+`Acceptance gate`, `Zed acceptance gate`, and `Installer acceptance gate` are
+independent required-check candidates. Each compares its complete plan to the
+same workflow's job results and retained report bytes. A missing, cancelled,
+skipped or duplicate selected lane fails. Branch rules must require the exact
+hosted check names and GitHub Actions source after their PR events are verified;
+local control results do not establish branch protection.
+
+Useful local commands (use a new output directory for each execution):
+
+```sh
+python tests/ci/control.py baseline --output artifacts/baseline.json
+python tests/ci/control_e2e.py --output artifacts/control-e2e
+python tests/ci/selection_e2e.py --output artifacts/selection-e2e
+python tests/e2e/session_e2e.py --output artifacts/session-e2e
+python tests/e2e/wf-equivalence.py /absolute/server artifacts/equivalence
+python tests/ci/trends.py --inputs artifacts/ci --output artifacts/timing.json
+```
+
+The baseline exporter reads frozen Git objects, including the original resource
+consumer source and exact assertion inventory. Timing summaries keep first
+failures and original command hashes; they do not replace product thresholds.
+A performance comparison needs five warm and three cold complete runs. An
+insufficient sample set is reported explicitly. For PRs that only modify
+`README.md` or `DEVELOPMENT.md`, a complete source-bound Git diff selects the
+documentation lane. It runs real whitespace validation and selection controls,
+retains source/run/attempt-bound evidence, and explicitly excludes product jobs.
+The three required gates remain active and reject an unexpected skip or run.
+Every other path, rename, deletion, unavailable or oversized diff, and every
+non-PR event selects the full plan. The plan records the exact base/head/tested
+commits, changed-path digest, selected lanes and excluded jobs. A checkout must
+be the event head or its exact two-parent test merge; a known mismatch fails
+planning instead of falling back to full. Missing Git objects still select full.
+Documentation-lane success is not product or editor acceptance.
+
+The `stdio-buffer-lifecycle` fixture owns the migrated schema/navigation case.
+The session helper only handles framing, deadlines, bounded transcripts and
+process cleanup. Equivalence consumers retain final overlays, targets, versions,
+ranges, diagnostic severity and root identity. Repeated-query agreement does not
+claim a cache hit. The existing saturation consumer also compares the state after
+an observed cancellation with a fresh server.
+
+The historical alpha.4 file installer remains a separate regression fixture.
+`Published Zed adapter installation` verifies a successful same-repository adapter
+release, exact source tag/version, asset inventory and installed source/native pin.
+It uses read-only credentials and cannot publish. Neither file installation nor
+stdio acceptance proves activation in Zed.
+
+
+Child evidence for `wf3-lsp` and `wf-equivalence` includes required raw stdio,
+parsed traffic, clean process lifecycle, and exact input snapshots. The consumer
+verifier checks fixture and expected-file hashes against the checkout, input
+paths and bytes against the parent contract, and traffic against raw LSP frames.
+Receipt creation and the downloaded aggregate both invoke this verifier.
+
+The lifecycle oracle observes each completed diagnostic phase until the next
+relevant document/configuration/root invalidation; the final close phase extends
+through shutdown and drained EOF. Every publication for the current document
+version in that interval must agree. Older-version publications are ignored.
+No sleep or unrelated query response is used as a completion barrier. The downloaded verifier independently reconstructs the trusted document/configuration event sequence and diagnostic expectations, verifies timeline projections against raw traffic, and requires each recorded phase to start at its matching publication and end at the relevant input invalidation.
+
+Linux native CI runs `material_effectiveness_e2e.py` and
+`oracle_effectiveness_e2e.py` against the actual ordinary binary. Their proxy
+forwards the real protocol and injects only the specified current/old diagnostic,
+root-add omission, or wrong-root location. Two-root equivalence independently
+requires second-root discovery and each root's exact definition URI/range; the
+fresh branch reconstructs both roots and the same final overlay.
+
+Successful native lanes upload one complete receipt payload, including hidden
+configuration inputs. The producer transfers its evidence directory into that
+payload after validation. Failed lanes retain the original evidence directory;
+receipt upload remains attempted when a transferred payload exists. Text-bearing
+payloads use ZIP compression level 6; release archives and ordinary build imports
+remain separate consumers and are not claimed as eliminated transfers.
+
+After downloading all selected lanes, the native required gate runs
+`downloaded_material_e2e.py`: it first requires the untouched complete gate,
+regenerates a real Linux receipt, archives and extracts that lane, and requires
+the complete gate again. It exercises missing files both before receipt and after
+download, and wrong fixture/input/lifecycle evidence even with recomputed outer
+hashes. Every negative requires its designated rejection message. Original
+payloads are unchanged; reports and archive timings are retained. Local archive
+and extraction timings are not hosted transfer or whole-workflow speedups.

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "oracle": "The parent selection requires every lane once, from this exact source and run attempt. Imported ordinary bytes require the producer digest plus the checkout contract and native identity.",
+  "cases": ["complete", "missing-lane", "duplicate-lane", "wrong-sha", "wrong-attempt", "unknown-schema", "selected-skipped", "cancelled", "missing-evidence", "bad-binary", "wrong-role", "wrong-mode", "wrong-version"],
+  "selector": {"README.md":"docs", "README.md+internal/lsp/server.go":"full", "snippets":"full", "vendor":"full", "unknown":"full", "rename":"full", "delete":"full", "diff-error":"full"}
+}
