@@ -228,6 +228,20 @@ jobs:
         if-no-files-found: error
         retention-days: 30
         compression-level: 0
+    - name: Diagnostic remove required child material before the production receipt
+      if: matrix.platform == 'linux/amd64'
+      run: |-
+        python - <<'PYCODE'
+        import hashlib, json
+        from pathlib import Path
+        source = Path('artifacts/ci/native/wf3-lsp/stdout.raw')
+        original = source.read_bytes()
+        retained = Path('artifacts/ci/diagnostic-removed-stdout.raw')
+        retained.write_bytes(original)
+        source.unlink()
+        Path('artifacts/ci/diagnostic-removal.json').write_text(json.dumps({'missingPath': str(source), 'retainedOriginal': str(retained), 'sha256': hashlib.sha256(original).hexdigest(), 'scope': 'Remove before receipt creation after all real native consumers completed.'}, indent=2))
+        print('Diagnostic removed required wf3-lsp stdout.raw before receipt; original bytes retained')
+        PYCODE
     - name: Record exact selected lane evidence
       shell: bash
       run: python tests/ci/control.py receipt --plan artifacts/native-plan.json --lane "native-${{ matrix.artifact }}" --evidence artifacts/ci --move-payload --output
