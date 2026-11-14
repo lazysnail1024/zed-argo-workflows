@@ -135,10 +135,12 @@ def lanes():
         # Saturate only the heavy lane. The next local query retains its own
         # admission slot even though several heavy requests must be refused.
         ids = list(range(2100, 2120))
+        # Cancel in the same input burst: waiting for hover first can let all
+        # heavy requests finish, leaving nothing eligible for cancellation.
         c.batch([('textDocument/references', reference, ident) for ident in ids] +
-                [('textDocument/hover', params(current), 2200)])
+                [('textDocument/hover', params(current), 2200)] +
+                [('$/cancelRequest', {'id': ident}, None) for ident in ids])
         admitted = c.response(2200)
-        c.batch([('$/cancelRequest', {'id': ident}, None) for ident in ids])
         replies = [c.response(ident) for ident in ids]
         # A cancellation reply can precede the worker's exit. This heavy-lane
         # barrier completes only after that worker and its final result drain.
