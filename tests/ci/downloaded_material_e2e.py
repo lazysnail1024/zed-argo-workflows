@@ -12,29 +12,33 @@ p=argparse.ArgumentParser();p.add_argument('--plan',type=pathlib.Path,required=T
 if a.needs is None:
  a.needs=a.output/'needs.json';a.needs.write_text(os.environ['RESULTS'])
 plan=json.loads(a.plan.read_text());ident=plan['identity'];env=os.environ|{'GITHUB_REPOSITORY':ident['repository'],'GITHUB_SHA':ident['testedSHA'],'GITHUB_RUN_ID':ident['runID'],'GITHUB_RUN_ATTEMPT':ident['attempt']}
-rows=[];metrics={}
+rows=[];metrics={'archiveMethod':'ZIP_STORED','scope':'Uncompressed local transport roundtrip of the original downloaded Linux native lane. Other 16 lanes remain exact downloaded bytes. Not hosted upload/download, compression, job or critical-path timing.','phases':[]}
 def save():
  (a.output/'results.json').write_text(json.dumps(rows,indent=2));(a.output/'metrics.json').write_text(json.dumps(metrics,indent=2))
+def phase(name,status):
+ metrics['phases'].append({'name':name,'status':status,'time':time.time()});save()
 def run(name,arguments,success,reason=None,output=None):
- dest=a.output/'controls'/name;dest.mkdir(parents=True,exist_ok=True);cmd=[sys.executable,str(ROOT/'tests/ci/control.py'),*map(str,arguments),'--output',str(output or dest/'result.json')];start=time.monotonic();r=subprocess.run(cmd,cwd=ROOT,env=env,capture_output=True);(dest/'stdout.log').write_bytes(r.stdout);(dest/'stderr.log').write_bytes(r.stderr)
- stderr=r.stderr.decode(errors='replace');rows.append({'name':name,'command':cmd,'exitCode':r.returncode,'expectedSuccess':success,'seconds':time.monotonic()-start,'reason':stderr,'requiredReason':reason,'pass':(r.returncode==0)==success and (reason is None or reason in stderr)});save();return rows[-1]['pass']
+ dest=a.output/'controls'/name;dest.mkdir(parents=True,exist_ok=True);cmd=[sys.executable,str(ROOT/'tests/ci/control.py'),*map(str,arguments),'--output',str(output or dest/'result.json')];phase(name,'started');start=time.monotonic();r=subprocess.run(cmd,cwd=ROOT,env=env,capture_output=True);(dest/'stdout.log').write_bytes(r.stdout);(dest/'stderr.log').write_bytes(r.stderr)
+ stderr=r.stderr.decode(errors='replace');rows.append({'name':name,'command':cmd,'exitCode':r.returncode,'expectedSuccess':success,'seconds':time.monotonic()-start,'reason':stderr,'requiredReason':reason,'pass':(r.returncode==0)==success and (reason is None or reason in stderr)});phase(name,'completed');return rows[-1]['pass']
 def gate(name,directory,success,reason=None):return run(name,['gate','--plan',a.plan.resolve(),'--needs',a.needs.resolve(),'--receipts',directory],success,reason)
 if not gate('original-downloaded-positive',a.receipts.resolve(),True):raise SystemExit('Original complete gate failed; controls not run')
 original_receipt=next(a.receipts.rglob('native-linux-amd64.json'));original_payload=original_receipt.parent/'payload-native-linux-amd64'
 published=a.output/'published';published_receipt=published/'native-linux-amd64.json'
 if not run('original-payload-receipt',['receipt','--plan',a.plan.resolve(),'--lane','native-linux-amd64','--evidence',original_payload.resolve()],True,output=published_receipt):raise SystemExit('Original receipt regeneration failed')
-archive=a.output/'linux-lane.zip';start=time.monotonic()
-with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=6) as z:
+archive=a.output/'linux-lane.zip';phase('archive','started');start=time.monotonic()
+with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_STORED) as z:
  for f in sorted(published.rglob('*')):
   if f.is_file():z.write(f,f.relative_to(published))
-metrics['archiveSeconds']=time.monotonic()-start;metrics['archiveBytes']=archive.stat().st_size;metrics['payloadBytes']=sum(f.stat().st_size for f in published.rglob('*') if f.is_file());metrics['archiveSha256']=hashlib.sha256(archive.read_bytes()).hexdigest()
-start=time.monotonic();download=a.output/'downloaded';target_parent=download/original_receipt.parent.relative_to(a.receipts)
+metrics['archiveSeconds']=time.monotonic()-start;metrics['archiveBytes']=archive.stat().st_size;metrics['payloadBytes']=sum(f.stat().st_size for f in published.rglob('*') if f.is_file())
+with archive.open('rb') as stream:metrics['archiveSha256']=hashlib.file_digest(stream,'sha256').hexdigest()
+phase('archive','completed');phase('extract','started');start=time.monotonic();download=a.output/'downloaded';target_parent=download/original_receipt.parent.relative_to(a.receipts)
 with zipfile.ZipFile(archive) as z:z.extractall(target_parent)
-metrics['extractSeconds']=time.monotonic()-start;metrics['scope']='Local archive/extraction of the original downloaded Linux native lane. Other 16 lanes remain exact downloaded bytes. Not hosted upload/download, job or critical-path timing.'
+metrics['extractSeconds']=time.monotonic()-start;phase('extract','completed');phase('link-other-lanes','started')
 # Hardlinks preserve the large, read-only non-target lanes without a second copy.
 for f in a.receipts.rglob('*'):
  if f.is_file() and f!=original_receipt and original_payload not in f.parents:
   dest=download/f.relative_to(a.receipts);dest.parent.mkdir(parents=True,exist_ok=True);os.link(f,dest)
+phase('link-other-lanes','completed')
 receipt=target_parent/'native-linux-amd64.json';payload=target_parent/'payload-native-linux-amd64';child=payload/'native/wf3-lsp'
 if not gate('rearchived-positive',download,True):raise SystemExit('Rearchived positive failed')
 for filename in ('stdout.raw','stderr.raw','traffic.json','lifecycle.json','input-buffer.yaml','input-disk.yaml'):
