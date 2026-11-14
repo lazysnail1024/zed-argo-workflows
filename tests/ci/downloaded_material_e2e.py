@@ -31,15 +31,20 @@ with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_STORED) as z:
   if f.is_file():z.write(f,f.relative_to(published))
 metrics['archiveSeconds']=time.monotonic()-start;metrics['archiveBytes']=archive.stat().st_size;metrics['payloadBytes']=sum(f.stat().st_size for f in published.rglob('*') if f.is_file())
 with archive.open('rb') as stream:metrics['archiveSha256']=hashlib.file_digest(stream,'sha256').hexdigest()
-phase('archive','completed');phase('extract','started');start=time.monotonic();download=a.output/'downloaded';target_parent=download/original_receipt.parent.relative_to(a.receipts)
+# Put the intentional fault first without changing the production verifier.
+# Complete positive gates still validate every lane and every payload byte.
+phase('archive','completed');phase('extract','started');start=time.monotonic();download=a.output/'downloaded';target_parent=download
 with zipfile.ZipFile(archive) as z:z.extractall(target_parent)
 metrics['extractSeconds']=time.monotonic()-start;phase('extract','completed');phase('link-other-lanes','started')
 # Hardlinks preserve the large, read-only non-target lanes without a second copy.
 for f in a.receipts.rglob('*'):
  if f.is_file() and f!=original_receipt and original_payload not in f.parents:
-  dest=download/f.relative_to(a.receipts);dest.parent.mkdir(parents=True,exist_ok=True);os.link(f,dest)
+  dest=download/'other-lanes'/f.relative_to(a.receipts);dest.parent.mkdir(parents=True,exist_ok=True);os.link(f,dest)
 phase('link-other-lanes','completed')
 receipt=target_parent/'native-linux-amd64.json';payload=target_parent/'payload-native-linux-amd64';child=payload/'native/wf3-lsp'
+receipt_order=[path for path in download.rglob('*.json') if not any(part.startswith('payload-') for part in path.parts)]
+metrics['python']=sys.version;metrics['receiptOrder']=[path.relative_to(download).as_posix() for path in receipt_order];save()
+if not receipt_order or receipt_order[0]!=receipt:raise SystemExit('Roundtrip receipt traversal did not put the target Linux lane first')
 if not gate('rearchived-positive',download,True):raise SystemExit('Rearchived positive failed')
 for filename in ('stdout.raw','stderr.raw','traffic.json','lifecycle.json','input-buffer.yaml','input-disk.yaml'):
  path=child/filename;raw=path.read_bytes();path.unlink()
