@@ -1,58 +1,139 @@
-# Configuration and version support
+# Configuration
 
-The [coverage and verification notes](multi-version-support.md) describe all eight
-official CRDs, their historical introduction boundaries and the 146-version inventory.
+Configuration is optional. The defaults are automatic compatibility, an open
+reference policy, no assumed namespace, no user exclusions and one root scope.
+The server reads `.argo-workflows-ls.yaml` at each workspace root; it does not
+search every nested Git repository for another product configuration.
 
-## No file is required
+## Project file
 
-The default target is `auto`. The bundled catalog contains the stable releases of
-Argo Workflows in **3.0.0–4.1.6**. Schema data comes from pinned upstream release commits,
-is deduplicated by content, and ships inside the executable. Opening a file does
-not download schemas or need cluster credentials.
-
-A document must satisfy a complete supported schema, preserving relationships
-between fields. Combining fields that never coexisted in a supported release is
-not a valid compatibility strategy. Completion and hover expose the supported
-field space. Local static semantic checks continue to run.
-
-The compatibility window is the newest stable major and the previous major,
-starting at the previous major's first release. It is refreshed when the server's
-catalog is regenerated and published. An installed binary cannot know about
-upstream releases published after its catalog was built.
-
-## Optional strict target
-
-For a known cluster, request an exact version with the CLI:
-
-```sh
-argo-workflows-ls check --root . --target-version 4.1.6 --format json
-```
-
-Or use `.argo-workflows-ls.yaml`:
+This example separates two inventories and assigns their known controller versions:
 
 ```yaml
 schemaVersion: 1
-targetVersion: "4.1.6"
-referencePolicy: open
+targetVersion: auto
+referencePolicy: closed
+defaultNamespace: workflows
+exclude:
+  - "generated/**"
+scopes:
+  - name: production
+    include: ["production/**"]
+    targetVersion: "3.6.0"
+  - name: development
+    include: ["development/**"]
+    targetVersion: "4.1.6"
 ```
 
-Removing `targetVersion` restores `auto`. Explicit unsupported versions fail;
-they never silently select another schema. Existing scope and reference-policy
-configuration remains available. Editor `settings.targetVersion`, if configured,
-keeps its existing precedence over the file. The CLI does not read Zed settings.
+Choose `closed` only when each scope contains the resources intended to resolve
+there. Remove it or use `open` for partial checkouts. Only set `defaultNamespace`
+when it describes the resources in this workspace; it is an analysis assumption,
+not a namespace discovered from Kubernetes.
 
-`referencePolicy: open` treats unavailable external resources as unresolved local
-information. `closed` is useful only when the project scope includes the intended
-referenced resources. The server does not infer Kubernetes topology.
+| Key | Default | Current behavior |
+| --- | --- | --- |
+| `schemaVersion` | `1` | Only configuration schema `1` is accepted. |
+| `targetVersion` | `auto` | Accepts the bundled automatic mode or an exact supported release, such as `3.6.0`; no nearest-version fallback. |
+| `referencePolicy` | `open` | `open` leaves missing external resources as Information; `closed` can report Error only after the selected scope is complete and the resource identity is known. |
+| `defaultNamespace` | Empty | Used when a namespaced resource omits `metadata.namespace`; an empty value leaves the namespace unknown. ClusterWorkflowTemplate remains cluster-scoped. |
+| `exclude` | Empty list | Root-relative glob list for disk membership. Explicitly opened excluded files remain available in isolated `opened:<URI>` scopes. |
+| `scopes` | Empty list | Without entries, files use `root`. With entries, each file belongs to one matching scope or `unassigned`; multiple matches are an error. |
+| `scopes[].name` | Required | Nonempty and unique; `unassigned` is reserved. |
+| `scopes[].include` | Required | Nonempty list of root-relative globs; controls membership and cross-file reference boundaries. |
+| `scopes[].targetVersion` | Inherits root | Overrides the root target for that scope. |
+
+Globs use `/` on every platform. `**` must occupy a complete segment. Absolute
+patterns, backslashes, empty path segments and `..` are rejected. The parser is
+strict: unknown fields and duplicate keys fail configuration rather than being
+silently ignored. Configuration text is limited to 1 MiB.
+
+Disk discovery accepts `.yaml` and `.yml`, excludes the product configuration
+itself and directories named `.git`, `vendor`, `node_modules` or `.argo-ls`, and
+does not follow child symlinks. A nested workspace root owns its own files.
+These rules are separate from a file's GVK and from Helm action recognition.
+See [config.go](../internal/workspace/config.go) and
+[stream.go](../internal/workspace/stream.go) for the executable rules.
+
+## Version selection and editor settings
+
+The effective target order is:
+
+1. CLI `--target-version`, or the LSP client's `targetVersion` setting.
+2. The matching scope's explicit `targetVersion`.
+3. The workspace file's `targetVersion`.
+4. `auto`.
+
+The CLI does not read Zed settings. The LSP accepts `initializationOptions.targetVersion`
+and updates through `workspace/didChangeConfiguration` with `settings.targetVersion`.
+The Zed adapter forwards its product settings. For example:
+
+```json
+{
+  "lsp": {
+    "argo-workflows-ls": {
+      "settings": {
+        "targetVersion": "3.6.0",
+        "serverPath": "/absolute/path/to/argo-workflows-ls"
+      }
+    }
+  }
+}
+```
+
+Both settings are optional. `serverPath` is an adapter selection setting, not a
+key in `.argo-workflows-ls.yaml`; Windows uses an absolute `.exe` path. Without
+it, the adapter tries the worktree shell PATH, then its exact native release pin.
+Remove the editor target override to let project scopes choose their versions;
+set it to `auto` only when intentionally overriding every scope to automatic mode.
+Removing all explicit target settings restores the default.
+
+The bundled catalog covers **146 exact versions from 3.0.0 through 4.1.6**.
+Automatic mode requires one complete supported schema to accept a document;
+it does not combine fields that never coexist in a release. The inventory is
+embedded and offline. Its source cutoff, all eight CRDs, introduction boundaries,
+query behavior and update procedure are documented in
+[multi-version-support.md](multi-version-support.md).
+
+## CLI commands and exit codes
+
+```sh
+argo-workflows-ls version --json
+argo-workflows-ls explain-config --root .
+argo-workflows-ls check --root . --format json
+argo-workflows-ls check --root . --scope production --target-version 3.6.0 --format json
+argo-workflows-ls serve --stdio
+```
+
+`explain-config` reports root, configuration, targets and unevaluated inputs; it
+uses the CLI workspace loader, so it also performs disk collection.
+`check --file path/to/file.yaml` filters emitted diagnostics after the selected
+scope is loaded and checked; it is not a current-file-only analysis shortcut.
+`--warnings-as-errors` also fails on Warning diagnostics.
+
+| `check` exit code | Meaning |
+| --- | --- |
+| `0` | Analysis completed with no Error diagnostics, and no Warning when `--warnings-as-errors` is selected. |
+| `1` | Analysis completed and diagnostics meet the failure threshold. |
+| `2` | Invalid command/configuration, incomplete non-timeout analysis, or JSON output write failure. |
+| `3` | Analysis context was cancelled or reached its deadline. |
+
+The JSON report's `analysisComplete`, `notEvaluated`, `configurationErrors`,
+per-target completeness, counts and diagnostics must agree with the exit status.
+The product's five-second analysis deadline includes workspace acquisition and
+schema work. LSP discovery instead persists across independent request deadlines.
+`check --help` prints the accepted flags; like other flag-parser errors it returns
+`2`, so it is not a successful analysis probe.
+
+`render-check --file charts/example/templates/workflow.yaml` explicitly renders a
+saved chart with Helm 3 or 4 and checks generated YAML. `lint-official` explicitly
+runs a supplied Argo CLI; neither command runs implicitly while editing. For
+render settings and source-navigation limits, see the [README](../README.md).
 
 ## Boundaries
 
-Schema compatibility and static editing are not controller execution, server-side
-admission, dynamic expression evaluation, or a claim of official CLI equivalence.
-An ambiguous source location does not receive a guessed edit. Input, index and
-analysis-budget failures remain visible as incomplete analysis.
-
-Use `argo-workflows-ls explain-config --root .` for the effective configuration,
-`argo-workflows-ls version --json` for the bundled catalog and release identity, and
-`argo-workflows-ls check --help` for CLI options. See the catalog lock and schema generation
-tools for the exact upstream sources and hashes.
+Static validation does not execute controllers, Kubernetes admission or dynamic
+expressions. Missing or ambiguous sources do not receive guessed edits. A closed
+scope alone does not authorize Rename: current input, complete scope, unique
+binding, precise source locations and affected open-file versions must also be
+proven. Input, index and analysis-budget failures remain visible as incomplete
+analysis. See [architecture](architecture.md) and [troubleshooting](distribution.md#troubleshooting-and-editor-acceptance).

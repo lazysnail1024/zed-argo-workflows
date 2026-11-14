@@ -3,9 +3,9 @@
 本文描述当前仓库源码。原生服务的 [VERSION](../VERSION)、adapter 的
 [extension.toml](../editors/zed/extension.toml) 和它选择的
 [native-server-version](../editors/zed/native-server-version)分别管理版本。
-当前 native pin 为 `0.0.1-alpha.2`；修改 main 上的源码不会更新已发布的同名二进制。
-安装该 pin 不能据此视为已包含当前源码能力，运行身份应以 `version --json` 的
-`sourceCommit`、`toolkitVersion`、`catalogHash` 为准。
+当前版本与 pin 统一见 [分发版本表](distribution.md#independent-versions)。修改 main 上的源码
+不会更新已发布的同名二进制；运行身份应以 `version --json` 的 `sourceCommit`、
+`toolkitVersion`、`catalogHash` 为准。
 
 ## 目标与产品边界
 
@@ -17,7 +17,9 @@
 [多版本支持](multi-version-support.md)。Workflow、WorkflowTemplate、
 ClusterWorkflowTemplate、CronWorkflow 有工作流语义；其余四种提供 schema 检查。
 服务做本地静态分析，不连接集群，不执行控制器或动态表达式。普通 YAML 的通用语法诊断由
-通用 YAML 服务负责；Chart 的原始模板按路径识别并排除，只有显式 `render-check` 会调用 Helm。
+通用 YAML 服务负责。Chart `templates/` 中没有 Helm action 的普通 YAML 保留正常分析；
+实际 Helm 源文件有独立、保守的只读导航路径，不被当作已渲染资源。只有用户显式选择
+`render-check` 或 saved-chart Code Action 才会调用 Helm。
 
 ## 模块划分
 
@@ -28,6 +30,7 @@ ClusterWorkflowTemplate、CronWorkflow 有工作流语义；其余四种提供 s
 | [cmd/argo-workflows-ls/main.go](../cmd/argo-workflows-ls/main.go) | 分派 `version`、`check`、`serve --stdio`、`explain-config` 等命令；CLI 组装报告并冻结终止状态，统一报告完整性和退出码 |
 | [tools.go](../cmd/argo-workflows-ls/tools.go)、[Unix](../cmd/argo-workflows-ls/process_unix.go)/[Windows](../cmd/argo-workflows-ls/process_windows.go) 进程支持 | 显式 `render-check`、`lint-official`；子进程超时、合并输出预算及进程组/Job Object 回收 |
 | [internal/workspace](../internal/workspace) | 产品配置、scope/target 选择、候选文件和 Helm 边界、稳定有界磁盘读取、CLI 一次性收集及请求输入预算 |
+| [internal/helmsource](../internal/helmsource/source.go) | 识别真实 Helm action，按原始字节位置投影受支持的字面量和简单标量；结构性 action、动态键或不明确身份拒绝导航；Identity 投影只用于选择显式 render 动作 |
 | [internal/fileuri](../internal/fileuri/fileuri.go) | 本地绝对路径和 file URI 互转；包含 Windows 盘符及转义边界 |
 | [internal/buildinfo](../internal/buildinfo/info.go) | 原生版本、源码身份与 Go build metadata 中实际链接的 toolkit 版本 |
 | [compat](../compat/catalog.go) | 只读嵌入 catalog，解析支持版本、GVK/schema 映射、上游来源与 catalog hash |
@@ -35,7 +38,8 @@ ClusterWorkflowTemplate、CronWorkflow 有工作流语义；其余四种提供 s
 
 `internal/workspace/config.go` 管理 `.argo-workflows-ls.yaml`、默认命名空间、引用策略和
 scope 的有效 target。`stream.go` 的 `Describe` 只读取配置元数据，`Candidate` 统一过滤
-排除目录、嵌套 root、符号链接和 Helm 源文件，`ReadText` 执行单文件读取。
+排除目录、嵌套 root 和符号链接，`ReadText` 执行单文件读取；内容包含 Helm action 的模板
+进入单独的源导航路径，普通模板 YAML 继续按资源处理。
 `disk.go` 仍服务 CLI 的一次性收集：先筛选 scope，再验证该文件的 target，不为未选中的
 未分配文件验证无关默认值。`budget.go` 将所有 root/依赖闭包的文本记入同一请求预算。
 磁盘读取会检查文件类型、读取前后身份、大小和时间；这能拒绝观察到的替换/并发写入，
@@ -56,10 +60,14 @@ scope 的有效 target。`stream.go` 的 `Describe` 只读取配置元数据，`
 | [document_workspace.go](../internal/lsp/document_workspace.go) | 为被 exclude 或内部目录隔离的 `opened:<URI>` buffer 重新获取当前输入；Quick Fix 不会误选磁盘 scope |
 | [query_cache.go](../internal/lsp/query_cache.go) | 在获取当前输入后复用完整 scope 的最终查询结果；身份包含方法/参数、文本、配置及索引候选 generation |
 | [edits.go](../internal/lsp/edits.go) | Rename/Code Action 协议，版本化 WorkspaceEdit，延迟 resolve 的 token、输入 fingerprint 与安全性复查 |
+| [helm.go](../internal/lsp/helm.go) | 对受支持的 Helm 字面源提供原文件坐标的 Definition；同 chart 的静态目标才参与绑定，其他源查询保守返回空结果 |
+| [render.go](../internal/lsp/render.go)、[workspace/chart.go](../internal/workspace/chart.go) | 发现最近祖先 Chart，创建并复核 saved-chart action；仅执行命令时调用有界 render 回调，检查未保存/过时输入并按客户端能力打开生成 YAML |
 
 `initialize` 声明增量文本同步、UTF-16、补全、Hover、Definition、References、
 DocumentSymbol、WorkspaceSymbol 和 workspace folder 变化；编辑能力还受客户端的
-WorkspaceEdit 能力约束。具体协议分支以 [stdio.go](../internal/lsp/stdio.go) 和
+`workspace.workspaceEdit.documentChanges` 能力约束。实际 Helm 源不提供 schema 成功、
+Completion、References 或 Rename；简单标量投影不等于运行 Helm。显式 render 命令生成
+独立缓存目录和来源记录，诊断指向渲染结果。具体协议分支以 [stdio.go](../internal/lsp/stdio.go) 和
 [edits.go](../internal/lsp/edits.go) 为准，未声明的 LSP 功能不视为已实现。
 
 ### 工作流语义与编辑

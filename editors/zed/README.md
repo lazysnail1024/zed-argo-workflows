@@ -14,7 +14,9 @@ Go language server outside this directory. The adapter contains no native server
 The adapter uses an optional `lsp.argo-workflows-ls.settings.serverPath`, then PATH,
 then the exact release in `native-server-version`. Downloads are verified against
 `SHA256SUMS` and the server identity before activation. A verified cached server
-works offline. The adapter's own version can advance independently of this pin.
+works offline. The adapter's own version can advance independently of this pin. The current
+version table and installed-cache rules are in [distribution](../../docs/distribution.md);
+project fields and target-version precedence are in [configuration](../../docs/configuration.md).
 
 ## Develop this adapter
 

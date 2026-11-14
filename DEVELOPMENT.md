@@ -2,233 +2,133 @@
 
 ## Native language server
 
-Use the Go version in `go.mod` and a C compiler for the vendored parser. Dependencies
-are vendored; no Rust toolchain or editor checkout is needed.
+Use the Go version in [go.mod](go.mod), Python 3 and a C compiler for the vendored
+Tree-sitter parser. CI pins Python and the compiler in
+[the native workflow](.github/workflows/native.yml). Native dependencies are
+vendored; the Go service needs neither Rust nor an editor checkout.
+
+From the repository root:
 
 ```sh
 go build -mod=vendor -o build/argo-workflows-ls ./cmd/argo-workflows-ls
 go vet -mod=vendor ./...
 ./build/argo-workflows-ls version --json
-./build/argo-workflows-ls check --root /path/to/yaml --format json
+./build/argo-workflows-ls check --root tests/fixtures/schema --format json
 ```
 
-Root `VERSION` controls release-mode builds. From a clean commit, run:
+The schema fixture directory deliberately includes invalid inputs, so the last
+command can return diagnostics and a nonzero exit code. For a clean smoke check,
+use the minimal Workflow from the [README](README.md) in its own directory.
+A direct `go build` is a development build. Release builds additionally require a
+clean exact source commit and the root [VERSION](VERSION):
 
 ```sh
-python scripts/release.py version --source-commit "$(git rev-parse HEAD)"
+python3 scripts/release.py version --source-commit "$(git rev-parse HEAD)"
 ```
 
-The native workflow runs the existing CLI, stdio LSP, performance, resource,
-mutation and archive consumers on their designated hosts. Release staging and
-collection require exact clean source identity, matching native metadata, complete
-licenses and all five platforms. See `.github/workflows/native.yml` for executable
-commands and retained evidence. Merging a changed `VERSION` into `main` starts
-`release.yml`; after all gates pass it creates `v<VERSION>` at the verified commit
-and publishes the native assets. An exact version-tag push or a manual run on
-`main` or that tag can also start the same workflow.
+The source version, adapter version and adapter native pin are independent.
+Current values, installation, release triggers and publication requirements live
+in [distribution.md](docs/distribution.md). Building current source does not
+replace an already published binary with the same version.
 
-## Shared toolkit source
+## Shared toolkit and vendored patches
 
-The toolkit dependency is pinned to the source commit in `contracts/toolkit.lock.json`,
-represented by the Go pseudo-version in `go.mod`. It does not require a toolkit release tag.
-The vendored `source`, `yamlview`, `yamlvalue`, `schemaquery`, `edit`, `index`, and `workspace` packages match
-that commit; builds need no sibling checkout or local `replace` directive.
-`contracts/toolkit-design-5.md` is the byte-identical API contract, with its
-implementation and content identities in `contracts/toolkit.lock.json`.
-The vendor script also restores the existing Expr formatter and JSON Schema
-compiler patches, verifying their input and output hashes against
-`contracts/expr-patch.json` and `contracts/jsonschema-patch.json`.
+[contracts/toolkit.lock.json](contracts/toolkit.lock.json) pins the toolkit source
+commit; [go.mod](go.mod) contains its Go pseudo-version. The vendored `source`,
+`yamlview`, `yamlvalue`, `schemaquery`, `edit`, `index` and `workspace` packages
+match that pin. No sibling checkout, local `replace` or toolkit release tag is
+required. The hash-locked [API contract](contracts/toolkit-design-5.md) is a build
+and identity input; its filename does not make it an obsolete design document.
 
-When advancing the source pin, update the Go dependency, contract snapshot and
-lock identities together. Run `python3 scripts/vendor-native.py` to regenerate
-vendor, restore the native parser source trees and reapply the recorded Expr
-formatter and JSON Schema compiler patches. Keep `go.sum`, vendored sources and provenance records in the
-same change. The executable's `version --json` reports the linked toolkit
-dependency from Go build metadata.
+When advancing the pin, update the module dependency, contract snapshot and lock
+identities together, then regenerate vendor:
 
-`yamlvalue` supplies strict YAML values, bounded alias/merge expansion and source
-sharing; `schemaquery` reads the same compiled schema graph as the validator.
-The plugin owns resource identity, release selection, explicit-tag policy,
-logical-result budgets, reference semantics and edit safety. Do not add a second
-complete YAML decoder or schema walker as a fallback after a shared query fails.
-Budget, cancellation and unsupported-query errors remain explicit.
+```sh
+python3 scripts/vendor-native.py
+```
+
+The script restores native parser sources and verifies and reapplies the Expr
+formatter and JSON Schema compiler patches. Commit `go.mod`, `go.sum`, vendor,
+contract and provenance changes together. The exact patch records and verification
+requirements are in [VENDORED_PATCHES.md](docs/VENDORED_PATCHES.md). Plain
+`go mod vendor` is insufficient for this repository's native inputs.
+
+The toolkit provides strict YAML values, bounded alias/merge expansion, source
+coordinates, schema graph queries and indexing primitives. Workflows owns GVKs,
+versions, namespaces, references, rule messages, logical-result budgets and edit
+safety. A failed shared query must not fall back to another complete decoder or
+schema walker. See [module and dependency boundaries](docs/architecture.md).
 
 ## Zed adapter
 
-All adapter code, Rust configuration and assets are under `editors/zed`.
+The independent Rust crate, extension manifest, installers, snippets and package
+scripts live in [editors/zed](editors/zed). With Rust installed through rustup,
+run from that directory:
 
 ```sh
-cd editors/zed
 cargo test --locked
 cargo build --locked --release --target wasm32-wasip2
 ```
 
-Select this directory when using Zed's Install Dev Extension. The independent
-`native-server-version` file chooses a released LSP; the adapter's own version can
-change independently. Building the adapter does not build or select the current
-Go source. To test local native changes in Zed, build the native executable and
-point `settings.serverPath` to that absolute path. The adapter package command is also in this directory.
-`zed.yml` owns adapter CI. Bump the matching Cargo and extension versions and merge
-the changed `editors/zed/extension.toml` into `main` to start `zed-release.yml`.
-It also accepts matching `zed-v*` tags and manual runs. After its own gates pass,
-it waits up to 45 minutes for the exact native pin to be published with all five
-platform executables and `SHA256SUMS`, then creates its tag and publishes the ZIP.
-The native release can precede the adapter release and use a different commit;
-no Go build is part of the adapter workflow. Existing releases and drafts are
-never replaced. See [release automation](docs/distribution.md)
-for waiting and failure behavior.
+The directory's `rust-toolchain.toml` pins the toolchain and target. Select
+`editors/zed` in Zed's **Install Dev Extension** action. That builds the adapter;
+its `native-server-version` still selects a released Go server. To exercise local
+Go changes, build the native executable and configure an absolute
+`lsp.argo-workflows-ls.settings.serverPath` as shown in the
+[configuration reference](docs/configuration.md).
 
-The precompiled ZIP is the ordinary alpha installation path and does not need a
-Rust toolchain on the user's machine. See [distribution](docs/distribution.md).
-
-Installer changes also require the WASI cache runtime acceptance in `zed.yml`:
-the production installer runs as `wasm32-wasip2`, probes the pinned released
-native executable through a host bridge, and exercises retained Windows handles
-that forbid moving/deleting the executable. Native Rust tests alone do not cover
-that runtime boundary. This is not a Zed GUI test. The
-[Windows activation lessons](docs/lessons-learned.md) record the incident,
-publication invariants, acceptance layers and prevention checklist.
-
-From `editors/zed`, on Linux amd64 or Windows amd64 with the pinned Rust
-toolchain/target and Python installed, use a fresh evidence directory:
+Installer changes require the production WASI runtime boundary as well as Rust
+Host tests. From `editors/zed`, on Linux amd64 or Windows amd64, use new output
+directories:
 
 ```sh
-python tests/cache_runtime_e2e.py --output ../../artifacts/zed-cache-runtime
-python tests/ablate_distribution.py --output ../../artifacts/zed-distribution-ablation
+python3 tests/cache_runtime_e2e.py --output ../../artifacts/zed-cache-runtime
+python3 tests/ablate_distribution.py --output ../../artifacts/zed-distribution-ablation
 ```
 
-The runtime consumer verifies the pinned Wasmtime download and the native
-release asset before use. It needs network access for those downloads; a
-download or runtime setup failure does not count as a passing cache test.
+These consumers verify downloaded Wasmtime and native release assets, execute
+real native identity probes, and exercise controlled Windows file handles. They
+need network access to their pinned assets and do not start a Zed GUI. Publish
+and verify a native release before validating a new adapter pin against it.
 
-## Changes and tests
+## Choosing validation
 
-Use the existing real-process E2E consumers for changed behavior. Keep raw failure
-output and reject timeouts, missing reports and unexpected successful mutants.
-Foreign-platform synthetic archives test aggregation rules only; they do not
-replace native execution. Keep actual upstream CRD tests separate from synthetic
-schema query fixtures.
+Use the existing real-process consumers for the behavior being changed. The
+[CI reference](docs/CI.md) is the single inventory of workflows, suite commands,
+resource constraints, source-bound receipts, mutation rules and evidence limits.
+The machine-readable routing inventory is
+[tests/ci/inventory.json](tests/ci/inventory.json); update it when adding, deleting
+or renaming a test entry point.
 
-For cache protocol changes, run the installer tests, the WASI runtime consumer
-and `editors/zed/tests/ablate_distribution.py`. Require a passing baseline and
-the intended assertion failure after each isolated mutation; compilation errors,
-unrelated failures and zero matching tests must not count as regression detection.
-Record exact-commit evidence separately from any manual Zed acceptance.
+- Domain or editing changes: run the matching CLI/stdio consumer and verify exact
+  diagnostics, ranges and final edited bytes, including refusal cases.
+- YAML/schema changes: keep real upstream CRD checks separate from synthetic
+  schema queries; run the applicable shared-projection and schema consumers.
+- Index/lifecycle changes: check stale input rejection, open-buffer authority,
+  cancellation, complete scope recovery and the relevant resource suite.
+- Installer/package changes: run Rust tests, WASI/cache controls and package or
+  filesystem installation acceptance at their respective boundaries.
+- Catalog updates: follow [the catalog update procedure](docs/multi-version-support.md)
+  and retain upstream commit IDs, content hashes and the complete version matrix.
 
-Shared YAML/query changes use `wf-shared-yaml-projection.py`,
-`wf-projected-query-context.py`, `wf-semantic-origins.py`, and the separate
-`tests/ci/run.py schema` gate. `ablate-shared-yaml-projection.py` must compile each
-variant and trigger its named source-validation or tag-policy failure.
-When moving code into a dependency, migrate mutation selectors to the executing
-code path; a selector that no longer matches is a test failure.
+Every consumer uses a fresh output directory. Mutations need a passing baseline,
+a successful mutant build, the full expected case/assertion set and the named
+behavioral failure; compilation errors, crashes, missing reports and timeouts do
+not prove detection. Preserve source and binary identities with failure output.
 
-Version collection and normalization preserve upstream commit IDs and SHA-256
-source identities. The default auto window is derived from the latest two stable
-majors. A new catalog must pass version compatibility consumers before release.
-See [configuration](docs/configuration.md), [architecture](docs/architecture.md),
-[CI](docs/CI.md), and [lessons learned](docs/lessons-learned.md) for current boundaries and regression requirements.
+## Maintaining documentation
 
-Helm source navigation and identity controls run in the portable native suite via
-`wf-helm-navigation.py` and `wf-helm-identity.py`. The Linux extended suite runs
-`wf-render-discovery.py` against checksum-pinned Helm 3 and Helm 4 binaries and
-`wf-render-cancel.py` against a real LSP process and its descendants. Install the
-tools with `python3 tests/ci/install-tools.py --output artifacts/tools`, then run
-`python3 tests/ci/run.py suite --suite extended --binary build/argo-workflows-ls
---tools artifacts/tools --output artifacts/extended` (join the command lines).
-The adapter WASI acceptance downloads its pinned native release; publish and
-verify that native release before validating a new adapter pin.
+Keep [docs/README.md](docs/README.md) as the navigation entry. Document implemented
+behavior in usage, architecture, CI or distribution pages; record durable
+problem–cause–fix–regression lessons in
+[lessons-learned.md](docs/lessons-learned.md). Remove superseded plans, audit
+snapshots and progress reports after their useful facts enter those pages.
+Do not duplicate current versions or full test inventories in several documents.
 
-### CI identity, reuse and evidence
-
-The native workflow builds the ordinary Linux release once and imports its exact
-bytes into the Linux native, three semantic and four resource jobs. The producer
-manifest includes the source tree, Go/C environment, native headers, dependencies,
-linker flags, product version, runner image, run ID and attempt. Consumers verify
-the manifest digest supplied by the producer job before executing the absolute
-binary path. Partial reruns that inherit a producer from an earlier attempt are
-rejected; rerun the complete producer and consumer group. Synthetic schema, slow
-I/O, mutation, race, offline distribution and other platform builds remain
-independent. Only the ordinary producer uses a compiler/input-scoped build cache.
-
-`Acceptance gate`, `Zed acceptance gate`, and `Installer acceptance gate` are
-independent required-check candidates. Each compares its complete plan to the
-same workflow's job results and retained report bytes. A missing, cancelled,
-skipped or duplicate selected lane fails. Branch rules must require the exact
-hosted check names and GitHub Actions source after their PR events are verified;
-local control results do not establish branch protection.
-
-Useful local commands (use a new output directory for each execution):
-
-```sh
-python tests/ci/control.py baseline --output artifacts/baseline.json
-python tests/ci/control_e2e.py --output artifacts/control-e2e
-python tests/ci/selection_e2e.py --output artifacts/selection-e2e
-python tests/e2e/session_e2e.py --output artifacts/session-e2e
-python tests/e2e/wf-equivalence.py /absolute/server artifacts/equivalence
-python tests/ci/trends.py --inputs artifacts/ci --output artifacts/timing.json
-```
-
-The baseline exporter reads frozen Git objects, including the original resource
-consumer source and exact assertion inventory. Timing summaries keep first
-failures and original command hashes; they do not replace product thresholds.
-A performance comparison needs five warm and three cold complete runs. An
-insufficient sample set is reported explicitly. For PRs that only modify
-`README.md` or `DEVELOPMENT.md`, a complete source-bound Git diff selects the
-documentation lane. It runs real whitespace validation and selection controls,
-retains source/run/attempt-bound evidence, and explicitly excludes product jobs.
-The three required gates remain active and reject an unexpected skip or run.
-Every other path, rename, deletion, unavailable or oversized diff, and every
-non-PR event selects the full plan. The plan records the exact base/head/tested
-commits, changed-path digest, selected lanes and excluded jobs. A checkout must
-be the event head or its exact two-parent test merge; a known mismatch fails
-planning instead of falling back to full. Missing Git objects still select full.
-Documentation-lane success is not product or editor acceptance.
-
-The `stdio-buffer-lifecycle` fixture owns the migrated schema/navigation case.
-The session helper only handles framing, deadlines, bounded transcripts and
-process cleanup. Equivalence consumers retain final overlays, targets, versions,
-ranges, diagnostic severity and root identity. Repeated-query agreement does not
-claim a cache hit. The existing saturation consumer also compares the state after
-an observed cancellation with a fresh server.
-
-The historical alpha.4 file installer remains a separate regression fixture.
-`Published Zed adapter installation` verifies a successful same-repository adapter
-release, exact source tag/version, asset inventory and installed source/native pin.
-It uses read-only credentials and cannot publish. Neither file installation nor
-stdio acceptance proves activation in Zed.
-
-
-Child evidence for `wf3-lsp` and `wf-equivalence` includes required raw stdio,
-parsed traffic, clean process lifecycle, and exact input snapshots. The consumer
-verifier checks fixture and expected-file hashes against the checkout, input
-paths and bytes against the parent contract, and traffic against raw LSP frames.
-Receipt creation and the downloaded aggregate both invoke this verifier.
-
-The lifecycle oracle observes each completed diagnostic phase until the next
-relevant document/configuration/root invalidation; the final close phase extends
-through shutdown and drained EOF. Every publication for the current document
-version in that interval must agree. Older-version publications are ignored.
-No sleep or unrelated query response is used as a completion barrier. The downloaded verifier independently reconstructs the trusted document/configuration event sequence and diagnostic expectations, verifies timeline projections against raw traffic, and requires each recorded phase to start at its matching publication and end at the relevant input invalidation.
-
-Linux native CI runs `material_effectiveness_e2e.py` and
-`oracle_effectiveness_e2e.py` against the actual ordinary binary. Their proxy
-forwards the real protocol and injects only the specified current/old diagnostic,
-root-add omission, or wrong-root location. Two-root equivalence independently
-requires second-root discovery and each root's exact definition URI/range; the
-fresh branch reconstructs both roots and the same final overlay.
-
-Successful native lanes upload one complete receipt payload, including hidden
-configuration inputs. The producer transfers its evidence directory into that
-payload after validation. Failed lanes retain the original evidence directory;
-receipt upload remains attempted when a transferred payload exists. Text-bearing
-payloads use ZIP compression level 6; release archives and ordinary build imports
-remain separate consumers and are not claimed as eliminated transfers.
-
-After downloading all selected lanes, the native required gate runs
-`downloaded_material_e2e.py`: it first requires the untouched complete gate,
-regenerates a real Linux receipt, archives and extracts that lane, and requires
-the complete gate again. It exercises missing files both before receipt and after
-download, and wrong fixture/input/lifecycle evidence even with recomputed outer
-hashes. Every negative requires its designated rejection message. Original
-payloads are unchanged; reports and archive timings are retained. Local archive
-and extraction timings are not hosted transfer or whole-workflow speedups.
+The toolkit contract and [native release body](docs/native-release-notes.md) are
+machine-consumed inputs and retain their paths. A contract change requires its
+identity update; a release body belongs to the corresponding release version.
+Documentation-only CI selection is deliberately narrow: only modifications to
+`README.md` and/or `DEVELOPMENT.md` qualify. Changes under `docs/`, deletions,
+renames or mixed changes run the full configured plan. See [CI](docs/CI.md) for
+selection and required-gate semantics.

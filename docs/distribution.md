@@ -35,7 +35,11 @@ immediately. After a timeout, rerun the publishing job once native assets are
 ready. The adapter does not rebuild Go; its native release can come from another
 commit. Native release descriptions use [native-release-notes.md](native-release-notes.md).
 The adapter runtime acceptance also downloads the pinned native release, so
-publish native before validating an updated adapter pin.
+publish native before validating an updated adapter pin. After a successful
+same-repository adapter publication, [zed-released-install.yml](../.github/workflows/zed-released-install.yml)
+checks that run’s exact source, tag, version and assets, then installs that exact
+published package on Linux, macOS and Windows. Its aggregate rejects missing,
+skipped or failed installations; it does not launch the Zed GUI.
 
 ## Install, upgrade and roll back
 
@@ -81,8 +85,10 @@ Obtain `SHA256SUMS` from the same release. On Linux, place assets beside it and 
 archive. On macOS use `shasum -a 256 <archive>`; on Windows use
 `Get-FileHash <archive> -Algorithm SHA256`. Compare the complete digest.
 Checksums from the same HTTPS source detect corruption and version mismatches;
-they are not independent publisher signatures. Retain the archive's dependency,
-schema and runtime license texts and provenance.
+they are not independent publisher signatures. The current publication workflows
+do not generate GitHub Artifact Attestations or Sigstore signatures, and the
+installers do not claim to verify them. Retain the archive's dependency, schema
+and runtime license texts and provenance.
 
 ## Server selection and caching
 
@@ -132,8 +138,9 @@ executing its EXE. This was unrelated to YAML validation. A separately verified
 EXE selected with `serverPath` provides a workaround. See
 [lessons learned](lessons-learned.md) for the cause and runtime evidence limits.
 
-See [CI](CI.md) for automated acceptance layers. The filesystem installer workflow
-uses a published release fixture; it does not prove current-candidate GUI startup.
+See [CI](CI.md) for automated acceptance layers. The regular filesystem installer
+workflow uses a fixed published fixture; the separate post-publication workflow
+checks the exact newly published adapter. Neither proves GUI startup.
 WASI installer tests exercise real native probes and controlled Windows handles,
 but do not constitute a full Zed session.
 

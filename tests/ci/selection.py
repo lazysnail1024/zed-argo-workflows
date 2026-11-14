@@ -19,7 +19,7 @@ def source_selection(root,event_path,event_name):
  result={'selection':'full','selectionReason':'non-PR or unavailable complete source diff','baseSHA':None,'headSHA':None,'changedPathsDigest':None}
  if event_name!='pull_request' or not event_path:return result
  try:
-  pr=json.loads(pathlib.Path(event_path).read_text())['pull_request'];base=pr['base']['sha'];head=pr['head']['sha'];result.update(baseSHA=base,headSHA=head)
+  pr=json.loads(pathlib.Path(event_path).read_text(encoding='utf-8'))['pull_request'];base=pr['base']['sha'];head=pr['head']['sha'];result.update(baseSHA=base,headSHA=head)
   if not all(isinstance(v,str) and re.fullmatch('[0-9a-f]{40}',v) for v in (base,head)):return result
   for commit in (base,head):
    subprocess.run(['git','cat-file','-e',commit+'^{commit}'],cwd=root,check=True,capture_output=True,timeout=20)

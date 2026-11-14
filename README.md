@@ -3,8 +3,8 @@
 Local YAML diagnostics, completion, hover, navigation and safe edits for Argo Workflows.
 The Go language server works independently; the Zed extension is a thin adapter.
 
-**Alpha:** default support covers **3.0.0–4.1.6**, including the stable patch releases
-in that window. All eight official CRDs are covered. No project configuration or
+**Alpha:** the bundled catalog covers **3.0.0–4.1.6**, including the stable patch
+releases recorded in that offline inventory. All eight official CRDs are covered. No project configuration or
 target version is needed.
 
 ## Install in Zed
@@ -33,7 +33,9 @@ This precompiled package needs **no Rust or Go installation**. The native downlo
 supports Linux amd64/arm64, macOS amd64/arm64 and Windows amd64. This is a manual
 alpha installation; the extension is not yet in the Zed extension store.
 
-[Rollback, manual/offline installation and troubleshooting](docs/distribution.md).
+[Versions, rollback, offline installation and troubleshooting](docs/distribution.md).
+The native server, adapter and adapter native pin are versioned independently;
+check `argo-workflows-ls version --json` when comparing an installation with main.
 
 ## Try it
 
@@ -141,6 +143,9 @@ extract it, and run:
 argo-workflows-ls check --root . --format json
 argo-workflows-ls serve --stdio
 ```
+
+For scopes, namespace assumptions, target precedence, CLI report fields and exit
+codes, see the [configuration reference](docs/configuration.md).
 
 Analysis is local: it does not access a cluster, execute controllers or render Helm
 implicitly. The alpha includes automated CLI/LSP and package checks; real Zed GUI
