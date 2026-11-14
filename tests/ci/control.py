@@ -34,7 +34,7 @@ INSTALL_CASES = {
 def sha(path): return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 def git(*args): return subprocess.check_output(['git',*args],cwd=ROOT,text=True).strip()
 def save(path,value):
- path=Path(path);path.parent.mkdir(parents=True,exist_ok=True);path.write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
+ path=Path(path);path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes((json.dumps(value,indent=2,sort_keys=True)+'\n').encode('utf-8'))
 def identity():
  return {'repository':os.environ.get('GITHUB_REPOSITORY','lazysnail1024/zed-argo-workflows'), 'testedSHA':git('rev-parse','HEAD'), 'runID':os.environ.get('GITHUB_RUN_ID','local'), 'attempt':os.environ.get('GITHUB_RUN_ATTEMPT','1')}
 def require(ok,message):

@@ -54,6 +54,17 @@ for name,changes,expected,complete in [
  result=subprocess.run(cmd,capture_output=True);(a.output/('selection-'+name+'.stdout')).write_bytes(result.stdout);(a.output/('selection-'+name+'.stderr')).write_bytes(result.stderr)
  actual=json.loads(destination.read_text()) if destination.exists() else {}
  rows.append({'case':'selection-'+name,'command':cmd,'exitCode':result.returncode,'pass':result.returncode==0 and actual.get('classification')==expected and actual.get('effectiveSelection')=='full'})
+# Same real planner and execution identity under native and CRLF text writers.
+wire_paths=[];wire_exits=[];wire_commands=[]
+for writer in ('native','windows-text'):
+ destination=a.output/('wire-'+writer+'.json')
+ code="import sys,runpy;from pathlib import Path;original=Path.write_text;Path.write_text=lambda self,data,**kw: original(self,data,**(kw|{'newline':'\\r\\n'}));sys.argv=sys.argv[1:];runpy.run_path(sys.argv[0],run_name='__main__')"
+ command=[sys.executable,str(ROOT/'tests/ci/control.py'),'plan','--workflow','install','--output',str(destination)]
+ if writer=='windows-text':command=[sys.executable,'-c',code,*command[1:]]
+ result=subprocess.run(command,cwd=ROOT,env=env,capture_output=True)
+ (a.output/('wire-'+writer+'.stdout')).write_bytes(result.stdout);(a.output/('wire-'+writer+'.stderr')).write_bytes(result.stderr)
+ wire_paths.append(destination);wire_exits.append(result.returncode);wire_commands.append(command)
+rows.append({'case':'canonical-plan-wire-bytes','commands':wire_commands,'exitCodes':wire_exits,'pass':wire_exits==[0,0] and all(path.exists() for path in wire_paths) and wire_paths[0].read_bytes()==wire_paths[1].read_bytes() and b'\r' not in wire_paths[0].read_bytes()})
 (a.output/'results.json').write_text(json.dumps(rows,indent=2))
 (a.output/'manifest.json').write_text(json.dumps({'command':sys.argv,'testSha256':hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),'scenarioSha256':hashlib.sha256((ROOT/'tests/ci/scenarios/identity-gates.json').read_bytes()).hexdigest(),'identity':{k:env[k] for k in ('GITHUB_SHA','GITHUB_RUN_ID','GITHUB_RUN_ATTEMPT','GITHUB_REPOSITORY')}},indent=2))
 raise SystemExit(0 if all(r['pass'] for r in rows) else 1)

@@ -84,12 +84,8 @@ class Session:
   if os.name!='nt':
    try:os.killpg(self.proc.pid,signal.SIGKILL)
    except ProcessLookupError:pass
-  if self.proc.poll() is None:
-   if os.name=='nt':self.proc.kill()
-   else:
-    try:os.killpg(self.proc.pid,signal.SIGKILL)
-    except ProcessLookupError:pass
-   self.proc.wait(timeout=10)
+  if os.name=='nt' and self.proc.poll() is None:self.proc.kill()
+  self.proc.wait(timeout=10)
   for t in self.threads:t.join(timeout=2)
   (self.output/'stdout.raw').write_bytes(self.raw);(self.output/'stderr.raw').write_bytes(self.stderr)
   (self.output/'traffic.json').write_text(json.dumps({'sent':self.sent,'received':self.received},indent=2))
