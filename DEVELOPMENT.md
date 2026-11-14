@@ -196,3 +196,39 @@ The historical alpha.4 file installer remains a separate regression fixture.
 release, exact source tag/version, asset inventory and installed source/native pin.
 It uses read-only credentials and cannot publish. Neither file installation nor
 stdio acceptance proves activation in Zed.
+
+
+Child evidence for `wf3-lsp` and `wf-equivalence` includes required raw stdio,
+parsed traffic, clean process lifecycle, and exact input snapshots. The consumer
+verifier checks fixture and expected-file hashes against the checkout, input
+paths and bytes against the parent contract, and traffic against raw LSP frames.
+Receipt creation and the downloaded aggregate both invoke this verifier.
+
+The lifecycle oracle observes each completed diagnostic phase until the next
+relevant document/configuration/root invalidation; the final close phase extends
+through shutdown and drained EOF. Every publication for the current document
+version in that interval must agree. Older-version publications are ignored.
+No sleep or unrelated query response is used as a completion barrier. The downloaded verifier independently reconstructs the trusted document/configuration event sequence and diagnostic expectations, verifies timeline projections against raw traffic, and requires each recorded phase to start at its matching publication and end at the relevant input invalidation.
+
+Linux native CI runs `material_effectiveness_e2e.py` and
+`oracle_effectiveness_e2e.py` against the actual ordinary binary. Their proxy
+forwards the real protocol and injects only the specified current/old diagnostic,
+root-add omission, or wrong-root location. Two-root equivalence independently
+requires second-root discovery and each root's exact definition URI/range; the
+fresh branch reconstructs both roots and the same final overlay.
+
+Successful native lanes upload one complete receipt payload, including hidden
+configuration inputs. The producer transfers its evidence directory into that
+payload after validation. Failed lanes retain the original evidence directory;
+receipt upload remains attempted when a transferred payload exists. Text-bearing
+payloads use ZIP compression level 6; release archives and ordinary build imports
+remain separate consumers and are not claimed as eliminated transfers.
+
+After downloading all selected lanes, the native required gate runs
+`downloaded_material_e2e.py`: it first requires the untouched complete gate,
+regenerates a real Linux receipt, archives and extracts that lane, and requires
+the complete gate again. It exercises missing files both before receipt and after
+download, and wrong fixture/input/lifecycle evidence even with recomputed outer
+hashes. Every negative requires its designated rejection message. Original
+payloads are unchanged; reports and archive timings are retained. Local archive
+and extraction timings are not hosted transfer or whole-workflow speedups.

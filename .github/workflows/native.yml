@@ -184,6 +184,11 @@ jobs:
     - name: Race-check shared catalog lifecycle and file authority
       if: matrix.platform == 'linux/amd64'
       run: go test -mod=vendor -race -count=1 ./internal/analysis ./internal/assets ./internal/lsp ./internal/workspace
+    - name: Exercise real child evidence and transparent proxy counterexamples
+      if: matrix.platform == 'linux/amd64'
+      run: |-
+        python tests/ci/material_effectiveness_e2e.py --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/material-controls
+        python tests/ci/oracle_effectiveness_e2e.py --binary artifacts/ci/build/argo-workflows-ls --output artifacts/ci/oracle-controls
     - name: Execute CLI and stdio LSP semantic consumers
       if: ${{ !cancelled() && (steps.build.outcome == 'success' || steps.import.outcome == 'success') }}
       run: python tests/ci/run.py suite --suite native --binary artifacts/ci/build/${{ matrix.binary }} --output artifacts/ci/native
@@ -223,8 +228,12 @@ jobs:
         if-no-files-found: error
         retention-days: 30
         compression-level: 0
+    - name: Record exact selected lane evidence
+      shell: bash
+      run: python tests/ci/control.py receipt --plan artifacts/native-plan.json --lane "native-${{ matrix.artifact }}" --evidence artifacts/ci --move-payload --output
+        artifacts/receipt/native-${{ matrix.artifact }}.json
     - name: Retain native logs, failed fixtures and packages
-      if: always()
+      if: ${{ failure() && hashFiles('artifacts/ci/**') != '' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: workflows-native-${{ matrix.artifact }}-${{ github.sha }}
@@ -232,17 +241,16 @@ jobs:
         include-hidden-files: true
         if-no-files-found: error
         retention-days: 30
-        compression-level: 0
-    - name: Record exact selected lane evidence
-      shell: bash
-      run: python tests/ci/control.py receipt --plan artifacts/native-plan.json --lane "native-${{ matrix.artifact }}" --evidence artifacts/ci --output
-        artifacts/receipt/native-${{ matrix.artifact }}.json
-    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        compression-level: 6
+    - if: ${{ always() && hashFiles('artifacts/receipt/**') != '' }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: native-receipt-native-${{ matrix.artifact }}-${{ github.run_id }}-${{ github.run_attempt }}
         path: artifacts/receipt/
+        include-hidden-files: true
+        retention-days: 30
         if-no-files-found: error
-        compression-level: 0
+        compression-level: 6
     if: needs.selection.outputs.mode == 'full'
   extended:
     needs:
@@ -296,8 +304,12 @@ jobs:
     - name: Retain separate CI timing observations
       if: always()
       run: python tests/ci/trends.py --inputs artifacts/ci/extended/logs --output artifacts/ci/timings.json
+    - name: Record exact selected lane evidence
+      shell: bash
+      run: python tests/ci/control.py receipt --plan artifacts/native-plan.json --lane "extended-${{ matrix.shard }}" --evidence artifacts/ci --move-payload --output artifacts/receipt/extended-${{
+        matrix.shard }}.json
     - name: Retain semantic evidence including failed runs
-      if: always()
+      if: ${{ failure() && hashFiles('artifacts/ci/**') != '' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: workflows-semantic-${{ matrix.shard }}-${{ github.sha }}
@@ -305,17 +317,16 @@ jobs:
         include-hidden-files: true
         if-no-files-found: error
         retention-days: 30
-        compression-level: 0
-    - name: Record exact selected lane evidence
-      shell: bash
-      run: python tests/ci/control.py receipt --plan artifacts/native-plan.json --lane "extended-${{ matrix.shard }}" --evidence artifacts/ci --output artifacts/receipt/extended-${{
-        matrix.shard }}.json
-    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        compression-level: 6
+    - if: ${{ always() && hashFiles('artifacts/receipt/**') != '' }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: native-receipt-extended-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
         path: artifacts/receipt/
+        include-hidden-files: true
+        retention-days: 30
         if-no-files-found: error
-        compression-level: 0
+        compression-level: 6
     if: needs.selection.outputs.mode == 'full'
   resources:
     needs:
@@ -364,8 +375,12 @@ jobs:
     - name: Retain separate CI timing observations
       if: always()
       run: python tests/ci/trends.py --inputs artifacts/ci/resources/logs --output artifacts/ci/timings.json
+    - name: Record exact selected lane evidence
+      shell: bash
+      run: python tests/ci/control.py receipt --plan artifacts/native-plan.json --lane "resources-${{ matrix.suite }}" --evidence artifacts/ci --move-payload --output
+        artifacts/receipt/resources-${{ matrix.suite }}.json
     - name: Retain resource measurements, limits, raw traffic and failed inputs
-      if: always()
+      if: ${{ failure() && hashFiles('artifacts/ci/**') != '' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: workflows-resources-${{ matrix.suite }}-${{ github.sha }}
@@ -373,17 +388,16 @@ jobs:
         include-hidden-files: true
         if-no-files-found: error
         retention-days: 30
-        compression-level: 0
-    - name: Record exact selected lane evidence
-      shell: bash
-      run: python tests/ci/control.py receipt --plan artifacts/native-plan.json --lane "resources-${{ matrix.suite }}" --evidence artifacts/ci --output
-        artifacts/receipt/resources-${{ matrix.suite }}.json
-    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        compression-level: 6
+    - if: ${{ always() && hashFiles('artifacts/receipt/**') != '' }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: native-receipt-resources-${{ matrix.suite }}-${{ github.run_id }}-${{ github.run_attempt }}
         path: artifacts/receipt/
+        include-hidden-files: true
+        retention-days: 30
         if-no-files-found: error
-        compression-level: 0
+        compression-level: 6
     if: needs.selection.outputs.mode == 'full'
   mutations:
     name: Mutation gate / ${{ matrix.group }}
@@ -434,8 +448,12 @@ jobs:
         for name in names:
             subprocess.run([sys.executable, 'tests/ci/trends.py', '--inputs', str(Path('artifacts/ci/mutations')/name), '--output', str(Path('artifacts/ci')/('timings-'+name+'.json'))], check=True)
         PY_TIMINGS
+    - name: Record exact selected lane evidence
+      shell: bash
+      run: python tests/ci/control.py receipt --plan artifacts/native-plan.json --lane "mutations-${{ matrix.group }}" --evidence artifacts/ci --move-payload --output
+        artifacts/receipt/mutations-${{ matrix.group }}.json
     - name: Retain mutation diffs, binaries, baseline and mutant evidence
-      if: always()
+      if: ${{ failure() && hashFiles('artifacts/ci/**') != '' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: workflows-mutations-${{ matrix.group }}-${{ github.sha }}
@@ -443,17 +461,16 @@ jobs:
         include-hidden-files: true
         if-no-files-found: error
         retention-days: 30
-        compression-level: 0
-    - name: Record exact selected lane evidence
-      shell: bash
-      run: python tests/ci/control.py receipt --plan artifacts/native-plan.json --lane "mutations-${{ matrix.group }}" --evidence artifacts/ci --output
-        artifacts/receipt/mutations-${{ matrix.group }}.json
-    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        compression-level: 6
+    - if: ${{ always() && hashFiles('artifacts/receipt/**') != '' }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: native-receipt-mutations-${{ matrix.group }}-${{ github.run_id }}-${{ github.run_attempt }}
         path: artifacts/receipt/
+        include-hidden-files: true
+        retention-days: 30
         if-no-files-found: error
-        compression-level: 0
+        compression-level: 6
     needs:
     - selection
     if: needs.selection.outputs.mode == 'full'
@@ -487,12 +504,20 @@ jobs:
         RESULTS: ${{ toJSON(needs) }}
       run: |-
         python tests/ci/control.py plan --workflow native --output artifacts/native-plan.json
+        if [ "${{ needs.selection.outputs.mode }}" = full ]; then
+          python tests/ci/downloaded_material_e2e.py --plan artifacts/native-plan.json --receipts artifacts/receipts --output artifacts/downloaded-material-controls
+        fi
         python tests/ci/control.py gate --plan artifacts/native-plan.json --receipts artifacts/receipts --output artifacts/gate.json
     - if: always()
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: native-gate-${{ github.run_id }}-${{ github.run_attempt }}
-        path: artifacts/gate.json
+        path: |-
+          artifacts/gate.json
+          artifacts/downloaded-material-controls/controls/
+          artifacts/downloaded-material-controls/results.json
+          artifacts/downloaded-material-controls/metrics.json
+          artifacts/downloaded-material-controls/manifest.json
         if-no-files-found: error
         compression-level: 0
   candidate:

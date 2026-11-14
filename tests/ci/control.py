@@ -89,10 +89,20 @@ def validate_evidence(workflow,lane,evidence):
    report=json.loads((evidence/'zed-adapter.json').read_text())
    require(report.get('sourceCommit')==identity()['testedSHA'] and report.get('kind')=='zed-adapter','wrong candidate package identity')
 
+def generated_payload_path(relative):
+ # Known compiler/interpreter scratch and recursive output copies are not
+ # consumer inputs. Hidden YAML fixtures are deliberately not filtered.
+ parts=relative.parts
+ return (any(part in ('.git','__pycache__','.pytest_cache') for part in parts)
+         or relative.suffix=='.pyc'
+         or parts[0] in ('cache','go-cache','module-cache','tmp','temp','scratch')
+         or ('source' in parts and any(part in ('artifacts','build','target') for part in parts[parts.index('source')+1:])))
+
 def receipt(args):
  value=json.loads(args.plan.read_text());validate_plan(value)
  require(args.lane in value['selectedLanes'],'unselected lane')
- files=[p for p in args.evidence.rglob('*') if p.is_file() and (p.suffix in ('.json','.log','.stdout','.stderr','.raw') or p.name in ('argo-workflows-ls','argo-workflows-ls.exe'))]
+ require(args.evidence.resolve() not in args.output.resolve().parents,'receipt output must be outside its evidence tree')
+ files=[p for p in args.evidence.rglob('*') if p.is_file() and not generated_payload_path(p.relative_to(args.evidence))]
  if value['workflow']!='native' or value['selection']=='docs':
   started=json.loads(args.started.read_text());require(started.get('identity')==identity(),'stale job launch identity')
   require(all(p.stat().st_mtime_ns>=started['startedNs'] for p in files),'report predates this execution')
@@ -101,8 +111,13 @@ def receipt(args):
  evidence={p.relative_to(args.evidence).as_posix():sha(p) for p in files}
  payload=args.output.parent/('payload-'+args.lane)
  require(not args.output.exists() and not payload.exists(),'refusing old lane receipt')
- for source in files:
-  dest=payload/source.relative_to(args.evidence);dest.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(source,dest)
+ if args.move_payload:
+  require(value['workflow']=='native','payload transfer is restricted to native lanes')
+  for source in files:
+   dest=payload/source.relative_to(args.evidence);dest.parent.mkdir(parents=True,exist_ok=True);shutil.move(str(source),str(dest))
+ else:
+  for source in files:
+   dest=payload/source.relative_to(args.evidence);dest.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(source,dest)
  save(args.output,{'schemaVersion':1,'lane':args.lane,'identity':identity(),'planDigest':sha(args.plan),'evidence':evidence,'executionStart':json.loads(args.started.read_text()) if args.started else None,'pass':True})
 
 def gate(args):
@@ -143,7 +158,7 @@ def main():
  s=sub.add_parser('baseline')
  s=sub.add_parser('start')
  s=sub.add_parser('docs');s.add_argument('--plan',type=Path,required=True)
- s=sub.add_parser('receipt');s.add_argument('--plan',type=Path,required=True);s.add_argument('--lane',required=True);s.add_argument('--evidence',type=Path,required=True);s.add_argument('--started',type=Path)
+ s=sub.add_parser('receipt');s.add_argument('--plan',type=Path,required=True);s.add_argument('--lane',required=True);s.add_argument('--evidence',type=Path,required=True);s.add_argument('--started',type=Path);s.add_argument('--move-payload',action='store_true')
  s=sub.add_parser('gate');s.add_argument('--plan',type=Path,required=True);s.add_argument('--receipts',type=Path,required=True);s.add_argument('--needs',type=Path)
  for s in sub.choices.values():s.add_argument('--output',type=Path,required=True)
  a=p.parse_args()

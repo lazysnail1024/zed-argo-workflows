@@ -272,6 +272,8 @@ def verify_consumer_identity(name, destination, binary):
 def consumer_results(name, destination, binary=None, *, producer_platform=None):
     if binary is not None:
         verify_consumer_identity(name, destination, binary)
+    from materials import verify as verify_materials
+    verify_materials(name, destination, ROOT, sha, require)
     if name not in AGGREGATED:
         key = "checks" if name in ("wf-mixed-parent-index", "wf-persistent-workspace") else "assertions"
         count = validate_results(destination / "results.json", assertion_key=key)

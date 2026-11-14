@@ -12,9 +12,10 @@
       ]
     },
     "wf3-lsp": {
+      "materials": {"required": ["stdout.raw", "stderr.raw", "traffic.json", "lifecycle.json", "input-buffer.yaml", "input-disk.yaml", "diagnostic-phases.json"], "sourceHashes": {"expectedSha256": "tests/e2e/wf3-lsp.expected.json", "caseSha256": "tests/fixtures/contracts/stdio-buffer-lifecycle/case.json"}, "inputs": {"input-buffer.yaml": "tests/fixtures/schema/mixed.yaml", "input-disk.yaml": "tests/fixtures/schema/valid.yaml"}},
       "assertionKey": "assertions",
       "rows": [
-        {"id": {"name": "stdio-buffer-lifecycle"}, "assertions": ["buffer", "close_disk", "config_buffer_repairs", "encoding", "exit", "field_completion", "field_hover", "incremental", "invalid_config_visible", "no_version_regression", "shutdown", "sync", "template_definition", "template_references", "template_symbols"]}
+        {"id": {"name": "stdio-buffer-lifecycle"}, "assertions": ["buffer", "close_disk", "config_buffer_repairs", "current_diagnostics_consistent", "encoding", "exit", "field_completion", "field_hover", "incremental", "invalid_config_visible", "no_version_regression", "shutdown", "sync", "template_definition", "template_references", "template_symbols"]}
       ]
     },
     "wf5-edits": {
@@ -1455,6 +1456,7 @@
       ]
     },
     "wf-equivalence": {
+      "materials": {"sourceHashes": {"fixtureSha256": "tests/fixtures/contracts/stdio-buffer-lifecycle/equivalence.json"}, "sessionCases": "tests/fixtures/contracts/stdio-buffer-lifecycle/equivalence.json"},
       "assertionKey": "assertions",
       "rows": [
         {"id": {"name": "incremental-final-overlay"}, "assertions": ["complete_final_state", "independent_oracle", "repeated_query_equivalent"]},

@@ -457,6 +457,11 @@
         "tests/ci/selection.py",
         "tests/ci/trends.py",
         "tests/ci/evidence.py",
+        "tests/ci/materials.py",
+        "tests/ci/lifecycle_evidence_faults.py",
+        "tests/ci/material_effectiveness_e2e.py",
+        "tests/ci/oracle_effectiveness_e2e.py",
+        "tests/ci/downloaded_material_e2e.py",
         "tests/ci/receipt_e2e.py",
         "tests/ci/trends_e2e.py",
         "tests/ci/portability_e2e.py",
@@ -474,6 +479,7 @@
       "contract": "Owned stdio child, framing, bounded logs, deadlines and exact version waits.",
       "files": [
         "tests/e2e/support/session.py",
+        "tests/e2e/support/audit_proxy.py",
         "tests/e2e/session_e2e.py",
         "tests/e2e/support/windows_job.py"
       ]

@@ -12,6 +12,7 @@ class Session:
  def __init__(self,command,output,timeout=15,quota=32*1024*1024):
   self.output=Path(output);self.output.mkdir(parents=True,exist_ok=True)
   self.timeout=timeout;self.quota=quota;self.sent=[];self.received=[];self.raw=bytearray();self.stderr=bytearray();self.pending=[];self.q=queue.Queue();self.threads=[]
+  self.timeline=[]
   self.job=None
   if os.name=='nt':
    from .windows_job import Job
@@ -57,13 +58,13 @@ class Session:
     if len(self.raw)>self.quota:raise ValueError('stdout quota exceeded')
     value=json.loads(payload)
     if not isinstance(value,dict) or value.get('jsonrpc')!='2.0':raise ValueError('invalid JSON-RPC message')
-    self.received.append(value);self.q.put(value)
+    self.received.append(value);self.timeline.append({'direction':'received','message':value});self.q.put(value)
   except Exception as e:self.q.put(e)
  def send(self,method,params=None,id=None):
   value={'jsonrpc':'2.0','method':method}
   if params is not None:value['params']=params
   if id is not None:value['id']=id
-  data=json.dumps(value).encode();self.sent.append(value)
+  data=json.dumps(value).encode();self.sent.append(value);self.timeline.append({'direction':'sent','message':value})
   self.proc.stdin.write(f'Content-Length: {len(data)}\r\n\r\n'.encode()+data);self.proc.stdin.flush()
  def wait(self,predicate,timeout=None):
   deadline=time.monotonic()+(self.timeout if timeout is None else timeout)
@@ -95,5 +96,5 @@ class Session:
   self.proc.wait(timeout=10)
   for t in self.threads:t.join(timeout=2)
   (self.output/'stdout.raw').write_bytes(self.raw);(self.output/'stderr.raw').write_bytes(self.stderr)
-  (self.output/'traffic.json').write_text(json.dumps({'sent':self.sent,'received':self.received},indent=2))
+  (self.output/'traffic.json').write_text(json.dumps({'sent':self.sent,'received':self.received,'timeline':self.timeline},indent=2))
   (self.output/'lifecycle.json').write_text(json.dumps({'exitCode':self.proc.returncode,'reaped':self.proc.poll() is not None,'threadsDrained':not any(t.is_alive() for t in self.threads)}))
