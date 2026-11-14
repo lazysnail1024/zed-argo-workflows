@@ -27,6 +27,8 @@
 `README.md` 和/或 `DEVELOPMENT.md` 时选择文档 lane。`docs/**`、新增、删除、重命名、
 混合路径、不可用或过大的 diff，以及非 PR 事件均选择完整计划。已知 checkout 与 event head
 不匹配直接失败；缺少用于比较的 Git 对象按完整计划处理。
+PR event JSON 统一按 UTF-8 读取，使不同操作系统使用相同的 base/head 和变更身份；
+不能让本机默认字符编码把有效的中文事件内容变成缺失源码信息的兜底计划。
 
 文档 lane 执行真实 `git diff --check` 和选择器控制，保留 source/run/attempt 身份及原始输出。
 它明确排除产品 lane，但三个汇总 gate 仍运行。`Acceptance gate`、`Zed acceptance gate` 和
@@ -172,6 +174,8 @@ Linux native lane 在真实普通 binary 上执行
 
 使用仓库固定 Go/Rust、Python 和 C 编译器，并为每次执行选择新输出目录。Windows binary
 使用 `.exe` 后缀；需要 release 身份时，从干净 commit 按 workflow 传入 release version。
+包含固定 Argo/Helm 工具的 extended 和相关 mutation 示例在 Linux amd64 执行；
+`install-tools.py` 不支持其他主机，五平台 native suite 按各自 workflow 运行。
 
 ```sh
 python3 tests/ci/run.py build --output artifacts/ci/build

@@ -12,6 +12,7 @@ git('init','-q');git('config','user.name','Selection behavior fixture');git('con
 cases=[('readme',['README.md'],'M','pull_request','docs'),('development',['DEVELOPMENT.md'],'M','pull_request','docs'),('both',['README.md','DEVELOPMENT.md'],'M','pull_request','docs'),('merge-readme',['README.md'],'M','pull_request','docs'),('bad-whitespace',['README.md'],'M','pull_request','docs')]
 for name,path in [('distribution','docs/distribution.md'),('code','code.go'),('tests','tests/test.py'),('dependency','go.mod'),('snippet','editors/zed/snippets/yaml.json'),('ci','.github/workflows/native.yml'),('unknown','unknown.txt')]:cases.append((name,[path],'M','pull_request','full'))
 cases += [('mixed',['README.md','code.go'],'M','pull_request','full'),('deleted',['README.md'],'D','pull_request','full'),('renamed',['README.md'],'R','pull_request','full'),('empty',[],'M','pull_request','full'),('main',['README.md'],'M','push','full'),('release',['README.md'],'M','release','full'),('dispatch',['README.md'],'M','workflow_dispatch','full'),('missing-base',['README.md'],'M','pull_request','full'),('stale-event-head',['README.md'],'M','pull_request','error')]
+cases += [('unicode-readme',['README.md'],'M','pull_request','docs'),('unicode-code',['code.go'],'M','pull_request','full')]
 def cli(label,args,env):
  cmd=[sys.executable,str(repo/'tests/ci/control.py'),*map(str,args)];r=subprocess.run(cmd,cwd=repo,env=env,capture_output=True);write(out/(label+'.command.json'),json.dumps({'command':cmd,'exitCode':r.returncode}));(out/(label+'.stdout')).write_bytes(r.stdout);(out/(label+'.stderr')).write_bytes(r.stderr);return r.returncode
 for name,paths,status,event,expected in cases:
@@ -27,9 +28,18 @@ for name,paths,status,event,expected in cases:
   git('checkout','--detach',base);git('-c','commit.gpgsign=false','merge','--no-ff','-m','Synthetic PR merge',head);head=git('rev-parse','HEAD')
  if name=='stale-event-head':
   write(repo/'code.go','unexpected later source\n');git('add','code.go');git('-c','commit.gpgsign=false','commit','-qm','Unexpected later source');head=git('rev-parse','HEAD')
- evt=out/(name+'-event.json');write(evt,json.dumps({'pull_request':{'base':{'sha':'0'*40 if name=='missing-base' else base},'head':{'sha':event_head}}}));env=os.environ|{'GITHUB_EVENT_PATH':str(evt),'GITHUB_EVENT_NAME':event,'GITHUB_SHA':head,'GITHUB_RUN_ID':'selection-e2e','GITHUB_RUN_ATTEMPT':'1'}
+ payload={'pull_request':{'base':{'sha':'0'*40 if name=='missing-base' else base},'head':{'sha':event_head}}}
+ if name.startswith('unicode-'):payload['pull_request']['body']='\u5237\u65b0\u63d2\u4ef6\u6587\u6863'
+ evt=out/(name+'-event.json');evt.write_bytes(json.dumps(payload,ensure_ascii=False).encode('utf-8'));env=os.environ|{'GITHUB_EVENT_PATH':str(evt),'GITHUB_EVENT_NAME':event,'GITHUB_SHA':head,'GITHUB_RUN_ID':'selection-e2e','GITHUB_RUN_ATTEMPT':'1'}
+ if name.startswith('unicode-'):env.update(LC_ALL='C',PYTHONCOERCECLOCALE='0',PYTHONUTF8='1')
  for workflow in ['native','zed','install']:
   label=name+'-'+workflow;plan=out/(label+'-plan.json');code=cli(label,['plan','--workflow',workflow,'--output',plan],env);value=json.loads(plan.read_text());rows.append({'case':label,'exitCode':code,'expectedSelection':expected,'actualSelection':value.get('selection'),'pass':code!=0 if expected=='error' else code==0 and value.get('selection')==expected})
+  if name.startswith('unicode-'):
+   # A UTF-8 event must produce the same plan under a non-UTF-8 host locale,
+   # including complete source identity/diff fields when full lanes are selected.
+   locale_plan=out/(label+'-locale-plan.json');locale_code=cli(label+'-locale',['plan','--workflow',workflow,'--output',locale_plan],env|{'PYTHONUTF8':'0'})
+   expected_digest=hashlib.sha256(plan.read_bytes()).hexdigest();actual_digest=hashlib.sha256(locale_plan.read_bytes()).hexdigest()
+   rows.append({'case':label+'-locale-independent-plan','exitCode':locale_code,'expectedPlanDigest':expected_digest,'actualPlanDigest':actual_digest,'pass':locale_code==0 and actual_digest==expected_digest})
  if name=='bad-whitespace':
   code=cli('bad-docs-check',['docs','--plan',plan,'--output',out/'bad-docs-evidence'],env);rows.append({'case':'bad-documentation-whitespace-refused','pass':code!=0})
   bad=out/'bad-docs-evidence';error_path=bad/'error.json';error=json.loads(error_path.read_text()) if error_path.is_file() else {};report=json.loads((bad/'docs.json').read_text()) if (bad/'docs.json').is_file() else {};stderr=(out/'bad-docs-check.stderr').read_text();raw=(bad/'stdout.log').read_text() if (bad/'stdout.log').is_file() else ''
