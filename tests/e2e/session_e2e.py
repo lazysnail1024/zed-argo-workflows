@@ -59,7 +59,9 @@ for name,source in peers.items():
     k.WaitForSingleObject.argtypes=[ctypes.c_void_p,ctypes.c_ulong];k.CloseHandle.argtypes=[ctypes.c_void_p]
     descendant_gone=k.WaitForSingleObject(h,3000)==0;k.CloseHandle(h)
   elif pathlib.Path('/proc').exists():
-   state=pathlib.Path(f'/proc/{pid}/stat');descendant_gone=not state.exists() or state.read_text().split()[2]=='Z'
+   state=pathlib.Path(f'/proc/{pid}/stat')
+   try:descendant_gone=state.read_text().split()[2]=='Z'
+   except (FileNotFoundError,ProcessLookupError):descendant_gone=True
  refused=name in ('cleanup-live-group-denied','cleanup-exited-group-denied','cleanup-exited-existing-group')
  expected_refusal=bool(cleanup_error and cleanup_error.startswith('PermissionError:')) and (name!='cleanup-live-group-denied' or not reaped)
  rows.append({'case':name,'platform':sys.platform,'descendantReaped':descendant_gone,'error':error,'cleanupError':cleanup_error,'cleanupSignals':signals,'expectedCleanupRefusal':refused,'pass':expected_refusal and descendant_gone if refused else not cleanup_error and descendant_gone and bool(error) and reaped and drained,'peerSha256':hashlib.sha256(peer.read_bytes()).hexdigest()})
