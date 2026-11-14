@@ -14,6 +14,75 @@ env:
   PYTHONIOENCODING: utf-8
   MACOSX_DEPLOYMENT_TARGET: '13.0'
 jobs:
+  selection:
+    name: Classify complete source changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.plan.outputs.selection }}
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+        fetch-depth: 0
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: 3.14.0
+    - id: plan
+      run: |-
+        python tests/ci/control.py plan --workflow native --output artifacts/native-plan.json
+        python -c "import json,os;open(os.environ['GITHUB_OUTPUT'],'a').write('selection='+json.load(open('artifacts/native-plan.json'))['selection']+'\n')"
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: native-plan-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/native-plan.json
+        if-no-files-found: error
+  docs:
+    name: Validate selection and documentation
+    needs:
+    - selection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+        ref: ${{ github.sha }}
+        fetch-depth: 0
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: 3.14.0
+    - name: Verify real Git selection and refusal behavior
+      run: python tests/ci/selection_e2e.py --output artifacts/selection-e2e
+    - name: Validate selected documentation with raw evidence
+      if: needs.selection.outputs.mode == 'docs'
+      run: |-
+        python tests/ci/control.py plan --workflow native --output artifacts/native-plan.json
+        python tests/ci/control.py start --output artifacts/docs-start.json
+        python tests/ci/control.py docs --plan artifacts/native-plan.json --output artifacts/docs-check
+        python tests/ci/control.py receipt --plan artifacts/native-plan.json --lane docs --started artifacts/docs-start.json --evidence artifacts/docs-check --output artifacts/docs-receipt/docs.json
+    - if: needs.selection.outputs.mode == 'docs'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: native-receipt-docs-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/docs-receipt/
+        if-no-files-found: error
+    - if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: native-selection-controls-${{ github.run_id }}-${{ github.run_attempt }}
+        path: artifacts/selection-e2e/
+        if-no-files-found: error
+    - if: always() && needs.selection.outputs.mode == 'docs'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: native-docs-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+        path: |-
+          artifacts/docs-check/
+          artifacts/native-plan.json
+          artifacts/docs-start.json
+        if-no-files-found: error
   prepare:
     name: Resolve exact candidate source and version
     runs-on: ubuntu-24.04
@@ -25,6 +94,7 @@ jobs:
       with:
         persist-credentials: false
         ref: ${{ github.sha }}
+        fetch-depth: 0
     - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
       with:
         python-version: 3.14.0
@@ -38,6 +108,7 @@ jobs:
     needs:
     - prepare
     - ordinary
+    - selection
     name: Native / ${{ matrix.platform }}
     strategy:
       fail-fast: false
@@ -77,6 +148,7 @@ jobs:
       with:
         persist-credentials: false
         ref: ${{ github.sha }}
+        fetch-depth: 0
     - name: Fix full execution plan
       run: python tests/ci/control.py plan --workflow native --output artifacts/native-plan.json
     - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
@@ -171,10 +243,12 @@ jobs:
         path: artifacts/receipt/
         if-no-files-found: error
         compression-level: 0
+    if: needs.selection.outputs.mode == 'full'
   extended:
     needs:
     - prepare
     - ordinary
+    - selection
     name: Linux semantic / shard ${{ matrix.shard }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
@@ -192,6 +266,7 @@ jobs:
       with:
         persist-credentials: false
         ref: ${{ github.sha }}
+        fetch-depth: 0
     - name: Fix full execution plan
       run: python tests/ci/control.py plan --workflow native --output artifacts/native-plan.json
     - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
@@ -241,10 +316,12 @@ jobs:
         path: artifacts/receipt/
         if-no-files-found: error
         compression-level: 0
+    if: needs.selection.outputs.mode == 'full'
   resources:
     needs:
     - prepare
     - ordinary
+    - selection
     name: Linux resources / ${{ matrix.suite }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -263,6 +340,7 @@ jobs:
       with:
         persist-credentials: false
         ref: ${{ github.sha }}
+        fetch-depth: 0
     - name: Fix full execution plan
       run: python tests/ci/control.py plan --workflow native --output artifacts/native-plan.json
     - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
@@ -306,6 +384,7 @@ jobs:
         path: artifacts/receipt/
         if-no-files-found: error
         compression-level: 0
+    if: needs.selection.outputs.mode == 'full'
   mutations:
     name: Mutation gate / ${{ matrix.group }}
     runs-on: ubuntu-24.04
@@ -326,6 +405,7 @@ jobs:
       with:
         persist-credentials: false
         ref: ${{ github.sha }}
+        fetch-depth: 0
     - name: Fix full execution plan
       run: python tests/ci/control.py plan --workflow native --output artifacts/native-plan.json
     - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
@@ -374,6 +454,9 @@ jobs:
         path: artifacts/receipt/
         if-no-files-found: error
         compression-level: 0
+    needs:
+    - selection
+    if: needs.selection.outputs.mode == 'full'
   acceptance:
     name: ${{ github.event_name == 'pull_request' && 'Acceptance gate' || format('Acceptance gate ({0})', github.event_name) }}
     if: always()
@@ -385,6 +468,8 @@ jobs:
     - resources
     - mutations
     - candidate
+    - selection
+    - docs
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -392,6 +477,7 @@ jobs:
       with:
         persist-credentials: false
         ref: ${{ github.sha }}
+        fetch-depth: 0
     - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
       with:
         pattern: native-receipt-*-${{ github.run_id }}-${{ github.run_attempt }}
@@ -417,6 +503,7 @@ jobs:
     - extended
     - resources
     - mutations
+    - selection
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -424,6 +511,7 @@ jobs:
       with:
         persist-credentials: false
         ref: ${{ github.sha }}
+        fetch-depth: 0
     - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
       with:
         python-version: 3.14.0
@@ -452,9 +540,12 @@ jobs:
         original licenses, packaged bytes and SHA-256 inventories.
         The Zed adapter has its own workflow and release lifecycle.
         EOF
+    if: needs.selection.outputs.mode == 'full'
   ordinary:
     name: Produce ordinary Linux server
-    needs: prepare
+    needs:
+    - prepare
+    - selection
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -466,6 +557,7 @@ jobs:
       with:
         persist-credentials: false
         ref: ${{ github.sha }}
+        fetch-depth: 0
     - name: Record ordinary cache input identity
       shell: bash
       run: |-
@@ -516,6 +608,7 @@ jobs:
         path: artifacts/ci/build/
         if-no-files-found: error
         compression-level: 0
+    if: needs.selection.outputs.mode == 'full'
 'on':
   pull_request: null
   push:

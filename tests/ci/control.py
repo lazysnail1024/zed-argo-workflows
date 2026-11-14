@@ -41,20 +41,31 @@ def require(ok,message):
  if not ok: raise ValueError(message)
 def plan(workflow):
  ident=identity(); require(os.environ.get('GITHUB_SHA',ident['testedSHA'])==ident['testedSHA'],'checkout differs from tested SHA')
- # Selection intentionally stays full until representative hosted acceptance is available.
- # Unknown, deleted, renamed and truncated diffs cannot narrow this contract.
- event={}
- if os.environ.get('GITHUB_EVENT_PATH'):
-  event=json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
- pr=event.get('pull_request',{})
- return {'schemaVersion':1,'planVersion':1,'workflow':workflow,'identity':ident,'baseSHA':pr.get('base',{}).get('sha'), 'headSHA':pr.get('head',{}).get('sha',ident['testedSHA']), 'testedSHA':ident['testedSHA'],'changedPathsDigest':None,'selection':'full','selectionReason':'Conservative full rollout; hosted narrowing acceptance is not yet established','selectedLanes':LANES[workflow],'excludedLanes':[],'jobs':JOBS[workflow]}
+ from selection import source_selection
+ selected=source_selection(ROOT,os.environ.get('GITHUB_EVENT_PATH'),os.environ.get('GITHUB_EVENT_NAME'))
+ docs=selected['selection']=='docs';jobs=[*JOBS[workflow],'selection','docs'];excluded=[job for job in JOBS[workflow] if job!='prepare'] if docs else []
+ return {'schemaVersion':1,'planVersion':1,'workflow':workflow,'identity':ident,**selected,'testedSHA':ident['testedSHA'],'selectedLanes':['docs'] if docs else LANES[workflow],'excludedLanes':LANES[workflow] if docs else [],'jobs':jobs,'excludedJobs':excluded}
 def validate_plan(value):
  require(value.get('schemaVersion')==1 and value.get('planVersion')==1,'unsupported plan schema')
- require(value.get('identity')==identity(),'plan source/run/attempt mismatch; rerun the complete producer and consumer group')
- workflow=value['workflow']
- require(value.get('selectedLanes')==LANES[workflow] and value.get('jobs')==JOBS[workflow] and value.get('excludedLanes')==[], 'selection differs from trusted full contract')
+ require(value==plan(value['workflow']),'plan source/run/attempt or trusted source selection mismatch')
+
+def docs(args):
+ value=json.loads(args.plan.read_text());validate_plan(value);require(value['selection']=='docs','docs evidence requires verified docs selection')
+ args.output.mkdir(parents=True,exist_ok=False)
+ command=['git','diff','--check',value['baseSHA'],value['headSHA'],'--','README.md','DEVELOPMENT.md']
+ result=subprocess.run(command,cwd=ROOT,capture_output=True,timeout=20)
+ (args.output/'stdout.log').write_bytes(result.stdout);(args.output/'stderr.log').write_bytes(result.stderr)
+ save(args.output/'docs.json',{'schemaVersion':1,'executionIdentity':identity(),'planDigest':sha(args.plan),'verifierSha256':sha(Path(__file__)),'command':command,'exitCode':result.returncode,'stdoutSha256':sha(args.output/'stdout.log'),'stderrSha256':sha(args.output/'stderr.log'),'pass':result.returncode==0,'scope':'Documentation whitespace validation; product lanes intentionally excluded'})
+ require(result.returncode==0,'documentation whitespace check failed')
 
 def validate_evidence(workflow,lane,evidence):
+ if lane=='docs':
+  report=json.loads((evidence/'docs.json').read_text());value=plan(workflow)
+  require(value['selection']=='docs' and report.get('executionIdentity')==identity(),'stale docs evidence')
+  require(report.get('verifierSha256')==sha(Path(__file__)) and report.get('pass') is True and report.get('exitCode')==0,'failed docs validation')
+  require(report.get('command')==['git','diff','--check',value['baseSHA'],value['headSHA'],'--','README.md','DEVELOPMENT.md'],'wrong docs validation command')
+  for stream in ('stdout','stderr'):require(report.get(stream+'Sha256')==sha(evidence/(stream+'.log')),'missing docs raw evidence')
+  return
  if workflow=='native':
   import evidence as original_evidence
   original_evidence.native(lane,evidence)
@@ -82,7 +93,7 @@ def receipt(args):
  value=json.loads(args.plan.read_text());validate_plan(value)
  require(args.lane in value['selectedLanes'],'unselected lane')
  files=[p for p in args.evidence.rglob('*') if p.is_file() and (p.suffix in ('.json','.log','.stdout','.stderr','.raw') or p.name in ('argo-workflows-ls','argo-workflows-ls.exe'))]
- if value['workflow']!='native':
+ if value['workflow']!='native' or value['selection']=='docs':
   started=json.loads(args.started.read_text());require(started.get('identity')==identity(),'stale job launch identity')
   require(all(p.stat().st_mtime_ns>=started['startedNs'] for p in files),'report predates this execution')
  require(files,'missing lane evidence')
@@ -98,7 +109,7 @@ def gate(args):
  value=json.loads(args.plan.read_text());validate_plan(value)
  needs=json.loads(args.needs.read_text()) if args.needs else json.loads(os.environ['RESULTS'])
  require(set(needs)==set(value['jobs']),'missing or unexpected dependency')
- require(all(v.get('result')=='success' for v in needs.values()),'selected dependency failed, cancelled or skipped')
+ require(all(v.get('result')==('skipped' if k in value['excludedJobs'] else 'success') for k,v in needs.items()),'selected dependency failed, cancelled or skipped; excluded dependency unexpectedly ran')
  paths=[p for p in args.receipts.rglob('*.json') if not any(part.startswith('payload-') for part in p.parts)]
  rows=[json.loads(p.read_text()) for p in paths]
  require(sorted(r.get('lane','') for r in rows)==sorted(value['selectedLanes']),'missing or duplicate lane receipt')
@@ -111,9 +122,10 @@ def gate(args):
    target=path.parent/('payload-'+row['lane'])/relative
    require(not Path(relative).is_absolute() and '..' not in Path(relative).parts,'unsafe evidence path')
    require(target.is_file() and sha(target)==digest,'missing or changed consumer evidence')
-  if value['workflow']!='native':
+  if value['workflow']!='native' or value['selection']=='docs':
    require(row.get('executionStart',{}).get('identity')==identity(),'stale job execution receipt')
   validate_evidence(value['workflow'],row['lane'],path.parent/('payload-'+row['lane']))
+  if row['lane']=='docs':require(json.loads((path.parent/('payload-docs')/'docs.json').read_text()).get('planDigest')==sha(args.plan),'docs plan digest mismatch')
  save(args.output,{'schemaVersion':1,'identity':identity(),'planDigest':sha(args.plan),'lanes':value['selectedLanes'],'pass':True})
 
 def baseline(args):
@@ -130,6 +142,7 @@ def main():
  s=sub.add_parser('plan');s.add_argument('--workflow',choices=LANES,required=True)
  s=sub.add_parser('baseline')
  s=sub.add_parser('start')
+ s=sub.add_parser('docs');s.add_argument('--plan',type=Path,required=True)
  s=sub.add_parser('receipt');s.add_argument('--plan',type=Path,required=True);s.add_argument('--lane',required=True);s.add_argument('--evidence',type=Path,required=True);s.add_argument('--started',type=Path)
  s=sub.add_parser('gate');s.add_argument('--plan',type=Path,required=True);s.add_argument('--receipts',type=Path,required=True);s.add_argument('--needs',type=Path)
  for s in sub.choices.values():s.add_argument('--output',type=Path,required=True)
@@ -139,6 +152,6 @@ def main():
   elif a.action=='plan':save(a.output,plan(a.workflow))
   else:globals()[a.action](a)
  except Exception as e:
-  save(a.output,{'pass':False,'error':str(e)});print(str(e),file=sys.stderr);return 1
+  save(a.output/'error.json' if a.action=='docs' else a.output,{'pass':False,'error':str(e)});print(str(e),file=sys.stderr);return 1
  return 0
 if __name__=='__main__':raise SystemExit(main())

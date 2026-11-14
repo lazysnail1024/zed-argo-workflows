@@ -452,6 +452,8 @@
         "tests/ci/control_e2e.py",
         "tests/ci/build_identity.py",
         "tests/ci/import_e2e.py",
+        "tests/ci/runtime_e2e.py",
+        "tests/ci/selection_e2e.py",
         "tests/ci/selection.py",
         "tests/ci/trends.py",
         "tests/ci/evidence.py",

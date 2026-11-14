@@ -162,6 +162,7 @@ Useful local commands (use a new output directory for each execution):
 ```sh
 python tests/ci/control.py baseline --output artifacts/baseline.json
 python tests/ci/control_e2e.py --output artifacts/control-e2e
+python tests/ci/selection_e2e.py --output artifacts/selection-e2e
 python tests/e2e/session_e2e.py --output artifacts/session-e2e
 python tests/e2e/wf-equivalence.py /absolute/server artifacts/equivalence
 python tests/ci/trends.py --inputs artifacts/ci --output artifacts/timing.json
@@ -171,10 +172,17 @@ The baseline exporter reads frozen Git objects, including the original resource
 consumer source and exact assertion inventory. Timing summaries keep first
 failures and original command hashes; they do not replace product thresholds.
 A performance comparison needs five warm and three cold complete runs. An
-insufficient sample set is reported explicitly. The change classifier is staged
-in observation mode: every active plan remains full until hosted gate and reuse
-acceptance is established. Unknown paths, snippets, tests, dependencies, rename,
-delete and unavailable diffs always select full.
+insufficient sample set is reported explicitly. For PRs that only modify
+`README.md` or `DEVELOPMENT.md`, a complete source-bound Git diff selects the
+documentation lane. It runs real whitespace validation and selection controls,
+retains source/run/attempt-bound evidence, and explicitly excludes product jobs.
+The three required gates remain active and reject an unexpected skip or run.
+Every other path, rename, deletion, unavailable or oversized diff, and every
+non-PR event selects the full plan. The plan records the exact base/head/tested
+commits, changed-path digest, selected lanes and excluded jobs. A checkout must
+be the event head or its exact two-parent test merge; a known mismatch fails
+planning instead of falling back to full. Missing Git objects still select full.
+Documentation-lane success is not product or editor acceptance.
 
 The `stdio-buffer-lifecycle` fixture owns the migrated schema/navigation case.
 The session helper only handles framing, deadlines, bounded transcripts and

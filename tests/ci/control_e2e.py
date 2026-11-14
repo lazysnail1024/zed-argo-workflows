@@ -4,7 +4,7 @@ import argparse, copy, hashlib, json, os, pathlib, subprocess, sys
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 p = argparse.ArgumentParser(); p.add_argument('--output', type=pathlib.Path, required=True); a=p.parse_args()
 a.output.mkdir(parents=True, exist_ok=False)
-env = os.environ | {'GITHUB_SHA': subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(), 'GITHUB_RUN_ID':'123', 'GITHUB_RUN_ATTEMPT':'2', 'GITHUB_REPOSITORY':'lazysnail1024/zed-argo-workflows'}
+env = os.environ | {'GITHUB_EVENT_NAME':'workflow_dispatch', 'GITHUB_SHA': subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(), 'GITHUB_RUN_ID':'123', 'GITHUB_RUN_ATTEMPT':'2', 'GITHUB_REPOSITORY':'lazysnail1024/zed-argo-workflows'}
 rows=[]
 def run(name, args, expected):
  r=subprocess.run([sys.executable, str(ROOT/'tests/ci/control.py'), *args],cwd=ROOT,env=env,capture_output=True)
@@ -58,7 +58,7 @@ for name,changes,expected,complete in [
 wire_paths=[];wire_exits=[];wire_commands=[]
 for writer in ('native','windows-text'):
  destination=a.output/('wire-'+writer+'.json')
- code="import sys,runpy;from pathlib import Path;original=Path.write_text;Path.write_text=lambda self,data,**kw: original(self,data,**(kw|{'newline':'\\r\\n'}));sys.argv=sys.argv[1:];runpy.run_path(sys.argv[0],run_name='__main__')"
+ code="import sys,runpy;from pathlib import Path;original=Path.write_text;Path.write_text=lambda self,data,**kw: original(self,data,**(kw|{'newline':'\\r\\n'}));sys.argv=sys.argv[1:];sys.path.insert(0,str(Path(sys.argv[0]).parent));runpy.run_path(sys.argv[0],run_name='__main__')"
  command=[sys.executable,str(ROOT/'tests/ci/control.py'),'plan','--workflow','install','--output',str(destination)]
  if writer=='windows-text':command=[sys.executable,'-c',code,*command[1:]]
  result=subprocess.run(command,cwd=ROOT,env=env,capture_output=True)
