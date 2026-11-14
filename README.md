@@ -148,3 +148,5 @@ acceptance is recorded separately. [Development and tests](DEVELOPMENT.md) ·
 [Documentation](docs/README.md) · [Architecture](docs/architecture.md) · [MIT license](LICENSE)
 
 <!-- Temporary documentation-only CI verification. -->
+
+Temporary documentation whitespace refusal probe.  
