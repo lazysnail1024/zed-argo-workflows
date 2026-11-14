@@ -5,6 +5,8 @@ from support.session import Session
 p=argparse.ArgumentParser();p.add_argument('--output',type=pathlib.Path,required=True);a=p.parse_args();a.output.mkdir(parents=True,exist_ok=False)
 peers={'early-exit-child':"import subprocess,sys;from pathlib import Path;p=subprocess.Popen([sys.executable,'-c','import time;time.sleep(20)']);Path(sys.argv[1]).write_text(str(p.pid))",'malformed-frame':"import sys;sys.stdout.buffer.write(b'Content-Length: nope\\r\\n\\r\\n');sys.stdout.flush()",'short-frame':"import sys;sys.stdout.buffer.write(b'Content-Length: 20\\r\\n\\r\\n{}');sys.stdout.flush()",'early-exit':'pass','no-response':'import time;time.sleep(20)','stderr-over-quota':"import sys,time;sys.stderr.buffer.write(b'x'*2097152);sys.stderr.flush();time.sleep(20)"}
 if os.name!='nt':peers['cleanup-signal-race']='import time;time.sleep(20)'
+if sys.platform.startswith('linux'):
+ peers.update({'cleanup-exited-group-race':'pass','cleanup-live-group-denied':'import time;time.sleep(20)','cleanup-exited-group-denied':'pass','cleanup-exited-existing-group':peers['early-exit-child']})
 rows=[]
 for name,source in peers.items():
  folder=a.output/name;folder.mkdir();peer=folder/'peer.py';peer.write_text(source)
@@ -23,6 +25,13 @@ for name,source in peers.items():
   def wait(*args,**kwargs):wait_started[0]=True;return real_wait(*args,**kwargs)
   s.proc.poll=lambda:real_poll() if wait_started[0] else None
   s.proc.wait=wait;os.killpg=killpg
+ if name in ('cleanup-exited-group-race','cleanup-exited-group-denied','cleanup-live-group-denied','cleanup-exited-existing-group'):
+  if name!='cleanup-live-group-denied':os.waitid(os.P_PID,s.proc.pid,os.WEXITED|os.WNOWAIT)
+  def killpg(pid,sig):
+   signals.append([pid,sig])
+   if name not in ('cleanup-exited-group-race','cleanup-exited-existing-group') or len(signals)==1:raise PermissionError(1,'Operation not permitted: injected kernel group state')
+   return real_killpg(pid,sig)
+  os.killpg=killpg
  try:s.close()
  except Exception as e:cleanup_error=type(e).__name__+': '+str(e)
  finally:
@@ -40,7 +49,7 @@ for name,source in peers.items():
   real_wait(timeout=5)
   for t in s.threads:t.join(timeout=2)
  descendant_gone=True
- if name=='early-exit-child':
+ if name in ('early-exit-child','cleanup-exited-existing-group'):
   pid=int((folder/'descendant.pid').read_text())
   if os.name=='nt':
    import ctypes
@@ -51,7 +60,9 @@ for name,source in peers.items():
     descendant_gone=k.WaitForSingleObject(h,3000)==0;k.CloseHandle(h)
   elif pathlib.Path('/proc').exists():
    state=pathlib.Path(f'/proc/{pid}/stat');descendant_gone=not state.exists() or state.read_text().split()[2]=='Z'
- rows.append({'case':name,'platform':sys.platform,'descendantReaped':descendant_gone,'error':error,'cleanupError':cleanup_error,'cleanupSignals':signals,'pass':not cleanup_error and descendant_gone and bool(error) and reaped and drained,'peerSha256':hashlib.sha256(peer.read_bytes()).hexdigest()})
+ refused=name in ('cleanup-live-group-denied','cleanup-exited-group-denied','cleanup-exited-existing-group')
+ expected_refusal=bool(cleanup_error and cleanup_error.startswith('PermissionError:')) and (name!='cleanup-live-group-denied' or not reaped)
+ rows.append({'case':name,'platform':sys.platform,'descendantReaped':descendant_gone,'error':error,'cleanupError':cleanup_error,'cleanupSignals':signals,'expectedCleanupRefusal':refused,'pass':expected_refusal and descendant_gone if refused else not cleanup_error and descendant_gone and bool(error) and reaped and drained,'peerSha256':hashlib.sha256(peer.read_bytes()).hexdigest()})
  (a.output/'results.json').write_text(json.dumps(rows,indent=2))
-(a.output/'manifest.json').write_text(json.dumps({'command':sys.argv,'testSha256':hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),'controlScope':'Actual subprocesses; only cleanup-signal-race injects the observed Darwin scheduling interleaving'},indent=2))
+(a.output/'manifest.json').write_text(json.dumps({'command':sys.argv,'testSha256':hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),'controlScope':'Actual subprocesses; cleanup controls inject only observed Darwin errno/scheduling while retaining real process lifetime and group probes'},indent=2))
 raise SystemExit(0 if all(r['pass'] for r in rows) else 1)
