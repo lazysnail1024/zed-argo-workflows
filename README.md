@@ -137,6 +137,12 @@ only when selected, uses Helm from `PATH`, opens generated YAML when the editor
 supports it, and reports the check exit code. No `.zed/tasks.json` or product configuration is needed. It never
 runs on save. Helm 3 and 4 are accepted; chart `values.yaml` is loaded by Helm.
 
+The source action requires the conservative source projection to recognize an
+Argo Workflows resource. Some valid Helm source patterns, including an unquoted
+scalar concatenating multiple actions with a literal dash, cannot be recognized
+and receive no action. The explicit CLI render command remains available for
+those charts; this source-recognition limit does not mean Helm rejects them.
+
 The same explicit operation is available in a terminal:
 
 ```sh

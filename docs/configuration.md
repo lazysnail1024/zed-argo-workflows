@@ -224,8 +224,12 @@ target override precedence still applies. A profile cannot be combined with
 and `--helm-binary` remain available. Outside profiles, CLI values paths retain
 their current-working-directory interpretation.
 
-The editor offers the default action plus **render and check saved chart (dev)**
-and other profiles for the selected owned chart. Listing or resolving actions
+When conservative source projection recognizes an Argo Workflows resource, the
+editor offers the default action plus **render and check saved chart (dev)**
+and other profiles for the selected owned chart. Helm validity alone does not
+prove this source ownership: for example, an unquoted scalar concatenating two
+actions with a dash may prevent recognition. Use the explicit CLI operation for
+such charts, or a semantically equivalent whole-scalar Helm expression. Listing or resolving actions
 never starts Helm. Execution uses the same resolved request as the CLI and
 requires saved chart, configuration and chosen values buffers, including values
 outside the chart and aliases of those files. It rechecks the selected buffer's
