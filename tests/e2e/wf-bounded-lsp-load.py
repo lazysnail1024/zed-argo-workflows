@@ -28,13 +28,18 @@ try:
  # Debounced edits arrive at 10 Hz for exactly 60 seconds; then verify the final revision.
  start=time.monotonic();sent={};uri=paths[0].as_uri();begin=len(client.received)
  for i in range(600):
-  due=start+i*.1;time.sleep(max(0,due-time.monotonic()));version=i+2;sent[version]=time.monotonic();client.send('textDocument/didChange',{'textDocument':{'uri':uri,'version':version},'contentChanges':[{'text':texts[0]+('# edit %d\n'%i)}]})
+  due=start+i*.1;time.sleep(max(0,due-time.monotonic()));version=i+2;sent[version]=time.monotonic();client.send('textDocument/didChange',{'textDocument':{'uri':uri,'version':version},'contentChanges':[{'text':(texts[0].replace('spec:\n','spec:\n  parallelism: wrong\n',1) if i%2==0 else texts[0])+('# edit %d\n'%i)}]})
  final_diagnostics=client.diagnostics(uri,601);time.sleep(max(0,start+60-time.monotonic()));frames=client.received[begin:];versions=[x['params'].get('version') for x in frames if x.get('method')=='textDocument/publishDiagnostics' and x['params']['uri']==uri]
- record('600-edits-60-seconds',{'latestDelivered':601 in versions,'latestSemantics':final_diagnostics==[],'monotonic':versions==sorted(versions),'serverAlive':client.p.poll() is None},publishedVersions=versions,seconds=time.monotonic()-start)
+ def current_diagnostics(diagnostics,invalid):
+  expected={'code':'SCHEMA_TYPE','severity':1,'range':{'start':{'line':4,'character':15},'end':{'line':4,'character':20}}}
+  return (len(diagnostics)==1 and all(diagnostics[0].get(k)==v for k,v in expected.items())) if invalid else diagnostics==[]
+ observed=[x['params'] for x in frames if x.get('method')=='textDocument/publishDiagnostics' and x['params']['uri']==uri]
+ record('600-edits-60-seconds',{'latestDelivered':601 in versions,'latestSemantics':final_diagnostics==[],'publishedSemantics':all(current_diagnostics(p['diagnostics'],p.get('version',1)%2==0) for p in observed),'monotonic':versions==sorted(versions),'serverAlive':client.p.poll() is None},publishedVersions=versions,seconds=time.monotonic()-start)
  # A small number of spaced edits measures latency independently of coalesced burst delivery.
  lat=[];spaced_clean=True
  for version in range(602,622):
-  start=time.monotonic();spaced_clean &= client.change(paths[0],texts[0]+'# spaced %d\n'%version,version)==[];lat.append(time.monotonic()-start)
+  current=texts[0].replace('spec:\n','spec:\n  parallelism: wrong\n',1) if version%2==0 else texts[0]
+  start=time.monotonic();spaced_clean &= current_diagnostics(client.change(paths[0],current+'# spaced %d\n'%version,version),version%2==0);lat.append(time.monotonic()-start)
  record('active-diagnostic-latency',{'currentSemantics':spaced_clean,'p95Within500ms':p95(lat)<=.5},seconds=lat)
  # Warm RSS and five equal lifecycle batches; unsaved URI must always clear on close.
  temp=work/'group-000/ephemeral.yaml';warm=[];after=[]

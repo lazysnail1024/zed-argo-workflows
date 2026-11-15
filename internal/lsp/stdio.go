@@ -15,6 +15,7 @@ import (
 	"github.com/lazysnail1024/zed-argo-workflows/internal/buildinfo"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 	"io"
 	"path/filepath"
@@ -37,6 +38,7 @@ type buffer struct {
 	unavailable string
 }
 type session struct {
+	tracer               *worktrace.Tracer
 	explainActionAllowed bool
 	explainPosition      *analysis.Position
 	render               RenderCommand

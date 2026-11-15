@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/k8s-crd-toolkit/yamlview"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	"strings"
 )
 
@@ -13,6 +14,9 @@ func localDiagnostics(ctx context.Context, snapshot source.Snapshot, sourceRoot 
 	if schemaOnlyKind(kind) {
 		return diagnostics
 	}
+	worktrace.Add(ctx, worktrace.DomainPasses, 1)
+	worktrace.Add(ctx, worktrace.DomainLocalPasses, 1)
+	worktrace.Add(ctx, worktrace.DomainResources, 1)
 	omittedAvailable := workflowFeature(version, dagOmitted)
 	root := workflowRoot(value, sourceRoot)
 	root.shared = shared

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	"io"
 	"os"
 	"path/filepath"
@@ -285,7 +286,7 @@ func (r RenderRequest) Current(ctx context.Context) bool {
 func (r RenderRequest) Inputs(ctx context.Context, executable string) (map[string]string, map[string]string, error) {
 	result, realPaths := map[string]string{}, map[string]string{}
 	remaining := int64(128 * 1024 * 1024)
-	add := func(name string) error {
+	add := func(name string) (resultErr error) {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -296,6 +297,12 @@ func (r RenderRequest) Inputs(ctx context.Context, executable string) (map[strin
 		if _, exists := result[absolute]; exists {
 			return nil
 		}
+		worktrace.Add(ctx, worktrace.ReadAttempts, 1)
+		defer func() {
+			if resultErr != nil {
+				worktrace.Add(ctx, worktrace.ReadFailures, 1)
+			}
+		}()
 		if len(result) >= 20000 {
 			return fmt.Errorf("render input provenance exceeds 20000 files")
 		}
@@ -324,9 +331,11 @@ func (r RenderRequest) Inputs(ctx context.Context, executable string) (map[strin
 		}
 		hash := sha256.New()
 		count, err := io.Copy(hash, io.LimitReader(file, remaining+1))
+		worktrace.Add(ctx, worktrace.ReadBytes, count)
 		if err != nil {
 			return err
 		}
+		worktrace.Add(ctx, worktrace.ReadFiles, 1)
 		remaining -= count
 		if remaining < 0 {
 			return fmt.Errorf("render input provenance exceeds 128 MiB")

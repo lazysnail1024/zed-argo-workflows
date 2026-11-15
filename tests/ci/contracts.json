@@ -1361,7 +1361,9 @@
       "rows": [
         {"id": {"case": "local-completion-io"}, "assertions": ["all_candidates_correct", "initial_diagnostics_complete", "no_protocol_errors", "no_scope_reads"]},
         {"id": {"case": "external-completion-io"}, "assertions": ["exact_scope_candidates", "no_protocol_errors", "no_unrelated_scope_reads", "one_scope_acquisition_per_query"]},
-        {"id": {"case": "configuration-io"}, "assertions": ["no_resource_reads", "valid_config_clean"]}
+        {"id": {"case": "configuration-io"}, "assertions": ["no_resource_reads", "valid_config_clean"]},
+        {"id": {"case": "work-trace-calibration"}, "assertions": ["acquisition_before_hit_visible", "cold_work_visible", "correlated_lifecycle", "independent_candidates", "independent_fresh_reads", "query_work_visible", "trace_off_equivalent"]},
+        {"id": {"case": "work-trace-cancellation"}, "assertions": ["cancel_reply_and_release", "cancelled_work_retained", "current_successor", "one_terminal_each", "successor_slot_recovered", "worker_start_observed"]}
       ]
     },
     "wf-bounded-aggregate-input": {
@@ -1374,7 +1376,8 @@
       "identities": [{}]
     },
     "wf-bounded-active-latency": {
-      "identities": [{}]
+      "assertionKey": "assertions",
+      "rows": [{"id": {}, "assertions": ["allRevisions", "currentSemantics", "onlyAffectedScope", "p95Within500ms"]}]
     },
     "wf-query-handoff-retention": {
       "assertionKey": "assertions",
@@ -1407,7 +1410,15 @@
       "identities": [{"sample": 0}, {"sample": 1}, {"sample": 2}, {"sample": 3}, {"sample": 4}]
     },
     "wf-bounded-lsp-load": {
-      "identities": [{"case": "cold-two-version-publication"}, {"case": "1000-existing-queries"}, {"case": "600-edits-60-seconds"}, {"case": "active-diagnostic-latency"}, {"case": "10000-open-edit-close"}, {"case": "shutdown"}]
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "cold-two-version-publication"}, "assertions": ["acceptedClean", "olderSupported", "withinFiveSeconds"]},
+        {"id": {"case": "1000-existing-queries"}, "assertions": ["correct", "p95Within100ms"]},
+        {"id": {"case": "600-edits-60-seconds"}, "assertions": ["latestDelivered", "latestSemantics", "monotonic", "publishedSemantics", "serverAlive"]},
+        {"id": {"case": "active-diagnostic-latency"}, "assertions": ["currentSemantics", "p95Within500ms"]},
+        {"id": {"case": "10000-open-edit-close"}, "assertions": ["fiveSamples", "growthWithin10Percent", "serverAlive"]},
+        {"id": {"case": "shutdown"}, "assertions": ["exitZero", "withinFiveSeconds"]}
+      ]
     },
     "wf-bounded-tool-scan": {
       "identities": [{"case": "helm"}, {"case": "argo"}]
@@ -1554,7 +1565,9 @@
         {"id": {"name": "delete-recreate"}, "assertions": ["complete_final_state", "independent_oracle", "repeated_query_equivalent"]},
         {"id": {"name": "seed-17"}, "assertions": ["complete_final_state", "independent_oracle", "repeated_query_equivalent"]},
         {"id": {"name": "seed-29"}, "assertions": ["complete_final_state", "independent_oracle", "repeated_query_equivalent"]},
-        {"id": {"name": "seed-43"}, "assertions": ["complete_final_state", "independent_oracle", "repeated_query_equivalent"]}
+        {"id": {"name": "seed-43"}, "assertions": ["complete_final_state", "independent_oracle", "repeated_query_equivalent"]},
+        {"id": {"name": "applied-rename-equivalence"}, "assertions": ["complete_final_state", "disk_unchanged", "exact_applied_bytes", "independent_oracle", "post_edit_bindings", "post_edit_diagnostics", "scope_unchanged", "utf16_crlf_preserved", "versioned_edit_guards"]},
+        {"id": {"name": "applied-completion-equivalence"}, "assertions": ["complete_final_state", "disk_unchanged", "exact_applied_bytes", "independent_oracle", "post_edit_bindings", "post_edit_diagnostics", "scope_unchanged", "utf16_crlf_preserved", "versioned_edit_guards"]}
       ]
     }
   }

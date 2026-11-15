@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"context"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	"strconv"
 
 	"github.com/lazysnail1024/k8s-crd-toolkit/schemaquery"
@@ -24,6 +25,7 @@ func queryMember(value any, name string) any {
 // Selecting the release catalog is Workflow policy; shared queries only
 // understand the existing compiled JSON Schema graph and finite constraints.
 func queryAutomatic(ctx context.Context, schema *jsonschema.Schema, value any, active []string) (*jsonschema.Schema, error) {
+	worktrace.SchemaQuery(ctx, worktrace.SchemaSelectShapes)
 	possible, err := schemaquery.SelectShapes(ctx, schema.AnyOf, value, active, schemaquery.Limits{})
 	if err != nil {
 		return nil, err

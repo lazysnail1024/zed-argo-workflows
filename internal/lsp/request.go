@@ -38,7 +38,7 @@ type requestInput struct {
 }
 
 func (s *session) queueRequest(m message) queuedRequest {
-	q := queuedRequest{message: m, epoch: s.epoch}
+	q := queuedRequest{message: m, epoch: s.epoch, trace: s.tracer.Begin("request", m.Method, m.ID)}
 	var params struct {
 		TextDocument struct{ URI string }   `json:"textDocument"`
 		Data         struct{ Token string } `json:"data"`

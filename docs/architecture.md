@@ -273,6 +273,42 @@ worker 只携带证明，不重复建立证明分页或提前复核；提前检�
 [实现预算](../internal/workspace/budget.go)、[LSP 内存策略测试](../internal/lsp/memory_test.go)、
 [CI 资源验收](CI.md)
 
+## 实际工作观测
+
+`ARGO_WORKFLOWS_LS_TRACE=1` 为默认关闭的 stderr 观测开关。每个请求、输入接收、后台索引
+文件、配置刷新和诊断批次分别持有计数 context；并发 parser 使用固定原子计数器，不用进程
+总量相减推测前台工作。关闭时，计数入口在 context 查询、分配和读时钟之前返回。
+记录不保存正文、配置或 URI 清单，也不增加缓存、输入状态机或外部遥测服务。
+[计数定义](../internal/worktrace/trace.go)、[请求生命周期](../internal/lsp/serve.go)
+
+| 字段 | 计数边界 |
+| --- | --- |
+| `readAttempts` / `readFailures` | 有界输入获取及其失败终态，包括 stat、预算、身份或稳定性拒绝；配置不存在也保留失败 open 的成本，默认配置仍可正常使用 |
+| `readFiles` / `readBytes` | 完成的实际字节读取次数及取得的字节数；后续稳定性拒绝不会抹掉已读取的工作，部分失败读取也计入 bytes |
+| `parseCalls` / `parseBytes` | 每次产品调用实际 YAML parser 及其输入大小；普通、preparse、Helm、恢复和合成查询另有计数，命中 view 不算一次解析 |
+| `projectionCalls` / `configDecodes` | 实际 YAML value 投影；配置 loader 的严格解码与字段存在性解码分别计数 |
+| `schemaLoads` / `schemaCompiles` | 嵌入 Schema 的实际 JSON 解码与实际编译；请求调用、命中和冷编译许可等待分开记录 |
+| `schemaQueries` | 产品调用 `Lookup`、`Type`、`Values`、`AllowsKey`、`SelectShapes` 的总次数及分类；不声称计量 Toolkit 内部遍历节点 |
+| `domainPasses` / `domainResources` | 实际进入本地规则、外部解析准备或绑定收集，以及实际检查的资源；已有外部诊断事实命中另记，不伪装成重新执行资源规则 |
+| `factsRestored` / `projectionsRestored` | 当前请求新接纳的精确文档 view 和投影；与 `resultCacheHits`、已发生的读取/解析分别记录 |
+
+输入获取计数不包括目录枚举、生成缓存完整性检查和 Helm 子进程内部 I/O。`phase:index`
+原有累计摘要保持原意。`parseBytes` 是提交给 parser 的输入大小，不表示取消前已处理全部
+字节；`schemaLoadCalls` 只计 `Document` API 请求，实际 `schemaLoads` 也包含编译路径的
+解码，两者不是简单的 attempts/hits 分区。`schemaQueries` 不包含 JSON Schema validation
+或版本分支验证；`domainResources` 为每次进入检查的资源，一个 YAML 资源可在不同 pass 中
+计数多次，不是唯一资源数量。request 的 queue 从准入到 goroutine 开始；service 到 worker 完成；
+reply 与 release 相对准入分别记录。后台文件记录从实际开始处理计时，不声称观测了 Toolkit
+WorkQueue 内部等待。显式取消先回复、后回收时，两段间隔分别保留；丢弃结果仍保留已发生的
+计数。交付状态直接来自现有 owner 判断，计数不参与证明、调度或诊断。关闭进程或致命
+transport I/O 可早于 worker 完成记录，因此这些记录不声称是完整进程总账。
+
+正确性与节省工作分开验收。trace-off 必须给出相同结果；独立 inotify 仍要求外部查询重新读
+选定关闭文件一次，其他 scope 零读取。合成/恢复补全和冷 Schema 编译作为正校准，避免遗漏
+前置工作或全零计数被当成收益。编辑等价性实际应用版本化 Rename、补全和 resolve 后 Quick Fix，
+比较独立全文预期、UTF-16/CRLF、其他 scope 和应用后的诊断/引用。延迟与 RSS 仍以现有外部
+进程测量和原阈值为准；启用 tracing 的样本必须与同样启用 tracing 的基线比较。
+
 ## 构建、adapter 和发布隔离
 
 | 边界 | 当前实现 |

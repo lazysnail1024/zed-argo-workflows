@@ -7,6 +7,7 @@ import (
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/k8s-crd-toolkit/yamlview"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	"sort"
 	"strings"
 )
@@ -167,6 +168,8 @@ func external(ctx context.Context, w workspace.Workspace, query *externalQuery) 
 // explanation reuses them across the finite semantic signatures; normal queries
 // retain the same collection and resolution path.
 func externalPrepared(ctx context.Context, w workspace.Workspace, query *externalQuery, resources []resource, complete map[string]bool, progress map[source.URI]ExternalCompletion, remaining map[source.URI]int, diagnosticURI source.URI) ([]Diagnostic, []externalBinding, map[string]bool, map[source.URI]ExternalCompletion) {
+	worktrace.Add(ctx, worktrace.DomainPasses, 1)
+	worktrace.Add(ctx, worktrace.DomainExternalPasses, 1)
 	diagnostics := []Diagnostic{}
 	bindings := []externalBinding{}
 	candidatesByIdentity := make(map[externalIdentity][]resource, len(resources))
@@ -292,6 +295,7 @@ func externalPrepared(ctx context.Context, w workspace.Workspace, query *externa
 		if ctx.Err() != nil {
 			return diagnostics, bindings, complete, progress
 		}
+		worktrace.Add(ctx, worktrace.DomainResources, 1)
 		emitRules := func(node workflowValue, code, severity, message string, rules ...string) {
 			loc := nodeLocation(caller.document.Snapshot, node.node)
 			diagnostics = append(diagnostics, Diagnostic{URI: loc.URI, Range: loc.Range, Code: code, Severity: severity, Message: message, Source: "argo-workflows", TargetID: caller.document.Target.ID, PositionKind: node.origin, ruleIDs: rules})

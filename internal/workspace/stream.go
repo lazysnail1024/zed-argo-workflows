@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 )
 
 // Describe resolves configuration and all configured targets without enumerating
@@ -25,7 +26,7 @@ func Describe(ctx context.Context, root, override string, overlay *string) (Work
 		return result, err
 	}
 	result.Root = absolute
-	config, raw, err := loadConfig(absolute, overlay)
+	config, raw, err := loadConfig(ctx, absolute, overlay)
 	if err != nil {
 		return result, err
 	}
@@ -145,7 +146,13 @@ func (p inputProblem) Error() string { return string(p) }
 // Identity and stat checks reject observed replacements and concurrent writes;
 // they do not turn filesystem reads into a transactional snapshot. The caller
 // still validates its Documents read ticket before accepting the returned text.
-func ReadText(ctx context.Context, filename string) (string, error) {
+func ReadText(ctx context.Context, filename string) (text string, resultErr error) {
+	worktrace.Add(ctx, worktrace.ReadAttempts, 1)
+	defer func() {
+		if resultErr != nil {
+			worktrace.Add(ctx, worktrace.ReadFailures, 1)
+		}
+	}()
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -183,9 +190,11 @@ func ReadText(ctx context.Context, filename string) (string, error) {
 		return "", inputProblem("input grew or changed during read")
 	}
 	raw, err := io.ReadAll(io.LimitReader(f, limit+1))
+	worktrace.Add(ctx, worktrace.ReadBytes, int64(len(raw)))
 	if err != nil {
 		return "", err
 	}
+	worktrace.Add(ctx, worktrace.ReadFiles, 1)
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}

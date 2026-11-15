@@ -3,6 +3,7 @@ package analysis
 import (
 	"context"
 	"encoding/json"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 
 	"github.com/lazysnail1024/k8s-crd-toolkit/yamlview"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
@@ -88,6 +89,7 @@ func RestoreFacts(ctx context.Context, facts *Facts, w workspace.Workspace) {
 			continue
 		}
 		if _, ok := state.views[key]; !ok && state.bytes+len(key.text) <= 50*1024*1024 {
+			worktrace.Add(ctx, worktrace.FactsRestored, 1)
 			state.views[key] = view
 			state.sharedViews[key.text] = view
 			state.bytes += len(key.text)
@@ -98,6 +100,9 @@ func RestoreFacts(ctx context.Context, facts *Facts, w workspace.Workspace) {
 			continue
 		}
 		if _, ok := state.views[key.snapshotIdentity]; ok {
+			if _, exists := state.projections[key]; !exists {
+				worktrace.Add(ctx, worktrace.ProjectionsRestored, 1)
+			}
 			state.projections[key] = value
 			state.sharedProjections[key.content()] = value
 		}

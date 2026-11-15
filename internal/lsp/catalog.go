@@ -18,6 +18,7 @@ import (
 	"github.com/lazysnail1024/zed-argo-workflows/internal/analysis"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 )
 
 const catalogTextLimit = 128 * 1024 * 1024
@@ -65,6 +66,7 @@ type catalogFile struct {
 // projection data for both catalog and session workers. No Workspace or analysis
 // invocation outlives its worker.
 type catalog struct {
+	tracer                   *worktrace.Tracer
 	mu                       sync.Mutex
 	ctx                      context.Context
 	cancel                   context.CancelFunc
@@ -83,7 +85,7 @@ type catalog struct {
 	symbolBytes, symbolCount int
 }
 
-func newCatalog() (*catalog, error) {
+func newCatalog(tracers ...*worktrace.Tracer) (*catalog, error) {
 	documents, err := shared.NewDocuments(shared.DocumentLimits{Entries: 100002, FileBytes: 5 * 1024 * 1024, OpenBytes: catalogTextLimit})
 	if err != nil {
 		return nil, err
@@ -98,6 +100,9 @@ func newCatalog() (*catalog, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &catalog{ctx: ctx, cancel: cancel, documents: documents, index: idx, queue: queue, roots: map[string]*catalogRoot{}, files: map[source.URI]*catalogFile{}, events: make(chan struct{}, 1), publications: map[string]bool{}, logs: map[string]string{}}
+	if len(tracers) > 0 {
+		c.tracer = tracers[0]
+	}
 	go c.discover()
 	for range 2 {
 		go c.worker()
@@ -501,6 +506,13 @@ func (c *catalog) process(job shared.WorkTicket) {
 	c.mu.Unlock()
 	ctx, cancel := context.WithTimeout(c.ctx, 5*time.Second)
 	defer cancel()
+	trace := c.tracer.Begin("index", "", nil)
+	trace.Start()
+	ctx = trace.Context(ctx)
+	defer func() {
+		trace.Done()
+		trace.Finish("finished")
+	}()
 	if !opened {
 		path, pathErr := filePath(string(uri))
 		candidate, candidateErr := workspace.Candidate(header, path, roots)

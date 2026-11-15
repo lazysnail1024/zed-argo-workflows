@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"context"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	"runtime"
 	"sync"
 
@@ -119,6 +120,7 @@ func (batch *viewBatch) start(ctx context.Context) {
 			defer batch.done.Done()
 			// yamlview owns and closes its native parser/tree. No invocation
 			// maps, projections or global expansion budget are read or changed.
+			worktrace.Parse(ctx, worktrace.ParsePreparseCalls, len(batch.pending[i].snapshot.Text()))
 			batch.pending[i].view, batch.pending[i].err = yamlview.Parse(ctx, batch.pending[i].snapshot)
 		}(i)
 	}

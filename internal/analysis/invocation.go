@@ -5,6 +5,7 @@ import (
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/k8s-crd-toolkit/yamlview"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/assets"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 )
 
 type snapshotIdentity struct {
@@ -69,10 +70,12 @@ func parseView(ctx context.Context, s source.Snapshot) (yamlview.View, error) {
 	if err := ctx.Err(); err != nil {
 		return yamlview.View{}, err
 	}
+	worktrace.Add(ctx, worktrace.ViewLookups, 1)
 	state, _ := ctx.Value(invocationKey{}).(*invocation)
 	key := snapshotKey(s)
 	if state != nil {
 		if v, ok := state.views[key]; ok {
+			worktrace.Add(ctx, worktrace.ViewHits, 1)
 			return v, nil
 		}
 		// Views contain immutable bytes and spans, not URI/revision/target state.
@@ -80,9 +83,11 @@ func parseView(ctx context.Context, s source.Snapshot) (yamlview.View, error) {
 		// separate. Do not retain another identity key (and its text backing
 		// storage) for this hit: the original 50 MiB cache budget still applies.
 		if v, ok := state.sharedViews[key.text]; ok {
+			worktrace.Add(ctx, worktrace.ViewHits, 1)
 			return v, nil
 		}
 	}
+	worktrace.Parse(ctx, worktrace.ParseSourceCalls, len(s.Text()))
 	v, err := yamlview.Parse(ctx, s)
 	if err == nil && ctx.Err() == nil && state != nil && state.bytes+len(s.Text()) <= 50*1024*1024 {
 		state.views[key] = v

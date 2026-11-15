@@ -110,6 +110,17 @@ watchdog 20 秒，产品分析 deadline 仍为五秒。聚合器核对顺序、�
 
 ### 索引与请求
 
+`wf-reaudit-query-io` 保留原三个独立 inotify 读取合同，并检查默认关闭的实际工作 trace：
+真实补全结果、冷 Schema 编译、恢复/合成解析、缓存命中之前的当前读取和解析、trace-off
+等价性，以及取消回复到 worker 释放的不同时间。计数不是由输出命中率推算；原始 stderr
+保留后台和取消/丢弃工作的独立归属。计时为描述性证据，不新增或放宽资源门限。
+
+`wf-equivalence` 保留原九种历史，另由固定字面量 fixture 比较 incremental/fresh 的真实
+版本化 Rename、补全和已 resolve Quick Fix 的完整应用结果。UTF-16 非 BMP 字符与 CRLF、
+同名其他 scope、实际应用版本的诊断和精确引用均进入预期；九个篡改控制验证 applier 会拒绝
+过期版本、错误路径、重叠/越界/代理对中间位置和错误替换字节。父级材料校验核对所有输入、
+独立预期、实际应用 YAML 和原始 session 生命周期；一致性通过不单独证明工作量下降。
+
 `wf-analysis-status` 通过真实 CLI/stdio 检查磁盘与未保存 buffer 身份、独立的文件/scope
 完整性、空引用结果的可判定性、拒绝原因及打开受影响文件后的恢复、配置和 buffer 使旧动作
 失效、只读客户端的可用性。它与现有 Rename/quickfix 消费者一起运行；请求 quickfix 的旧

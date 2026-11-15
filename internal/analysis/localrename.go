@@ -3,6 +3,7 @@ package analysis
 import (
 	"context"
 	"fmt"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	"regexp"
 	"sort"
 	"strings"
@@ -575,6 +576,8 @@ func localBindings(ctx context.Context, s source.Snapshot, version string, selec
 	return collectLocalBindings(ctx, s, version, selected, false)
 }
 func collectLocalBindings(ctx context.Context, s source.Snapshot, version string, selected int, readOnly bool) (*localRenameBindings, error) {
+	worktrace.Add(ctx, worktrace.DomainPasses, 1)
+	worktrace.Add(ctx, worktrace.DomainBindingPasses, 1)
 	b := &localRenameBindings{ctx: ctx, symbols: map[renameKey][]renameOccurrence{}, positions: map[source.Span]renameKey{}, calls: map[renameKey]int{}, snapshot: s, blocked: map[renameKey]bool{}, readOnly: readOnly, queryPositions: map[source.Span]map[renameKey]bool{}, queryAmbiguous: map[source.Span]map[renameKey]bool{}, declarationCount: map[renameKey]int{}, declarations: map[renameKey][]renameOccurrence{}, visibility: map[source.Span]map[renameKey]bool{}}
 	view, err := parseView(ctx, s)
 	if err != nil {
@@ -602,6 +605,7 @@ func collectLocalBindings(ctx context.Context, s source.Snapshot, version string
 	if !owned(api, kind) || schemaOnlyKind(kind) || !readOnly && kind != "Workflow" && kind != "CronWorkflow" {
 		return b, Refuse("UNMODELED_BINDING", "only closed Workflow and CronWorkflow symbols can be renamed")
 	}
+	worktrace.Add(ctx, worktrace.DomainResources, 1)
 	if readOnly {
 		namespace, _ := queryMember(queryMember(projected, "metadata"), "namespace").(string)
 		if namespace == "" {

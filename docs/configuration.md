@@ -270,6 +270,30 @@ refuses further writes and publication; the CLI failure response retains raw
 Helm streams even when the displaced directory cannot safely receive a report.
 There is no automatic cleanup or eviction.
 
+## Optional work tracing
+
+Set `ARGO_WORKFLOWS_LS_TRACE=1` before starting the native LSP to emit structured
+`phase:work` records on stderr. It is disabled by default. Records identify the
+request ID, method, per-session sequence and work origin (`request`, `input`,
+`index`, `header` or `publication`); they contain counts and timings, without
+document text or a telemetry endpoint. Zero counters are omitted.
+
+The records count actual source/configuration/render-input acquisition, YAML
+parser and projection calls, embedded Schema loads and compilation, product
+Schema query calls, domain work and fact/result reuse. A cache hit can still
+perform current disk reads and synthetic or recovery parsing. Directory scans,
+generated-cache integrity I/O and the external tool's own work are outside these
+input-read counters. Existing `phase:index` summaries retain their original
+meaning and are not a count of every parser invocation.
+
+Foreground `start` and `finish` records distinguish queue time, worker service,
+terminal reply and worker-slot release. Cancellation records retain the work
+already performed and separate `cancelToReplyNanoseconds` from
+`cancelToReleaseNanoseconds`. A `delivered` outcome means the existing owner
+accepted and wrote the response, which can itself contain a refusal. Trace data
+does not grant input authority or relax an edit guard. Full definitions and
+validation limits are in [the architecture](architecture.md#实际工作观测).
+
 ## Boundaries
 
 Static validation does not execute controllers, Kubernetes admission or dynamic

@@ -3,6 +3,7 @@ package analysis
 import (
 	"context"
 	"fmt"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/k8s-crd-toolkit/yamlvalue"
@@ -57,6 +58,7 @@ func sharedOrigins(ctx context.Context, snapshot source.Snapshot, doc yamlview.D
 		}
 	}
 	// Artificial completion snapshots intentionally bypass reusable facts.
+	worktrace.Add(ctx, worktrace.ProjectionCalls, 1)
 	projected, err := yamlvalue.Project(ctx, snapshot, doc, yamlvalue.Options{MaxNodes: 100000, MaxVisits: 100000, RejectExplicitTags: true})
 	if err != nil {
 		return nil

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 
 	"github.com/lazysnail1024/k8s-crd-toolkit/index"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
@@ -37,6 +38,10 @@ func (s *session) cachedScopeQuery(m message, w workspace.Workspace) (json.RawMe
 	}{w.Config.ReferencePolicy, w.Config.DefaultNamespace, generations})
 	sum := sha256.Sum256([]byte(m.Method + string(m.Params) + fingerprint(w) + string(configuration)))
 	s.queryKey = hex.EncodeToString(sum[:])
+	worktrace.Add(s.context(), worktrace.ResultCacheLookups, 1)
 	raw, ok := s.queryResults[s.queryKey]
+	if ok {
+		worktrace.Add(s.context(), worktrace.ResultCacheHits, 1)
+	}
 	return raw, ok
 }

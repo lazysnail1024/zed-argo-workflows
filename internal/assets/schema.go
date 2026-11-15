@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 	"sync"
 )
@@ -22,6 +23,7 @@ func (offlineLoader) Load(url string) (any, error) {
 }
 
 func Document(ctx context.Context, version, apiVersion, kind string) (map[string]any, error) {
+	worktrace.Add(ctx, worktrace.SchemaLoadCalls, 1)
 	file, err := compat.SchemaFile(version, apiVersion, kind)
 	if err != nil {
 		return nil, err
@@ -31,9 +33,10 @@ func Document(ctx context.Context, version, apiVersion, kind string) (map[string
 	}
 	cache, _ := ctx.Value(documentKey{}).(*requestSchemas)
 	if cache != nil && cache.documents[file] != nil {
+		worktrace.Add(ctx, worktrace.SchemaLoadHits, 1)
 		return cache.documents[file], nil
 	}
-	document, err := readDocument(file)
+	document, err := readDocumentContext(ctx, file)
 	if err != nil {
 		return nil, err
 	}
@@ -44,6 +47,10 @@ func Document(ctx context.Context, version, apiVersion, kind string) (map[string
 }
 
 func readDocument(file string) (map[string]any, error) {
+	return readDocumentContext(context.Background(), file)
+}
+
+func readDocumentContext(ctx context.Context, file string) (map[string]any, error) {
 	raw, err := schemas.ReadFile("schemas/" + file)
 	if err != nil {
 		return nil, err
@@ -51,6 +58,7 @@ func readDocument(file string) (map[string]any, error) {
 	var document map[string]any
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
+	worktrace.Add(ctx, worktrace.SchemaLoads, 1)
 	if err := decoder.Decode(&document); err != nil {
 		return nil, err
 	}
@@ -80,6 +88,7 @@ var compiledSchemas sync.Map // embedded filename -> *jsonschema.Schema
 var schemaCompilation = make(chan struct{}, 1)
 
 func Compile(ctx context.Context, version, apiVersion, kind string) (*jsonschema.Schema, error) {
+	worktrace.Add(ctx, worktrace.SchemaCompileCalls, 1)
 	file, err := compat.SchemaFile(version, apiVersion, kind)
 	if err != nil {
 		return nil, err
@@ -88,23 +97,28 @@ func Compile(ctx context.Context, version, apiVersion, kind string) (*jsonschema
 		return nil, err
 	}
 	if cached, ok := compiledSchemas.Load(file); ok {
+		worktrace.Add(ctx, worktrace.SchemaCompileHits, 1)
 		return cached.(*jsonschema.Schema), nil
 	}
+	waiting := worktrace.Now(ctx)
 	select {
 	case schemaCompilation <- struct{}{}:
 		defer func() { <-schemaCompilation }()
 	case <-ctx.Done():
+		worktrace.Elapsed(ctx, worktrace.SchemaCompileWaitNanoseconds, waiting)
 		return nil, ctx.Err()
 	}
+	worktrace.Elapsed(ctx, worktrace.SchemaCompileWaitNanoseconds, waiting)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if cached, ok := compiledSchemas.Load(file); ok {
+		worktrace.Add(ctx, worktrace.SchemaCompileHits, 1)
 		return cached.(*jsonschema.Schema), nil
 	}
 	// Compilation only needs this decoded map once; keeping it in the
 	// invocation cache duplicates the larger compiled schema's live memory.
-	document, err := readDocument(file)
+	document, err := readDocumentContext(ctx, file)
 	if err != nil {
 		return nil, err
 	}
@@ -124,6 +138,7 @@ func Compile(ctx context.Context, version, apiVersion, kind string) (*jsonschema
 	if err := compiler.AddResource(url, document); err != nil {
 		return nil, err
 	}
+	worktrace.Add(ctx, worktrace.SchemaCompiles, 1)
 	schema, err := compiler.Compile(url)
 	if err != nil {
 		return nil, err

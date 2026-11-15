@@ -7,6 +7,7 @@ import (
 	"github.com/lazysnail1024/k8s-crd-toolkit/schemaquery"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	"sort"
 )
 
@@ -77,6 +78,7 @@ func FieldFixes(ctx context.Context, s source.Snapshot, version string, requeste
 		if raw != field.name {
 			continue
 		}
+		worktrace.SchemaQuery(ctx, worktrace.SchemaLookups)
 		query, err := schemaquery.Lookup(ctx, field.schema, field.path, field.value, schemaquery.Limits{})
 		if err != nil {
 			continue
@@ -96,6 +98,7 @@ func FieldFixes(ctx context.Context, s source.Snapshot, version string, requeste
 		sort.Strings(names)
 		for _, name := range names {
 			path := append(append([]string(nil), field.path...), name)
+			worktrace.SchemaQuery(ctx, worktrace.SchemaTypes)
 			kind, err := schemaquery.Type(ctx, field.schema, path, field.value, schemaquery.Limits{})
 			if err != nil {
 				continue
