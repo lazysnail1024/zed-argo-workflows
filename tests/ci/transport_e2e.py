@@ -62,13 +62,14 @@ def run(name, command, expected=None):
     return result
 
 
-def fixture(name="source", lane="native-linux-amd64", physical=False):
+def fixture(name="source", lane="native-linux-amd64", physical=False, extra_files=None):
     source = out / name
     payload = source / ("payload-" + lane)
     payload.mkdir(parents=True)
     files = {key: value.encode() for key, value in SPEC["literalFiles"].items()}
     duplicate = bytes(range(256)) * 1024
     files.update({"copies/executable": duplicate, "copies/plain": duplicate})
+    files.update(extra_files or {})
     # Real executable files exercise cross-API path.stat/fstat signatures. On
     # Windows these suffixes can synthesize execute bits only in path.stat.
     if physical:
@@ -161,6 +162,23 @@ physical_ok = run("physical-pack", ["pack", "--receipt", physical_receipt, "--ou
     "physical-hydrate", ["hydrate", "--archive", physical_bundle, "--output", physical_output]).returncode == 0
 row("physical-executable-suffixes", physical_ok and all((physical_output / ("payload-native-linux-amd64/physical/python" + suffix)).read_bytes() ==
     Path(sys.executable).read_bytes() for suffix in (".exe", ".bat", ".cmd", ".com")))
+# Deflate can consume its final compressed byte while retaining more decoded
+# output than one bounded read permits. Exercise both sides of the production
+# one-MiB boundary with independent literal bytes, including a second full
+# output chunk and compressed data requiring multiple input reads.
+boundary_files = {f"boundaries/repeated-{size}": b"a" * size
+                  for size in (0, 1048575, 1048576, 1048577, 2097153)}
+boundary_files["boundaries/nonrepeating"] = hashlib.shake_256(b"fixed transport input boundary").digest(2097153)
+boundary_source, boundary_receipt, boundary_bytes, boundary_modes = fixture("boundary-source", extra_files=boundary_files)
+boundary_bundle, boundary_output = out / "boundaries.zip", out / "boundary-hydrated"
+boundary_pack = run("boundary-pack", ["pack", "--receipt", boundary_receipt, "--output", boundary_bundle])
+boundary_restore = run("boundary-hydrate", ["hydrate", "--archive", boundary_bundle, "--output", boundary_output]) if boundary_pack.returncode == 0 else None
+row("deflate-chunk-boundaries", boundary_restore is not None and boundary_restore.returncode == 0 and
+    all((boundary_output / name).read_bytes() == value and
+        stat.S_IMODE((boundary_output / name).stat().st_mode) == boundary_modes[name]
+        for name, value in boundary_bytes.items()),
+    sizes={name: len(value) for name, value in boundary_files.items()},
+    inputSha256={name: sha_bytes(value) for name, value in boundary_files.items()})
 detached = out / "source-detached"
 source.rename(detached)
 restored = out / "detached-restored"

@@ -28,8 +28,8 @@ def command(name, argv, timeout):
 
 
 original = SOURCE.read_text()
-needle = 'func ReadText(ctx context.Context, filename string) (string, error) {'
-assert original.count(needle) == 1 and original.count('"strings"') == 1
+needle = 'func ReadText(ctx context.Context, filename string) (text string, resultErr error) {'
+assert original.count(needle) == 1 and original.count('"strings"') == 1, 'ReadText boundary changed; review the delayed-I/O control'
 injected = OUT / 'stream.go'
 slow = '''
     timer := time.NewTimer(15 * time.Millisecond)

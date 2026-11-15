@@ -371,6 +371,12 @@ didOpen 前等待该索引明确就绪，再执行相同的 20/100/20 阶段。�
 首轮误选未被旧验证器要求的非聚合流，旧验证器接受的结果作为 oracle 校准失败保留，不能
 据此宣称任意 raw stream 都会被该历史版本检查。历史材料重放不记为新消费者执行。
 打包或上传失败的 raw fallback 同时覆盖已移动 receipt 和剩余 evidence。
+
+**有界解压的尾部。** GitHub gate 又暴露了合法大对象被拒绝的路径：一次有界 deflate
+读取可以消费最后一个压缩字节，却仍在解码器内保留输出。仅按压缩输入剩余量循环会误报
+截断；恰好整 MiB 的测试也可能看不到该问题。读取达到输出上限后继续用空输入有界排空，
+再验证实际 EOF、大小与 CRC。真实 pack/hydrate 正例覆盖一 MiB 前后一个字节、跨第二个
+输出块及不可压缩的多输入块；原大小伪造、内容 hash、归档截断和路径拒绝控制继续执行。
 [传输控制](../tests/ci/transport_e2e.py)、
 [物化与保留控制](../tests/ci/receipt_materialization_e2e.py)、
 [下载后领域复核](../tests/ci/downloaded_material_e2e.py)

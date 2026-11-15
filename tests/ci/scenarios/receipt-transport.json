@@ -20,6 +20,7 @@
   },
   "positiveCases": [
     "opaque-byte-roundtrip",
+    "deflate-chunk-boundaries",
     "independent-duplicate-modes",
     "detached-source",
     "physical-executable-suffixes",

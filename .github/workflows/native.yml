@@ -240,8 +240,20 @@ jobs:
     - name: Pack self-contained original lane bytes
       id: pack_receipt
       run: python tests/ci/transport.py pack --receipt artifacts/receipt/native-${{ matrix.artifact }}.json --output artifacts/transport/lane.zip --report artifacts/transport-metrics.json
+    - name: Locate retained evidence without hashing its contents
+      id: evidence_paths
+      if: always()
+      shell: bash
+      run: |
+        python - <<'PY_PATHS'
+        import os
+        from pathlib import Path
+        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+            for key, path in (('raw', 'artifacts/ci'), ('moved', 'artifacts/receipt')):
+                output.write(f'{key}={str(Path(path).is_dir()).lower()}\n')
+        PY_PATHS
     - name: Retain native logs, failed fixtures and packages
-      if: ${{ failure() && hashFiles('artifacts/ci/**') != '' }}
+      if: ${{ failure() && steps.evidence_paths.outputs.raw == 'true' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: workflows-native-${{ matrix.artifact }}-${{ github.sha }}
@@ -261,7 +273,7 @@ jobs:
         if-no-files-found: error
         compression-level: 0
     - name: Retain raw moved payload if transport or upload fails
-      if: ${{ always() && hashFiles('artifacts/receipt/**') != '' && (steps.pack_receipt.outcome != 'success' || steps.upload_receipt.outcome != 'success') }}
+      if: ${{ always() && steps.evidence_paths.outputs.moved == 'true' && (steps.pack_receipt.outcome != 'success' || steps.upload_receipt.outcome != 'success') }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: raw-native-receipt-native-${{ matrix.artifact }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -332,8 +344,20 @@ jobs:
     - name: Pack self-contained original lane bytes
       id: pack_receipt
       run: python tests/ci/transport.py pack --receipt artifacts/receipt/extended-${{ matrix.shard }}.json --output artifacts/transport/lane.zip --report artifacts/transport-metrics.json
+    - name: Locate retained evidence without hashing its contents
+      id: evidence_paths
+      if: always()
+      shell: bash
+      run: |
+        python - <<'PY_PATHS'
+        import os
+        from pathlib import Path
+        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+            for key, path in (('raw', 'artifacts/ci'), ('moved', 'artifacts/receipt')):
+                output.write(f'{key}={str(Path(path).is_dir()).lower()}\n')
+        PY_PATHS
     - name: Retain semantic evidence including failed runs
-      if: ${{ failure() && hashFiles('artifacts/ci/**') != '' }}
+      if: ${{ failure() && steps.evidence_paths.outputs.raw == 'true' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: workflows-semantic-${{ matrix.shard }}-${{ github.sha }}
@@ -353,7 +377,7 @@ jobs:
         if-no-files-found: error
         compression-level: 0
     - name: Retain raw moved payload if transport or upload fails
-      if: ${{ always() && hashFiles('artifacts/receipt/**') != '' && (steps.pack_receipt.outcome != 'success' || steps.upload_receipt.outcome != 'success') }}
+      if: ${{ always() && steps.evidence_paths.outputs.moved == 'true' && (steps.pack_receipt.outcome != 'success' || steps.upload_receipt.outcome != 'success') }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: raw-native-receipt-extended-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -419,8 +443,20 @@ jobs:
     - name: Pack self-contained original lane bytes
       id: pack_receipt
       run: python tests/ci/transport.py pack --receipt artifacts/receipt/resources-${{ matrix.suite }}.json --output artifacts/transport/lane.zip --report artifacts/transport-metrics.json
+    - name: Locate retained evidence without hashing its contents
+      id: evidence_paths
+      if: always()
+      shell: bash
+      run: |
+        python - <<'PY_PATHS'
+        import os
+        from pathlib import Path
+        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+            for key, path in (('raw', 'artifacts/ci'), ('moved', 'artifacts/receipt')):
+                output.write(f'{key}={str(Path(path).is_dir()).lower()}\n')
+        PY_PATHS
     - name: Retain resource measurements, limits, raw traffic and failed inputs
-      if: ${{ failure() && hashFiles('artifacts/ci/**') != '' }}
+      if: ${{ failure() && steps.evidence_paths.outputs.raw == 'true' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: workflows-resources-${{ matrix.suite }}-${{ github.sha }}
@@ -440,7 +476,7 @@ jobs:
         if-no-files-found: error
         compression-level: 0
     - name: Retain raw moved payload if transport or upload fails
-      if: ${{ always() && hashFiles('artifacts/receipt/**') != '' && (steps.pack_receipt.outcome != 'success' || steps.upload_receipt.outcome != 'success') }}
+      if: ${{ always() && steps.evidence_paths.outputs.moved == 'true' && (steps.pack_receipt.outcome != 'success' || steps.upload_receipt.outcome != 'success') }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: raw-native-receipt-resources-${{ matrix.suite }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -508,8 +544,20 @@ jobs:
     - name: Pack self-contained original lane bytes
       id: pack_receipt
       run: python tests/ci/transport.py pack --receipt artifacts/receipt/mutations-${{ matrix.group }}.json --output artifacts/transport/lane.zip --report artifacts/transport-metrics.json
+    - name: Locate retained evidence without hashing its contents
+      id: evidence_paths
+      if: always()
+      shell: bash
+      run: |
+        python - <<'PY_PATHS'
+        import os
+        from pathlib import Path
+        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+            for key, path in (('raw', 'artifacts/ci'), ('moved', 'artifacts/receipt')):
+                output.write(f'{key}={str(Path(path).is_dir()).lower()}\n')
+        PY_PATHS
     - name: Retain mutation diffs, binaries, baseline and mutant evidence
-      if: ${{ failure() && hashFiles('artifacts/ci/**') != '' }}
+      if: ${{ failure() && steps.evidence_paths.outputs.raw == 'true' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: workflows-mutations-${{ matrix.group }}-${{ github.sha }}
@@ -529,7 +577,7 @@ jobs:
         if-no-files-found: error
         compression-level: 0
     - name: Retain raw moved payload if transport or upload fails
-      if: ${{ always() && hashFiles('artifacts/receipt/**') != '' && (steps.pack_receipt.outcome != 'success' || steps.upload_receipt.outcome != 'success') }}
+      if: ${{ always() && steps.evidence_paths.outputs.moved == 'true' && (steps.pack_receipt.outcome != 'success' || steps.upload_receipt.outcome != 'success') }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: raw-native-receipt-mutations-${{ matrix.group }}-${{ github.run_id }}-${{ github.run_attempt }}

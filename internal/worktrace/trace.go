@@ -89,6 +89,18 @@ func Parse(ctx context.Context, purpose Counter, bytes int) {
 	Add(ctx, ParseCalls, 1)
 	Add(ctx, ParseBytes, int64(bytes))
 	Add(ctx, purpose, 1)
+	if !enabled || ctx == nil {
+		return
+	}
+	// Dispatch can be cancelled before any parser boundary is entered. Expose
+	// the first actual submitted parse separately, without adding work or
+	// changing parser scheduling. Counts describe submitted inputs, not parser
+	// completion, including when cancellation arrives during this call.
+	if span, _ := ctx.Value(key{}).(*Span); span != nil && span.origin == "request" && span.parseStarted.CompareAndSwap(false, true) {
+		value := span.base("parse-start")
+		value["purpose"], value["inputBytes"] = names[purpose], bytes
+		span.emit(value)
+	}
 }
 
 func SchemaQuery(ctx context.Context, operation Counter) {
@@ -150,6 +162,7 @@ type Span struct {
 	origin, method, outcome string
 	id                      json.RawMessage
 	work                    [counterCount]atomic.Int64
+	parseStarted            atomic.Bool
 	mu                      sync.Mutex
 	admitted, started, done time.Time
 	cancelled, replied      time.Time

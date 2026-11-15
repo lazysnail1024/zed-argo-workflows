@@ -308,15 +308,17 @@ def cancel_trace():
     client = traced_client(dest, work, True)
     old_id, new_id = 7001, 7002
     try:
-        # A real cold query over a valid bounded buffer gives the client time
-        # to observe dispatch. No artificial delay or counter-only task runs in
-        # the service. The successor sees the small new accepted buffer.
+        # Dispatch alone can be cancelled before any parser is entered. Wait
+        # for the actual parser boundary of this real cold query, without a
+        # delay or counter-only task in the service. The successor sees the
+        # small new accepted buffer.
         large = m.CALLER + '#' + 'x' * (4 * 1024 * 1024) + '\n'
         client.send('textDocument/didOpen', {'textDocument': {'uri': path.as_uri(), 'version': 1,
             'languageId': 'yaml', 'text': large}})
         params = {'textDocument': {'uri': path.as_uri()}, 'position': m.pos(m.CALLER, '  templates:', offset=2)}
         client.send('textDocument/completion', params, old_id)
         started = wait_work(client, lambda r: r.get('requestId') == old_id and r.get('event') == 'start', timeout=3)
+        parsing = wait_work(client, lambda r: r.get('requestId') == old_id and r.get('event') == 'parse-start', timeout=3)
         client.send('$/cancelRequest', {'id': old_id})
         client.send('textDocument/didChange', {'textDocument': {'uri': path.as_uri(), 'version': 2},
             'contentChanges': [{'text': m.CALLER}]})
@@ -326,17 +328,26 @@ def cancel_trace():
         old = next(r for r in replies if r['id'] == old_id); new = next(r for r in replies if r['id'] == new_id)
         finished = wait_work(client, lambda r: r.get('requestId') == old_id and r.get('event') == 'finish', timeout=3)
         successor = wait_work(client, lambda r: r.get('requestId') == new_id and r.get('event') == 'finish', timeout=3)
+        parse_events = [r for r in work_records(client) if r.get('requestId') == old_id and r.get('event') == 'parse-start']
         checks = {'worker_start_observed': started is not None,
+            'parser_entry_observed': parsing is not None and started is not None and
+                parsing.get('sequence') == started.get('sequence') and
+                parsing.get('method') == 'textDocument/completion' and
+                parsing.get('purpose') in ('parseSourceCalls', 'parseRecoveryCalls', 'parseSyntheticCalls') and
+                parsing.get('inputBytes', 0) >= 4 * 1024 * 1024,
+            'parser_entry_once': len(parse_events) == 1,
             'one_terminal_each': sorted(r['id'] for r in replies) == [old_id, new_id],
             'current_successor': 'error' not in new and 'activeDeadlineSeconds' in labels(new),
             'cancel_reply_and_release': old.get('error', {}).get('code') == -32800 and finished is not None and
                 finished.get('outcome') == 'cancelled' and
                 finished.get('cancelToReleaseNanoseconds', -1) >= finished.get('cancelToReplyNanoseconds', -2) >= 0,
-            'cancelled_work_retained': finished is not None and finished.get('work', {}).get('parseCalls', 0) > 0,
+            'cancelled_work_retained': parsing is not None and finished is not None and
+                finished.get('work', {}).get('parseCalls', 0) > 0 and
+                finished.get('work', {}).get('parseBytes', 0) >= parsing.get('inputBytes', 1),
             'successor_slot_recovered': successor is not None and successor.get('outcome') == 'delivered' and
                 successor.get('releaseNanoseconds', -1) >= successor.get('replyNanoseconds', -2) >= 0,
         }
-        m.result('work-trace-cancellation', checks, {'responses': replies, 'start': started,
+        m.result('work-trace-cancellation', checks, {'responses': replies, 'start': started, 'parseStart': parsing,
             'cancelled': finished, 'successor': successor, 'measurement': 'cancel-to-reply differs from cancel-to-worker-release'})
     finally:
         client.close()

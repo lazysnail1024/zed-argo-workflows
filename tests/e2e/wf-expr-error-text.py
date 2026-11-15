@@ -7,6 +7,8 @@ cases=[('ascii',"        args: ['{{=inputs.parameters.alpha +}}']\n",'invalid ex
 for name,tail,expected in cases:
  text=prefix+tail;dest,work=m.setup(name,{'case.yaml':text});client=m.LSP(dest,work)
  try:
-  path=work/'case.yaml';client.open(path,text);r=client.request('textDocument/rename',{'textDocument':{'uri':path.as_uri()},'position':m.pos(text,'name: alpha',offset=6),'newName':'beta'});m.result(name,{'exactError':r.get('error')=={'code':-32602,'message':expected}},{'expected':expected,'response':r})
+  path=work/'case.yaml';client.open(path,text);r=client.request('textDocument/rename',{'textDocument':{'uri':path.as_uri()},'position':m.pos(text,'name: alpha',offset=6),'newName':'beta'})
+  expected_error={'code':-32602,'message':expected,'data':{'operation':'textDocument/rename','allowed':False,'reasonCode':'SAFETY_UNPROVEN','message':expected,'relatedLocations':[],'nextStep':'Review the selected input and its diagnostics, then request the operation again.'}}
+  m.result(name,{'exactError':r.get('error')==expected_error and 'result' not in r},{'expected':expected_error,'response':r})
  finally:client.close()
 m.save(m.OUT/'manifest.json',{'binarySha256':m.sha(m.BINARY),'testSha256':m.sha(pathlib.Path(__file__))});sys.exit(0 if len(m.RESULTS)==4 and all(r['pass'] for r in m.RESULTS) else 1)

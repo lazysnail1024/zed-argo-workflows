@@ -127,7 +127,8 @@ def query_case(name, client, expected, state, initial=None):
 def request_for(path, text):
     p = m.pos(text, 'Nver')
     return {'textDocument': {'uri': path.as_uri()},
-            'range': {'start': p, 'end': p | {'character': p['character'] + 4}}}
+            'range': {'start': p, 'end': p | {'character': p['character'] + 4}},
+            'context': {'only': ['quickfix'], 'diagnostics': []}}
 
 def fix_outputs(client, path, text, version, request):
     offered = client.request('textDocument/codeAction', request)

@@ -384,8 +384,9 @@ class BundleReader:
                 encoded = self.stream.read(min(CHUNK, remaining))
                 require(encoded, "UNSAFE_ARCHIVE", "truncated compressed object")
                 remaining -= len(encoded)
-                while encoded:
-                    chunk = decoder.decompress(encoded, min(CHUNK, info.file_size - size + 1))
+                while True:
+                    limit = min(CHUNK, info.file_size - size + 1)
+                    chunk = decoder.decompress(encoded, limit)
                     encoded = decoder.unconsumed_tail
                     size += len(chunk)
                     require(size <= info.file_size, code, "actual decompression exceeds declared size")
@@ -393,6 +394,11 @@ class BundleReader:
                     if chunk:
                         yield chunk
                     require(not decoder.unused_data, "UNSAFE_ARCHIVE", "trailing compressed stream data")
+                    # max_length may consume all compressed input while zlib
+                    # still retains output. Drain that output with the same
+                    # size bound before requesting more input or checking EOF.
+                    if not encoded and (decoder.eof or len(chunk) < limit):
+                        break
                 if decoder.eof:
                     require(remaining == 0, "UNSAFE_ARCHIVE", "compressed object ends before its declared boundary")
             require(decoder.eof and size == info.file_size and crc == info.CRC, "UNSAFE_ARCHIVE", "truncated stream, size or CRC mismatch")

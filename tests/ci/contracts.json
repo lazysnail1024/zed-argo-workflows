@@ -125,7 +125,7 @@
         {"id": {"case": "mixed"}, "assertions": ["bytes", "diagnostics", "envelope", "exit", "identity", "targetIdentity", "versions"]},
         {"id": {"case": "selected"}, "assertions": ["bytes", "diagnostics", "envelope", "exit", "identity", "targetIdentity", "versions"]},
         {"id": {"case": "file-filter"}, "assertions": ["bytes", "diagnostics", "envelope", "exit", "identity", "targetIdentity", "versions"]},
-        {"id": {"case": "edits"}, "assertions": ["actionBytes", "bytes", "experimentalPublication", "naturalExit", "olderTargetActions", "olderTargetRename", "stableAction", "stablePublication", "stableRename", "staleAction"]},
+        {"id": {"case": "edits"}, "assertions": ["actionBytes", "bytes", "configurationBytes", "currentTargetReady", "experimentalPublication", "freshAction", "freshActionBytes", "freshApplication", "naturalExit", "olderTargetActions", "olderTargetRename", "stableAction", "stablePublication", "stableRename", "staleAction", "staleOutcomeComplete"]},
         {"id": {"case": "settings"}, "assertions": ["bytes", "naturalExit", "settingsPublication", "settingsRecovery", "settingsRenameRestored", "settingsRenameSupported", "stablePublication", "stableRename"]},
         {"id": {"case": "pin-mixed"}, "assertions": ["bytes", "independentScopePin", "naturalExit", "scopePinBytes", "stablePublication", "stableRename"]}
       ]
@@ -1369,7 +1369,7 @@
         {"id": {"case": "external-completion-io"}, "assertions": ["exact_scope_candidates", "no_protocol_errors", "no_unrelated_scope_reads", "one_scope_acquisition_per_query"]},
         {"id": {"case": "configuration-io"}, "assertions": ["no_resource_reads", "valid_config_clean"]},
         {"id": {"case": "work-trace-calibration"}, "assertions": ["acquisition_before_hit_visible", "cold_work_visible", "correlated_lifecycle", "independent_candidates", "independent_fresh_reads", "query_work_visible", "trace_off_equivalent", "warm_source_work_bounded"]},
-        {"id": {"case": "work-trace-cancellation"}, "assertions": ["cancel_reply_and_release", "cancelled_work_retained", "current_successor", "one_terminal_each", "successor_slot_recovered", "worker_start_observed"]}
+        {"id": {"case": "work-trace-cancellation"}, "assertions": ["cancel_reply_and_release", "cancelled_work_retained", "current_successor", "one_terminal_each", "parser_entry_observed", "parser_entry_once", "successor_slot_recovered", "worker_start_observed"]}
       ]
     },
     "wf-bounded-aggregate-input": {
@@ -1427,7 +1427,11 @@
       ]
     },
     "wf-bounded-tool-scan": {
-      "identities": [{"case": "helm"}, {"case": "argo"}]
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "helm"}, "assertions": ["beforeTool", "exit3", "prompt", "scanReadObserved", "terminalJSON"]},
+        {"id": {"case": "argo"}, "assertions": ["beforeTool", "exit3", "prompt", "scanReadObserved", "terminalJSON"]}
+      ]
     },
     "wf-schema-query-load": {
       "identities": [{"case": "1000-queries"}, {"case": "shutdown"}]

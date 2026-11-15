@@ -223,6 +223,9 @@ regular-byte payload 的交付，不承诺保存整个消费者工作目录的�
 `raw-native-receipt-*` artifact 保留已经移到 `artifacts/receipt` 的原始材料和传输指标，
 原失败路径也保留尚在 `artifacts/ci` 的材料。raw fallback 不进入正常 acceptance 的
 `native-receipt-*` 下载选择，不会被当作成功传输悄悄接受。
+保留步骤用目录存在性选择原始或已移动材料，不使用 `hashFiles` 预读整个失败输入树。
+大目录中的原始输入和隐藏文件仍由上传步骤完整处理；实际归档、receipt 和 gate 的内容
+hash 校验保持不变，缺失材料仍不能形成成功的验收结果。
 
 打包拒绝物理 symlink、特殊文件、输入变化及不安全路径。解包先验证严格 JSON、清单/对象
 集合、ZIP 物理头、类型和便携路径别名，再有界读取压缩流并逐对象核对实际大小与 hash；
