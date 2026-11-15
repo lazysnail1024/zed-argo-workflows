@@ -40,18 +40,84 @@ match that pin. No sibling checkout, local `replace` or toolkit release tag is
 required. The hash-locked [API contract](contracts/toolkit-design-5.md) is a build
 and identity input; its filename does not make it an obsolete design document.
 
-When advancing the pin, update the module dependency, contract snapshot and lock
-identities together, then regenerate vendor:
+Treat an upgrade as an explicit consumer decision. Keep the existing pin until a
+contract diff and a fixed candidate commit demonstrate a benefit in Workflows
+workloads. In particular, adopting design-6 requires parser scheduling measurements
+with representative interactive workloads; matching another product's pin is not
+an upgrade reason.
+
+1. Record the old consumer commit, toolkit lock, contract digest and toolchain.
+   Rebuild that combination independently before replacing it, using the check
+   below. Keep the old checkout and evidence available for comparison.
+2. Review the candidate contract against the locked snapshot, then fix the full
+   provider SHA. Run the provider's compatibility checks against fixed consumer
+   commits. Record both revisions and any candidate vendor substitution; this
+   proves compatibility with those consumers, not that they adopted the candidate.
+3. In an isolated consumer candidate, update `go.mod`, `go.sum`, the contract
+   snapshot and all lock identities together. Regenerate vendor with
+   `GOWORK=off python3 scripts/vendor-native.py`. The script runs `go mod vendor`,
+   restores native parser sources, and verifies and reapplies the Expr formatter
+   and JSON Schema compiler patches. Plain `go mod vendor` is insufficient.
+4. Compare every vendored toolkit file with the pinned provider's corresponding
+   runtime file, including C headers, and check that the expected vendor inventory
+   was not truncated. Verify the contract SHA-256 against `contractFile` in the
+   lock and the provider contract. Reproduce `sourceSHA256` using the runtime
+   snapshot procedure at the pinned provider commit. For the current
+   `go-module-commit` adoption, `zipSHA256` is the SHA-256 of the Go module archive
+   returned as `Zip` by `go mod download -json`, not the local snapshot ZIP. Check
+   `Origin.Hash` against `implementationCommit`; separately compare `Sum` and
+   `GoModSum` with the module and `/go.mod` entries in `go.sum`. These Go `h1:`
+   checksums are not raw archive SHA-256 values.
+5. Build the actual consumer with `GOWORK=off` and no `replace`, check the linked
+   dependency identity, then run the applicable real CLI/LSP consumers from
+   [CI](docs/CI.md): diagnostics, strict projection, cancellation/lifecycle,
+   editing refusal and final bytes, and memory/interactive workloads. Retain
+   source and binary hashes, commands, tool versions, raw output and assertions.
+   Commit module, vendor, contract and provenance changes together only when
+   authorized. Consumer acceptance, adoption, native publication and real Zed
+   acceptance remain separate evidence stages.
+
+To retrieve the exact module archive into a fresh cache for the identity check,
+run from the consumer root with the pinned Go toolchain installed:
 
 ```sh
-python3 scripts/vendor-native.py
+toolkit_module=$(python3 -c 'import json; print(json.load(open("contracts/toolkit.lock.json"))["module"])')
+toolkit_version=$(python3 -c 'import json; print(json.load(open("contracts/toolkit.lock.json"))["implementationVersion"])')
+toolkit_cache=$(mktemp -d)
+GOWORK=off GOMODCACHE="$toolkit_cache" go mod download -json "$toolkit_module@$toolkit_version"
 ```
 
-The script restores native parser sources and verifies and reapplies the Expr
-formatter and JSON Schema compiler patches. Commit `go.mod`, `go.sum`, vendor,
-contract and provenance changes together. The exact patch records and verification
-requirements are in [VENDORED_PATCHES.md](docs/VENDORED_PATCHES.md). Plain
-`go mod vendor` is insufficient for this repository's native inputs.
+Retain the returned JSON and hash the exact `Zip` path it reports. This fetch
+requires network access and verifies archive provenance; it is separate from the
+vendored offline build below. Preserve the archive or its verification evidence
+before removing the temporary cache.
+
+For an independent rebuild, extract a fixed consumer commit into an otherwise
+empty directory outside a parent workspace (or make a clean standalone checkout).
+From that extracted root, with the Go/C toolchain available:
+
+```sh
+GOWORK=off go mod edit -json
+CGO_ENABLED=1 GOWORK=off GOPROXY=off GOSUMDB=off go build -mod=vendor -buildvcs=false -trimpath -o build/argo-workflows-ls ./cmd/argo-workflows-ls
+go version -m build/argo-workflows-ls
+./build/argo-workflows-ls version --json
+```
+
+Require an empty `Replace` list, the module version in `go.mod` and
+`vendor/modules.txt` equal to the lock's `implementationVersion`, and the same
+version in both binary metadata and `toolkitVersion`. Also compare the contract
+file's SHA-256 with the lock. `GOPROXY=off` checks that the build uses committed
+vendor; install the pinned Go toolchain beforehand because toolchain acquisition
+is separate. This development build deliberately makes no release source-commit
+claim. Build success and an identity probe do not establish behavioral acceptance.
+
+The existing [build identity helper](tests/ci/build_identity.py) records input and
+vendor digests in CI producer receipts; [CI](docs/CI.md) describes
+its stricter release import checks. It does not reconstruct the provider runtime
+snapshot or download and hash the pinned Go module ZIP. Perform those checks at
+upgrade time rather than treating matching receipt inputs as dependency adoption
+proof. Patch provenance and verification requirements remain in
+[VENDORED_PATCHES.md](docs/VENDORED_PATCHES.md).
 
 The toolkit provides strict YAML values, bounded alias/merge expansion, source
 coordinates, schema graph queries and indexing primitives. Workflows owns GVKs,
