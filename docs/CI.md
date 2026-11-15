@@ -257,6 +257,9 @@ Python 3.14.0 还必须实际观察到 path/fd ctime 不同而 birthtime 相同�
 再物化相对、绝对和多个文件链接，独立验证字节、hash、普通文件与独立身份；还拒绝悬空、
 改指向和读取中同尺寸改写并恢复 mtime。固定 Windows 3.14.0 必须观察到 path/fd ctime
 别名差异；只有跨 API 比较使用 birthtime，同 API 的完整 ctime/mode 与内容 hash 保护保留。
+该 Windows 正控用真实 `SetFileTime` 将测试 referent 的 creation time 固定到较早值，关闭
+属性句柄后记录前后 path/fd 时间、身份和内容 hash，并在调用生产物化前确认所需差异。
+不依赖紧邻写入自然产生不同时间，也不重试生产结果来满足断言。
 传输完整性不能替代原 `control.py`/`evidence.py`
 的执行身份、case 集合、原始协议和领域验收。
 

@@ -76,6 +76,10 @@ if fault=='changed-during-read':
   return result
  os.read=read
 try:
+ if value.get('requireTimestampAlias'):
+  assert metadata and any(v['path']['st_birthtime_ns'] is not None and
+   v['path']['st_birthtime_ns']==v['fd']['st_birthtime_ns'] and
+   v['path']['st_ctime_ns']!=v['fd']['st_ctime_ns'] for v in metadata.values()), 'timestamp alias fixture was not established before materialization'
  if hasattr(control,'materialize_files'):
   control.materialize_files(files,root,payload,evidence,True,links)
  else:
@@ -90,9 +94,10 @@ except Exception as error:
 '''
 
 
-def materialize(name, source, payload, files, expected, fault=None):
+def materialize(name, source, payload, files, expected, fault=None, require_timestamp_alias=False):
     request = out / (name + ".request.json")
-    request.write_text(json.dumps({"files": files, "evidence": expected, "fault": fault}, indent=2) + "\n")
+    request.write_text(json.dumps({"files": files, "evidence": expected, "fault": fault,
+        "requireTimestampAlias": require_timestamp_alias}, indent=2) + "\n")
     command = [sys.executable, "-c", PHASE, str(ROOT / "tests/ci"), str(source), str(payload), str(request)]
     result = subprocess.run(command, cwd=ROOT, capture_output=True, timeout=30)
     (out / (name + ".stdout.raw")).write_bytes(result.stdout)
@@ -119,20 +124,80 @@ def finish(expected):
     raise SystemExit(0 if all(row["pass"] for row in rows) else 1)
 
 
+def prepare_creation_time(path, required):
+    def observe():
+        path_stat = path.stat()
+        with path.open('rb') as stream:
+            fd_stat = os.fstat(stream.fileno())
+        keys = ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns', 'st_ctime_ns', 'st_birthtime_ns', 'st_mode')
+        return {'path': {key: getattr(path_stat, key, None) for key in keys},
+                'fd': {key: getattr(fd_stat, key, None) for key in keys}, 'sha256': digest(path)}
+
+    report = {'required': required, 'before': observe(), 'api': 'SetFileTime', 'apiApplied': False}
+    try:
+        if required:
+            import ctypes
+            from ctypes import wintypes
+            kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+            kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+            kernel.CreateFileW.restype = wintypes.HANDLE
+            kernel.SetFileTime.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.FILETIME),
+                ctypes.POINTER(wintypes.FILETIME), ctypes.POINTER(wintypes.FILETIME)]
+            kernel.SetFileTime.restype = wintypes.BOOL
+            kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+            kernel.CloseHandle.restype = wintypes.BOOL
+            # Set only creation time on this test-owned file. Write/access times
+            # stay unchanged, and the attribute handle closes before observation.
+            requested_ns = 1_000_000_000_000_000_000
+            ticks = requested_ns // 100 + 116_444_736_000_000_000
+            creation = wintypes.FILETIME(ticks & 0xFFFFFFFF, ticks >> 32)
+            report['requestedCreationNs'] = requested_ns
+            assert ctypes.sizeof(creation) == 8
+            assert requested_ns < report['before']['path']['st_birthtime_ns']
+            handle = kernel.CreateFileW(str(path), 0x0100, 0x0007, None, 3, 0x0080, None)
+            if handle == ctypes.c_void_p(-1).value:
+                raise ctypes.WinError(ctypes.get_last_error())
+            report['createFileSucceeded'] = True
+            try:
+                if not kernel.SetFileTime(handle, ctypes.byref(creation), None, None):
+                    raise ctypes.WinError(ctypes.get_last_error())
+                report['apiApplied'] = True
+            finally:
+                report['handleClosed'] = bool(kernel.CloseHandle(handle))
+                if not report['handleClosed']:
+                    raise ctypes.WinError(ctypes.get_last_error())
+        report['after'] = observe()
+        assert report['after']['sha256'] == report['before']['sha256']
+        for api in ('path', 'fd'):
+            for key in ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns', 'st_mode'):
+                assert report['after'][api][key] == report['before'][api][key]
+            if required:
+                assert report['after'][api]['st_birthtime_ns'] == report['requestedCreationNs']
+    except Exception as error:
+        report.update(errorType=type(error).__name__, error=str(error))
+        raise
+    finally:
+        (out / 'edited-links-preparation.json').write_text(json.dumps(report, indent=2) + '\n')
+    return report
+
+
 literal = b"independent selected material\r\n"
 source = out / 'edited-links-input';source.mkdir()
 target = source / 'target.txt'
 target.write_bytes(b'initial content before the selected revision\n');target.write_bytes(literal)
+alias_expected = sys.platform == 'win32' and sys.version_info[:3] == (3, 14, 0)
+preparation = prepare_creation_time(target, alias_expected)
 (source / 'link.yaml').symlink_to('target.txt')
 (source / 'absolute.yaml').symlink_to(target)
 (source / 'again.yaml').symlink_to('target.txt')
 files = ['target.txt', 'link.yaml', 'absolute.yaml', 'again.yaml']
 expected = {name: hashlib.sha256(literal).hexdigest() for name in files}
 payload = out / 'edited-links-payload'
-code, details = materialize('edited-selected-links', source, payload, files, expected)
+code, details = materialize('edited-selected-links', source, payload, files, expected,
+    require_timestamp_alias=alias_expected)
 regular = code == 0 and all((payload / name).is_file() and not (payload / name).is_symlink() and
     (payload / name).read_bytes() == literal and digest(payload / name) == expected[name] for name in files)
-alias_expected = sys.platform == 'win32' and sys.version_info[:3] == (3, 14, 0)
 alias_observed = any(value['path']['st_birthtime_ns'] is not None and
     value['path']['st_birthtime_ns'] == value['fd']['st_birthtime_ns'] and
     value['path']['st_ctime_ns'] != value['fd']['st_ctime_ns'] for value in details.get('metadata', {}).values())
@@ -141,7 +206,8 @@ checks = {'exactRegularBytes': regular,
           'allSelectedTransferred': code == 0 and all(not os.path.lexists(source / name) for name in files),
           'windows314AliasObserved': not alias_expected or alias_observed}
 record('edited-selected-file-links', all(checks.values()), assertions=checks, exitCode=code,
-       windows314AliasExpected=alias_expected, windows314AliasObserved=alias_observed, expectedSha256=expected, **details)
+       windows314AliasExpected=alias_expected, windows314AliasObserved=alias_observed,
+       preparation=preparation, expectedSha256=expected, **details)
 
 def reject_selected_link(fault):
     source = out / (fault + "-input");source.mkdir();(source / "target.txt").write_bytes(literal);(source / "link.yaml").symlink_to("target.txt")
