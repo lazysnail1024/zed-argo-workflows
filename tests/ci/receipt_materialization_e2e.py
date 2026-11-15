@@ -18,6 +18,7 @@ CONTROL = ROOT / "tests/ci/control.py"
 TRANSPORT = ROOT / "tests/ci/transport.py"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--output", type=Path, required=True)
+parser.add_argument("--producer-only", action="store_true", help="Exercise portable selected file links without FIFO or POSIX hydration")
 parser.add_argument("--profiles", type=Path)
 parser.add_argument("--binary", type=Path)
 args = parser.parse_args()
@@ -40,25 +41,38 @@ def record(name, passed, **details):
 # the move algorithm and supplies no substitute domain acceptance. The current
 # path calls the same production helper as control.receipt.
 PHASE = r'''
-import ast,hashlib,json,os,shutil,sys
+import ast,hashlib,json,os,shutil,stat,sys
 from pathlib import Path
 from types import SimpleNamespace
 sys.path.insert(0,sys.argv[1]);import control
 root,payload,request=map(Path,sys.argv[2:5]);value=json.loads(request.read_text())
 files=[root/name for name in value['files']];evidence=value['evidence'];fault=value.get('fault')
 links=control.snapshot_file_links(files) if hasattr(control,'snapshot_file_links') else None
-selected=root/'link.yaml';target=root/'target.txt';observed=False
-if fault=='dangling':target.unlink()
-if fault=='nonregular':target.unlink();os.mkfifo(target)
+metadata={}
+for source in files:
+ if source.is_symlink():
+  path_stat=source.stat()
+  with source.open('rb') as stream:fd_stat=os.fstat(stream.fileno())
+  keys=('st_dev','st_ino','st_size','st_mtime_ns','st_ctime_ns','st_birthtime_ns','st_mode')
+  metadata[source.relative_to(root).as_posix()]={
+   'path':{key:getattr(path_stat,key,None) for key in keys},
+   'fd':{key:getattr(fd_stat,key,None) for key in keys}}
+selected=root/'link.yaml';target=root/'target.txt';observed=False;injected=False
+if fault=='dangling':
+ target.unlink();injected=not os.path.lexists(target) and selected.is_symlink()
+if fault=='nonregular':
+ target.unlink();os.mkfifo(target);injected=stat.S_ISFIFO(target.lstat().st_mode) and selected.is_symlink()
 if fault=='retarget':
  other=root/'other.txt';other.write_bytes(target.read_bytes());selected.unlink();selected.symlink_to(other)
+ injected=selected.is_symlink() and selected.resolve()==other.resolve() and other.read_bytes()==target.read_bytes()
 if fault=='changed-during-read':
  original=os.read;wanted=target.stat()
  def read(fd,count):
   global observed
   result=original(fd,count);current=os.fstat(fd)
   if not observed and (current.st_dev,current.st_ino)==(wanted.st_dev,wanted.st_ino):
-   observed=True;target.write_bytes(b'x'*wanted.st_size);os.utime(target,ns=(wanted.st_atime_ns,wanted.st_mtime_ns))
+   target.write_bytes(b'x'*wanted.st_size);os.utime(target,ns=(wanted.st_atime_ns,wanted.st_mtime_ns))
+   observed=(target.read_bytes()==b'x'*wanted.st_size and target.stat().st_mtime_ns==wanted.st_mtime_ns)
   return result
  os.read=read
 try:
@@ -69,9 +83,10 @@ try:
   node=next(n for n in function.body if isinstance(n,ast.If) and isinstance(n.test,ast.Attribute) and n.test.attr=='move_payload')
   scope={'args':SimpleNamespace(move_payload=True,evidence=root),'value':{'workflow':'native'},'files':files,'payload':payload,'shutil':shutil,'require':control.require}
   exec(compile(ast.fix_missing_locations(ast.Module(body=[node],type_ignores=[])),control.__file__,'exec'),scope)
- print(json.dumps({'completed':True,'observedReadMutation':observed}))
+ print(json.dumps({'completed':True,'observedReadMutation':observed,'injectedFault':injected or observed,'metadata':metadata}))
 except Exception as error:
- print(json.dumps({'completed':False,'observedReadMutation':observed,'error':str(error)}));sys.exit(1)
+ print(json.dumps({'completed':False,'observedReadMutation':observed,'injectedFault':injected or observed,'metadata':metadata,
+  'error':str(error),'errorType':type(error).__name__,'errorFilename':getattr(error,'filename',None)}));sys.exit(1)
 '''
 
 
@@ -95,7 +110,62 @@ def codec(name, *arguments):
     return result.returncode
 
 
+def finish(expected):
+    assert {row['case'] for row in rows} == expected and len(rows) == len(expected)
+    (out / "manifest.json").write_text(json.dumps({"command": sys.argv, "testSha256": digest(Path(__file__)),
+        "controlSha256": digest(CONTROL), "codecSha256": digest(TRANSPORT), "python": sys.version,
+        "platform": sys.platform, "producerOnly": args.producer_only, "selectedCases": sorted(expected),
+        "scope": "original byte-receipt materialization and optional selected-consumer replay"}, indent=2) + "\n")
+    raise SystemExit(0 if all(row["pass"] for row in rows) else 1)
+
+
 literal = b"independent selected material\r\n"
+source = out / 'edited-links-input';source.mkdir()
+target = source / 'target.txt'
+target.write_bytes(b'initial content before the selected revision\n');target.write_bytes(literal)
+(source / 'link.yaml').symlink_to('target.txt')
+(source / 'absolute.yaml').symlink_to(target)
+(source / 'again.yaml').symlink_to('target.txt')
+files = ['target.txt', 'link.yaml', 'absolute.yaml', 'again.yaml']
+expected = {name: hashlib.sha256(literal).hexdigest() for name in files}
+payload = out / 'edited-links-payload'
+code, details = materialize('edited-selected-links', source, payload, files, expected)
+regular = code == 0 and all((payload / name).is_file() and not (payload / name).is_symlink() and
+    (payload / name).read_bytes() == literal and digest(payload / name) == expected[name] for name in files)
+alias_expected = sys.platform == 'win32' and sys.version_info[:3] == (3, 14, 0)
+alias_observed = any(value['path']['st_birthtime_ns'] is not None and
+    value['path']['st_birthtime_ns'] == value['fd']['st_birthtime_ns'] and
+    value['path']['st_ctime_ns'] != value['fd']['st_ctime_ns'] for value in details.get('metadata', {}).values())
+checks = {'exactRegularBytes': regular,
+          'independentFiles': regular and len({((payload / name).stat().st_dev, (payload / name).stat().st_ino) for name in files}) == len(files),
+          'allSelectedTransferred': code == 0 and all(not os.path.lexists(source / name) for name in files),
+          'windows314AliasObserved': not alias_expected or alias_observed}
+record('edited-selected-file-links', all(checks.values()), assertions=checks, exitCode=code,
+       windows314AliasExpected=alias_expected, windows314AliasObserved=alias_observed, expectedSha256=expected, **details)
+
+def reject_selected_link(fault):
+    source = out / (fault + "-input");source.mkdir();(source / "target.txt").write_bytes(literal);(source / "link.yaml").symlink_to("target.txt")
+    code, details = materialize(fault, source, out / (fault + "-payload"), ["link.yaml"], {"link.yaml": hashlib.sha256(literal).hexdigest()}, fault)
+    if fault == 'dangling':
+        boundary = (details.get('errorType') == 'FileNotFoundError' and
+            Path(details.get('errorFilename') or '') == source / 'link.yaml' and not os.path.lexists(source / 'target.txt'))
+    else:
+        reason = {'retarget': 'selected file link changed before materialization',
+                  'nonregular': 'selected file link no longer refers to a regular file',
+                  'changed-during-read': 'selected file link changed while copying'}[fault]
+        boundary = details.get('errorType') == 'ValueError' and details.get('error') == reason
+    checks = {'refused': code == 1, 'selectedLinkRetained': (source / 'link.yaml').is_symlink(),
+              'actualFaultInjected': details.get('injectedFault') is True, 'namedBoundary': boundary}
+    if fault == 'changed-during-read':
+        checks['actualReadMutation'] = details.get('observedReadMutation') is True
+    record("selected-link-" + fault, all(checks.values()), assertions=checks, exitCode=code, **details)
+
+for fault in ('dangling', 'retarget', 'changed-during-read'):
+    reject_selected_link(fault)
+portable_cases = {'edited-selected-file-links', 'selected-link-dangling', 'selected-link-retarget', 'selected-link-changed-during-read'}
+if args.producer_only:
+    finish(portable_cases)
+
 source = out / "positive-input";source.mkdir()
 (source / "target.txt").write_bytes(literal)
 (source / "link.yaml").symlink_to("target.txt")
@@ -130,11 +200,7 @@ else:
     for name in ("materialized-files-independent", "moved-raw-payload-survives-pack-failure", "materialized-pack-hydrate-bytes"):
         record(name, False, prerequisite="selected symlink bytes were not materialized")
 
-for fault in ("dangling", "nonregular", "retarget", "changed-during-read"):
-    source = out / (fault + "-input");source.mkdir();(source / "target.txt").write_bytes(literal);(source / "link.yaml").symlink_to("target.txt")
-    code, details = materialize(fault, source, out / (fault + "-payload"), ["link.yaml"], {"link.yaml": hashlib.sha256(literal).hexdigest()}, fault)
-    record("selected-link-" + fault, code == 1 and os.path.lexists(source / "link.yaml") and
-        (fault != "changed-during-read" or details.get("observedReadMutation") is True), exitCode=code, **details)
+reject_selected_link('nonregular')
 
 if args.profiles:
     assert args.binary is not None
@@ -163,7 +229,8 @@ if args.profiles:
     else:
         record("actual-profiles-production-validator", False, prerequisite="materialization did not produce regular evidence")
 
-(out / "manifest.json").write_text(json.dumps({"command": sys.argv, "testSha256": digest(Path(__file__)),
-    "controlSha256": digest(CONTROL), "codecSha256": digest(TRANSPORT), "python": sys.version,
-    "selectedCases": [row["case"] for row in rows], "scope": "original byte-receipt materialization and optional selected-consumer replay"}, indent=2) + "\n")
-raise SystemExit(0 if all(row["pass"] for row in rows) else 1)
+expected_cases = portable_cases | {'relative-absolute-multiple-selected-links', 'original-unselected-types-retained',
+    'materialized-files-independent', 'moved-raw-payload-survives-pack-failure', 'materialized-pack-hydrate-bytes', 'selected-link-nonregular'}
+if args.profiles:
+    expected_cases |= {'actual-profiles-materialization', 'actual-profiles-production-validator'}
+finish(expected_cases)

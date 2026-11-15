@@ -253,7 +253,11 @@ Python 3.14.0 还必须实际观察到 path/fd ctime 不同而 birthtime 相同�
 修改。[transport_e2e.py](../tests/ci/transport_e2e.py) 用固定独立输入检查原 JSON/原始流
 字节、独立副本、模式、严格拒绝和实际并发变化；
 [receipt_materialization_e2e.py](../tests/ci/receipt_materialization_e2e.py) 检查选中文件链接的
-物化顺序、变化拒绝和失败材料保留。传输完整性不能替代原 `control.py`/`evidence.py`
+物化顺序、变化拒绝和失败材料保留。其 `--producer-only` 在五个平台实际重写 referent，
+再物化相对、绝对和多个文件链接，独立验证字节、hash、普通文件与独立身份；还拒绝悬空、
+改指向和读取中同尺寸改写并恢复 mtime。固定 Windows 3.14.0 必须观察到 path/fd ctime
+别名差异；只有跨 API 比较使用 birthtime，同 API 的完整 ctime/mode 与内容 hash 保护保留。
+传输完整性不能替代原 `control.py`/`evidence.py`
 的执行身份、case 集合、原始协议和领域验收。
 
 本地归档比较应固定 Python/zlib、完整逻辑 inventory 和测试选择，交替重复当前 raw receipt

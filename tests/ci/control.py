@@ -100,7 +100,10 @@ def generated_payload_path(relative):
          or ('source' in parts and any(part in ('artifacts','build','target') for part in parts[parts.index('source')+1:])))
 
 def material_signature(value, cross_api=False):
- return (value.st_dev,value.st_ino,value.st_size,value.st_mtime_ns,value.st_ctime_ns,
+ # Windows 3.14 path ctime aliases birthtime while fd ctime is ChangeTime.
+ # Normalize only path/fd comparison; same-API mutation checks keep full ctime.
+ timestamp=value.st_birthtime_ns if cross_api and os.name=='nt' and hasattr(value,'st_birthtime_ns') else value.st_ctime_ns
+ return (value.st_dev,value.st_ino,value.st_size,value.st_mtime_ns,timestamp,
          stat.S_IFMT(value.st_mode) if cross_api else value.st_mode)
 
 def file_link_snapshot(path):
