@@ -1,6 +1,24 @@
 {
   "schemaVersion": 1,
   "consumers": {
+    "wf-analysis-status": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "input-sources"}, "assertions": ["buffer_identity", "disk_hash", "disk_source", "disk_unchanged", "owned_root_scope", "read_only_action", "resolved_action", "separate_completeness", "visible_explanation"]},
+        {"id": {"case": "closed-file-recovery"}, "assertions": ["closed_refused", "disk_unchanged", "open_recovers", "related_file"]},
+        {"id": {"case": "incomplete-scope"}, "assertions": ["document_available", "refusal_explained", "scope_incomplete", "unknown_empty_distinct"]},
+        {"id": {"case": "ambiguous-binding"}, "assertions": ["disk_unchanged", "explanation_reason", "next_step", "real_guard_reason"]},
+        {"id": {"case": "unknown-namespace"}, "assertions": ["disk_unchanged", "explanation_reason", "next_step", "real_guard_reason"]},
+        {"id": {"case": "dynamic-reference"}, "assertions": ["disk_unchanged", "explanation_reason", "next_step", "real_guard_reason"]},
+        {"id": {"case": "open-policy"}, "assertions": ["disk_unchanged", "explanation_reason", "next_step", "real_guard_reason"]},
+        {"id": {"case": "stale-action"}, "assertions": ["config_stale_refused", "disk_unchanged", "no_old_message", "offered", "stale_refused"]},
+        {"id": {"case": "proven-empty"}, "assertions": ["complete_zero_references", "rename_available"]},
+        {"id": {"case": "invalid-configuration"}, "assertions": ["buffer_identity", "config_unchanged", "not_complete", "unavailable_explained"]},
+        {"id": {"case": "read-only-client"}, "assertions": ["action_kind_respected", "command_advertised", "edit_capability_explained", "natural_exit", "read_only_usable", "reference_certainty"]},
+        {"id": {"case": "read-only-dynamic"}, "assertions": ["action_kind_respected", "command_advertised", "edit_capability_explained", "natural_exit", "read_only_usable", "reference_certainty"]},
+        {"id": {"case": "read-only-ambiguous"}, "assertions": ["action_kind_respected", "command_advertised", "edit_capability_explained", "natural_exit", "read_only_usable", "reference_certainty"]}
+      ]
+    },
     "wf1": {
       "assertionKey": "assertions",
       "rows": [

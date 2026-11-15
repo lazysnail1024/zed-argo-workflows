@@ -67,7 +67,7 @@ for policy in ['closed','open']:
     if q['includeDeclaration'] is not None:params['context']={'includeDeclaration':q['includeDeclaration']}
     r=client.request('textDocument/'+q['method'],params);responses.append(r);checks['query'+str(i)]='error' not in r and norm(r.get('result',[]))==norm(q['locations'])
    for tag in no_edits:
-    at=locations[tag];r=client.request('textDocument/codeAction',{'textDocument':{'uri':at['uri']},'range':at['range'],'context':{'diagnostics':[]}});responses.append(r);checks['noAction'+tag]=r.get('result')==[] and 'error' not in r;r=client.request('textDocument/completion',{'textDocument':{'uri':at['uri']},'position':at['range']['start']});responses.append(r);checks['noCompletion'+tag]=r.get('result')==[] and 'error' not in r
+    at=locations[tag];r=client.request('textDocument/codeAction',{'textDocument':{'uri':at['uri']},'range':at['range'],'context':{'diagnostics':[],'only':['quickfix']}});responses.append(r);checks['noAction'+tag]=r.get('result')==[] and 'error' not in r;r=client.request('textDocument/completion',{'textDocument':{'uri':at['uri']},'position':at['range']['start']});responses.append(r);checks['noCompletion'+tag]=r.get('result')==[] and 'error' not in r
    for tag in rename_refused:
     at=locations[tag];r=client.request('textDocument/rename',{'textDocument':{'uri':at['uri']},'position':at['range']['start'],'newName':'replacement'});responses.append(r);checks['renameRefused'+tag]=r.get('error',{}).get('code')==-32602 and 'result' not in r
    checks['unchangedBytes']=cp.read_bytes()==caller.encode() and lp.read_bytes()==library.encode();m.result(name,checks,{'cli':report,'responses':responses})

@@ -16,7 +16,7 @@ try:
  client=m.LSP(dest,work);ds=client.open(path,text);checks['fullPublication']=norm([{k:d[k] for k in ['range','code']} for d in ds])==norm([{k:d[k] for k in ['range','code']} for d in expected]) and all(d['severity']==2 and d['source']=='argo-workflows' for d in ds)
  for index in [0,1]:
   p=span('imagePullPolcy',index)['start'];r=client.request('textDocument/completion',{'textDocument':{'uri':uri},'position':p});responses.append(r);checks['completion'+str(index)]=r.get('result')==[] if index==0 else any(x.get('label')=='imagePullPolicy' for x in r.get('result',[]))
-  r=client.request('textDocument/codeAction',{'textDocument':{'uri':uri},'range':span('imagePullPolcy',index),'context':{'diagnostics':[]}});responses.append(r);actions=r.get('result',[])
+  r=client.request('textDocument/codeAction',{'textDocument':{'uri':uri},'range':span('imagePullPolcy',index),'context':{'diagnostics':[],'only':['quickfix']}});responses.append(r);actions=r.get('result',[])
   if index==0:checks['sharedActions']=actions==[]
   else:
    exact=[a for a in actions if a.get('title')=='Replace field with imagePullPolicy'];checks['exactAction']=len(exact)==1

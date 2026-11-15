@@ -35,34 +35,36 @@ type buffer struct {
 	unavailable string
 }
 type session struct {
-	render            RenderCommand
-	showDocument      bool
-	catalog           *catalog
-	focus, method     string
-	callerDefinitions bool
-	proofs            []catalogProof
-	localPublication  bool
-	queryResults      map[string]json.RawMessage
-	queryBytes        int
-	queryKey          string
-	externalFacts     *analysis.ExternalFacts
-	factInput         *workspace.Workspace
-	factBoundary      string
-	factMixed         bool
-	workspaces        map[workspaceKey]workspace.Workspace
-	ctx               context.Context
-	pending           map[string]bool
-	out               io.Writer
-	log               io.Writer
-	roots             []string
-	override          string
-	buffers           map[string]buffer
-	initialized       bool
-	shutdown          bool
-	epoch             uint64
-	versionedEdits    bool
-	actions           map[string]pendingAction
-	actionSequence    uint64
+	explainActionAllowed bool
+	explainPosition      *analysis.Position
+	render               RenderCommand
+	showDocument         bool
+	catalog              *catalog
+	focus, method        string
+	callerDefinitions    bool
+	proofs               []catalogProof
+	localPublication     bool
+	queryResults         map[string]json.RawMessage
+	queryBytes           int
+	queryKey             string
+	externalFacts        *analysis.ExternalFacts
+	factInput            *workspace.Workspace
+	factBoundary         string
+	factMixed            bool
+	workspaces           map[workspaceKey]workspace.Workspace
+	ctx                  context.Context
+	pending              map[string]bool
+	out                  io.Writer
+	log                  io.Writer
+	roots                []string
+	override             string
+	buffers              map[string]buffer
+	initialized          bool
+	shutdown             bool
+	epoch                uint64
+	versionedEdits       bool
+	actions              map[string]pendingAction
+	actionSequence       uint64
 }
 
 func read(r *bufio.Reader) (message, error) {
@@ -122,6 +124,11 @@ func (s *session) write(value any) error {
 	return err
 }
 func (s *session) reply(id json.RawMessage, result any) error {
+	if s.method == "textDocument/codeAction" {
+		if actions, ok := result.([]map[string]any); ok {
+			result = s.withExplanationAction(s.focus, actions)
+		}
+	}
 	if s.queryKey != "" && s.context().Err() == nil {
 		raw, err := json.Marshal(result)
 		if err == nil && len(raw) <= 4*1024*1024 {
@@ -138,6 +145,12 @@ func (s *session) reply(id json.RawMessage, result any) error {
 	return s.write(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
 }
 func (s *session) failure(id json.RawMessage, code int, text string) error {
+	if code == -32801 {
+		return s.failureError(id, code, s.method, analysis.Refuse("STALE_INPUT", text))
+	}
+	if code == -32800 {
+		return s.failureError(id, code, s.method, analysis.Refuse("CANCELLED", text))
+	}
 	if len(id) == 0 {
 		return nil
 	}
@@ -421,10 +434,12 @@ func (s *session) handle(m message) (bool, int, error) {
 		}
 		s.initialized = true
 		capabilities := map[string]any{"workspace": map[string]any{"workspaceFolders": map[string]any{"supported": true, "changeNotifications": true}}, "positionEncoding": "utf-16", "completionProvider": map[string]any{"resolveProvider": false}, "hoverProvider": true, "definitionProvider": true, "referencesProvider": true, "documentSymbolProvider": true, "workspaceSymbolProvider": true, "textDocumentSync": map[string]any{"openClose": true, "change": 2, "save": map[string]any{"includeText": false}}}
+		commands := []string{explainCommand}
 		if s.render != nil {
-			capabilities["executeCommandProvider"] = map[string]any{"commands": []string{"argo-workflows.renderCheck"}}
-			capabilities["codeActionProvider"] = map[string]any{"codeActionKinds": []string{"source", "quickfix"}}
+			commands = append(commands, "argo-workflows.renderCheck")
 		}
+		capabilities["executeCommandProvider"] = map[string]any{"commands": commands}
+		capabilities["codeActionProvider"] = map[string]any{"resolveProvider": true, "codeActionKinds": []string{"source", "quickfix"}}
 		if s.versionedEdits {
 			capabilities["codeActionProvider"] = map[string]any{"resolveProvider": true, "codeActionKinds": []string{"quickfix", "source"}}
 			capabilities["renameProvider"] = map[string]any{"prepareProvider": true}
@@ -448,6 +463,9 @@ func (s *session) handle(m message) (bool, int, error) {
 				return false, 0, s.failure(m.ID, -32602, b.unavailable)
 			}
 		}
+	}
+	if handled, err := s.explanationRequest(m); handled {
+		return false, 0, err
 	}
 	if handled, err := s.renderRequest(m); handled {
 		return false, 0, err

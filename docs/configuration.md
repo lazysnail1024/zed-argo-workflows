@@ -99,6 +99,7 @@ query behavior and update procedure are documented in
 ```sh
 argo-workflows-ls version --json
 argo-workflows-ls explain-config --root .
+argo-workflows-ls explain-config --root . --file example.yaml
 argo-workflows-ls check --root . --format json
 argo-workflows-ls check --root . --scope production --target-version 3.6.0 --format json
 argo-workflows-ls serve --stdio
@@ -106,6 +107,34 @@ argo-workflows-ls serve --stdio
 
 `explain-config` reports root, configuration, targets and unevaluated inputs; it
 uses the CLI workspace loader, so it also performs disk collection.
+With `--file`, it adds an `analysis` explanation for that saved file. Relative file
+paths are resolved from `--root`. `inputIdentity` records `source: disk`, the URI,
+SHA-256 and effective configuration hash; CLI never reads editor overlays.
+
+The editor's **Argo Workflows: explain current analysis** source action uses the
+current buffer instead. It displays the owning root and scope, the roots actually
+passed to this server, document and selected-scope completeness, and an actionable
+Rename refusal at the cursor. It is available without versioned-edit capability.
+Clients may also request `argo-workflows/explainAnalysis` with `textDocument.uri`
+and an optional LSP `position` to receive the same structured projection without
+a message. `workspace/executeCommand` uses `argo-workflows.explainAnalysis` and the
+arguments returned by the source action; changed buffer/configuration/root inputs
+invalidate that action. Explanations are requested explicitly and do not generate
+background message notifications.
+
+Rename errors include `error.data.reasonCode`, `nextStep` and `relatedLocations`.
+The originating safety guard supplies codes such as `INDEX_INCOMPLETE`,
+`AMBIGUOUS_BINDING`, `TARGET_UNKNOWN`, `AFFECTED_FILE_NOT_OPEN`,
+`DYNAMIC_REFERENCE`, `REFERENCE_POLICY_OPEN` and `STALE_INPUT`. These explain
+existing requirements; no response authorizes a later edit without revalidation.
+`references.complete: false` means a zero count cannot prove there are no references.
+Reference certainty is deliberately conservative: it reuses the modeled closed
+binding proof, independently of client edit capability. Some navigable but
+non-renamable symbols therefore remain unknown; a false flag does not erase the
+known locations or claim the symbol has no references.
+An unavailable configuration or dynamic Helm source is reported as unavailable,
+not as successfully checked empty input.
+
 `check --file path/to/file.yaml` filters emitted diagnostics after the selected
 scope is loaded and checked; it is not a current-file-only analysis shortcut.
 `--warnings-as-errors` also fails on Warning diagnostics.

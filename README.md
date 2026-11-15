@@ -80,6 +80,19 @@ bounded request lane. See [current capabilities and boundaries](docs/architectur
 Installed releases use their recorded source commit; development capabilities do
 not imply that an older released binary contains them.
 
+Use **Argo Workflows: explain current analysis** from the file's code actions to
+inspect the current buffer, owning root and scope, and separate document/workspace
+completeness. At a symbol it also explains whether Rename is available, why it is
+refused, and which affected file to open. An empty reference result is explicitly
+marked incomplete when the selected scope or binding cannot be proven. The action
+is read-only; it never changes namespaces or reference policy. Clients without
+versioned edit support can still request the explanation.
+
+For the saved input, run `argo-workflows-ls explain-config --root . --file example.yaml`.
+Its `analysis.inputIdentity.source` is `disk`; the editor uses `buffer` and includes
+the current document version and content hash. This distinction matters for
+unsaved edits and configuration buffers.
+
 ## Helm charts
 
 Install Zed's Helm extension for Helm syntax and Helm language-server features.

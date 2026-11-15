@@ -97,7 +97,7 @@ func resourceRenameInputs(ctx context.Context, w workspace.Workspace) ([]resourc
 	resources, complete, _, _ := externalResources(ctx, w, false)
 	for _, d := range w.Documents {
 		if !complete[d.Target.ID] {
-			return nil, nil, fmt.Errorf("resource rename requires a complete scope")
+			return nil, nil, Refuse("INDEX_INCOMPLETE", "resource rename requires a complete scope")
 		}
 		view, err := parseView(ctx, d.Snapshot)
 		if err != nil {
@@ -111,7 +111,7 @@ func resourceRenameInputs(ctx context.Context, w workspace.Workspace) ([]resourc
 			api, _ := queryMember(v, "apiVersion").(string)
 			kind, _ := queryMember(v, "kind").(string)
 			if owned(api, kind) && schemaOnlyKind(kind) {
-				return nil, nil, fmt.Errorf("schema-only resources do not have a complete rename binding model")
+				return nil, nil, Refuse("UNMODELED_BINDING", "schema-only resources do not have a complete rename binding model")
 			}
 		}
 	}
@@ -126,8 +126,14 @@ func resourceRenameInputs(ctx context.Context, w workspace.Workspace) ([]resourc
 		externalCalls(r, func(ref, _ workflowValue, _ bool) {
 			name := workflowMember(ref, "name")
 			key, known := candidateIdentity(r, ref)
-			if !known || key.name == "" || strings.ContainsAny(key.name, "{}") || key.kind == "WorkflowTemplate" && !staticResourceNamespace(key.namespace) {
-				problem = fmt.Errorf("dynamic reference or unknown namespace prevents proving resource rename")
+			cluster := workflowMember(ref, "clusterScope")
+			missingNamespace := r.namespace == "" && (!cluster.present || cluster.value == false)
+			if missingNamespace {
+				problem = Refuse("TARGET_UNKNOWN", "unknown namespace prevents proving resource rename", nodeLocation(r.document.Snapshot, name.node))
+			} else if !known || key.name == "" || strings.ContainsAny(key.name, "{}") {
+				problem = Refuse("DYNAMIC_REFERENCE", "dynamic reference prevents proving resource rename", nodeLocation(r.document.Snapshot, name.node))
+			} else if key.kind == "WorkflowTemplate" && !staticResourceNamespace(key.namespace) {
+				problem = Refuse("TARGET_UNKNOWN", "unknown namespace prevents proving resource rename", nodeLocation(r.document.Snapshot, name.node))
 			}
 			modeled[ref.Span()]++
 			uses = append(uses, resourceNameUse{i, name, key, call})
@@ -140,12 +146,12 @@ func resourceRenameInputs(ctx context.Context, w workspace.Workspace) ([]resourc
 			}
 			for _, m := range n.Members() {
 				if m.Name == "inline" {
-					problem = fmt.Errorf("inline template bindings are not modeled for resource rename")
+					problem = Refuse("UNMODELED_BINDING", "inline template bindings are not modeled for resource rename")
 					return
 				}
 				if m.Name == "templateRef" || m.Name == "workflowTemplateRef" {
 					if modeled[m.Value.Span()] == 0 {
-						problem = fmt.Errorf("nested reference is not modeled for resource rename")
+						problem = Refuse("UNMODELED_BINDING", "nested reference is not modeled for resource rename")
 						return
 					}
 					modeled[m.Value.Span()]--
@@ -162,7 +168,7 @@ func resourceRenameInputs(ctx context.Context, w workspace.Workspace) ([]resourc
 		}
 		for _, remaining := range modeled {
 			if remaining != 0 {
-				return nil, nil, fmt.Errorf("resource reference walk is incomplete")
+				return nil, nil, Refuse("UNMODELED_BINDING", "resource reference walk is incomplete")
 			}
 		}
 	}
@@ -172,7 +178,7 @@ func resourceRenameInputs(ctx context.Context, w workspace.Workspace) ([]resourc
 func selectResourceRename(ctx context.Context, w workspace.Workspace, uri string, pos source.Position) (resourceRenameSelection, error) {
 	selection := resourceRenameSelection{definition: -1}
 	if w.Config.ReferencePolicy != "closed" {
-		return selection, fmt.Errorf("resource rename requires closed reference policy")
+		return selection, Refuse("REFERENCE_POLICY_OPEN", "resource rename requires closed reference policy")
 	}
 	target := ""
 	for _, d := range w.Documents {
@@ -181,7 +187,7 @@ func selectResourceRename(ctx context.Context, w workspace.Workspace, uri string
 		}
 	}
 	if target == "" || w.IncompleteScopes[target] {
-		return selection, fmt.Errorf("resource rename requires the complete selected scope")
+		return selection, Refuse("INDEX_INCOMPLETE", "resource rename requires the complete selected scope")
 	}
 	selection.input = w
 	selection.input.Documents = nil
@@ -216,18 +222,24 @@ func selectResourceRename(ctx context.Context, w workspace.Workspace, uri string
 	for _, use := range selection.uses {
 		choose(use.name, selection.resources[use.resource], use.identity)
 	}
-	if !selected || len(selection.identity.name) > 253 || !resourceNamePattern.MatchString(selection.identity.name) || selection.identity.kind == "WorkflowTemplate" && !staticResourceNamespace(selection.identity.namespace) {
-		return selection, fmt.Errorf("position has no static resource name with known namespace")
+	if !selected || len(selection.identity.name) > 253 || !resourceNamePattern.MatchString(selection.identity.name) {
+		return selection, Refuse("NO_RENAMABLE_SYMBOL", "position has no static resource name with known namespace")
 	}
-	declarations := 0
+	if selection.identity.kind == "WorkflowTemplate" && !staticResourceNamespace(selection.identity.namespace) {
+		return selection, Refuse("TARGET_UNKNOWN", "position has no static resource name with known namespace", selection.selection)
+	}
+	declarations := []Location{}
 	for i, r := range selection.resources {
 		if resourceIdentity(r) == selection.identity {
 			selection.definition = i
-			declarations++
+			declarations = append(declarations, nodeLocation(r.document.Snapshot, member(member(r.root, "metadata"), "name")))
 		}
 	}
-	if declarations != 1 {
-		return selection, fmt.Errorf("resource name does not have a unique declaration")
+	if len(declarations) == 0 {
+		return selection, Refuse("TARGET_UNKNOWN", "resource name does not have a known declaration", selection.selection)
+	}
+	if len(declarations) != 1 {
+		return selection, Refuse("AMBIGUOUS_BINDING", "resource name does not have a unique declaration", declarations...)
 	}
 	selection.occurrences = append(selection.occurrences, selection.uses...)
 	exact := selection.occurrences[:0]
@@ -236,7 +248,7 @@ func selectResourceRename(ctx context.Context, w workspace.Workspace, uri string
 			continue
 		}
 		if !exactResourceName(use.name) {
-			return selection, fmt.Errorf("resource name has shared, derived or ambiguous source")
+			return selection, Refuse("AMBIGUOUS_BINDING", "resource name has shared, derived or ambiguous source")
 		}
 		exact = append(exact, use)
 	}

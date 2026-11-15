@@ -226,15 +226,42 @@ func runWithIO(parent context.Context, args []string, stdout, stderr io.Writer) 
 		flags := flag.NewFlagSet("explain-config", flag.ContinueOnError)
 		flags.SetOutput(stderr)
 		root := flags.String("root", ".", "workspace root")
+		file := flags.String("file", "", "explain one file from disk (editor buffers are not read)")
 		if flags.Parse(args[1:]) != nil || flags.NArg() != 0 {
 			return 2
 		}
-		input, err := workspace.Load(*root, "", "")
+		ctx, cancel := context.WithTimeout(analysis.WithInvocation(parent), 5*time.Second)
+		defer cancel()
+		input, err := workspace.LoadContext(ctx, *root, "", "")
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 2
 		}
-		emit(map[string]any{"product": "argo-workflows", "schemaVersion": 1, "root": input.Root, "configuration": input.Config, "targets": input.Targets, "analysisReady": true, "notEvaluated": input.NotEvaluated})
+		result := map[string]any{"product": "argo-workflows", "schemaVersion": 1, "root": input.Root, "inputSource": "disk", "configuration": input.Config, "targets": input.Targets, "analysisReady": true, "notEvaluated": input.NotEvaluated}
+		if *file != "" {
+			name := *file
+			if !filepath.IsAbs(name) {
+				name = filepath.Join(input.Root, name)
+			}
+			uri, err := fileuri.FromPath(name)
+			if err != nil {
+				fmt.Fprintln(stderr, err)
+				return 2
+			}
+			found := false
+			for _, document := range input.Documents {
+				if string(document.Snapshot.URI()) == uri {
+					result["analysis"] = analysis.ExplainDocument(ctx, document, "disk", nil, !input.IncompleteScopes[document.Target.ID])
+					found = true
+					break
+				}
+			}
+			if !found {
+				fmt.Fprintln(stderr, "file is not part of the selected disk workspace")
+				return 2
+			}
+		}
+		emit(result)
 		return 0
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n", args[0])

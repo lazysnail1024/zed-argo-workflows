@@ -109,3 +109,86 @@ func TestReadOnlyClosureKeepsSnapshotsWithTheirProofs(t *testing.T) {
 		t.Fatalf("navigation accepted an obsolete dependency location: %+v", locations)
 	}
 }
+
+func TestExplanationRetainsScopeProofUntilPublication(t *testing.T) {
+	for _, withPosition := range []bool{false, true} {
+		name := "readiness-without-position"
+		if withPosition {
+			name = "closed-file-refusal-with-positive-references"
+		}
+		t.Run(name, func(t *testing.T) {
+			c := testCatalogNoWorkers(t)
+			root := t.TempDir()
+			configuration := "schemaVersion: 1\ntargetVersion: '3.6.0'\nreferencePolicy: closed\n"
+			if err := os.WriteFile(filepath.Join(root, ".argo-workflows-ls.yaml"), []byte(configuration), 0600); err != nil {
+				t.Fatal(err)
+			}
+			header, err := workspace.Describe(context.Background(), root, "", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.roots[root] = &catalogRoot{header: header, identity: catalogIdentity(header, ""), done: true, epoch: 1, scanEpoch: 1, priority: map[string]bool{}}
+			owner := session{catalog: c, roots: []string{root}, initialized: true, versionedEdits: true,
+				buffers: map[string]buffer{}, pending: map[string]bool{}, actions: map[string]pendingAction{}, out: io.Discard, log: io.Discard}
+			accept := func(method string, params any) {
+				t.Helper()
+				raw, err := json.Marshal(params)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, _, err := owner.accept(message{Method: method, Params: raw}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			libraryText := "apiVersion: argoproj.io/v1alpha1\nkind: WorkflowTemplate\nmetadata: {name: library, namespace: argo}\nspec:\n  templates:\n    - name: work\n      container: {image: alpine}\n"
+			callerText := "apiVersion: argoproj.io/v1alpha1\nkind: Workflow\nmetadata: {name: caller, namespace: argo}\nspec:\n  workflowTemplateRef: {name: library}\n"
+			library, err := fileuri.FromPath(filepath.Join(root, "library.yaml"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			caller, err := fileuri.FromPath(filepath.Join(root, "caller.yaml"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "caller.yaml"), []byte(callerText), 0600); err != nil {
+				t.Fatal(err)
+			}
+			accept("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": library, "version": 1, "text": libraryText}})
+			accept("workspace/didChangeWatchedFiles", map[string]any{"changes": []map[string]any{{"uri": caller, "type": 1}}})
+			for n := 0; n < 8; n++ {
+				job, ok := c.queue.Pop()
+				if !ok {
+					break
+				}
+				c.process(job)
+			}
+			params, err := json.Marshal(map[string]any{"textDocument": map[string]string{"uri": library}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := owner.queueRequest(message{Method: "argo-workflows/explainAnalysis", Params: params})
+			worker := owner
+			worker.ctx = analysis.WithInvocation(context.Background())
+			worker.method, worker.focus = "argo-workflows/explainAnalysis", library
+			worker.proofs = nil
+			var position *analysis.Position
+			if withPosition {
+				position = &analysis.Position{Line: 2, Character: 19}
+			}
+			status, err := worker.explainAnalysis(library, position)
+			if err != nil || !status.Completeness.Workspace || !c.valid(worker.proofs) {
+				t.Fatalf("fixture did not produce a ready explanation with valid authority: %+v, %v", status, err)
+			}
+			if withPosition && (status.References == nil || status.References.Count != 1 || status.Operations["rename"].ReasonCode != "AFFECTED_FILE_NOT_OPEN") {
+				t.Fatalf("fixture must contain positive reference facts and a refused edit: %+v", status)
+			}
+			accept("textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": caller, "version": 1, "text": callerText + "# newer input\n"}})
+			if !owner.requestCurrent(request) {
+				t.Fatal("unchanged queried buffer must remain admissible; dependency proof must reject the result")
+			}
+			if c.valid(worker.proofs) {
+				t.Fatal("explanation retained publication authority after its selected-scope input changed")
+			}
+		})
+	}
+}

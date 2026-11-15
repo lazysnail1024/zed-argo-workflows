@@ -68,7 +68,7 @@ func (b *localRenameBindings) add(key renameKey, occurrence renameOccurrence) {
 	}
 	if other, ok := b.positions[occurrence.span]; ok {
 		if other != key {
-			b.err = fmt.Errorf("source location has multiple binding identities")
+			b.err = Refuse("AMBIGUOUS_BINDING", "source location has multiple binding identities")
 		}
 		return
 	}
@@ -96,7 +96,7 @@ func (b *localRenameBindings) declare(owner int, kind string, n yamlview.Node) {
 	b.resumeQuery()
 	name, span, ok := exactName(n)
 	if !ok || sharedOrigin(b.shared, span) {
-		b.err = fmt.Errorf("declaration is not an exact static name")
+		b.err = Refuse("DYNAMIC_REFERENCE", "declaration is not an exact static name")
 		return
 	}
 	key := renameKey{owner, kind, name}
@@ -105,7 +105,7 @@ func (b *localRenameBindings) declare(owner int, kind string, n yamlview.Node) {
 		b.queryReference(key, span)
 	}
 	if _, exists := b.symbols[key]; exists {
-		b.err = fmt.Errorf("duplicate local symbol")
+		b.err = Refuse("AMBIGUOUS_BINDING", "duplicate local symbol")
 		return
 	}
 	b.symbols[key] = nil
@@ -119,7 +119,7 @@ func (b *localRenameBindings) reference(owner int, kind string, n yamlview.Node,
 	name, span, ok := exactName(n)
 	key := renameKey{owner, kind, name}
 	if !ok {
-		b.err = fmt.Errorf("reference is not an exact static name")
+		b.err = Refuse("DYNAMIC_REFERENCE", "reference is not an exact static name")
 		return
 	}
 	b.queryReference(key, span)
@@ -144,7 +144,7 @@ func (b *localRenameBindings) callee(n yamlview.Node) int {
 		}
 	}
 	if _, ok := b.symbols[renameKey{-1, "template", name}]; !ok {
-		b.err = fmt.Errorf("callee is not a unique local template")
+		b.err = Refuse("AMBIGUOUS_BINDING", "callee is not a unique local template")
 		return -1
 	}
 	b.reference(-1, "template", n, false)
@@ -600,7 +600,7 @@ func collectLocalBindings(ctx context.Context, s source.Snapshot, version string
 	kind, _ := queryMember(projected, "kind").(string)
 	api, _ := queryMember(projected, "apiVersion").(string)
 	if !owned(api, kind) || schemaOnlyKind(kind) || !readOnly && kind != "Workflow" && kind != "CronWorkflow" {
-		return b, fmt.Errorf("only closed Workflow and CronWorkflow symbols can be renamed")
+		return b, Refuse("UNMODELED_BINDING", "only closed Workflow and CronWorkflow symbols can be renamed")
 	}
 	if readOnly {
 		namespace, _ := queryMember(queryMember(projected, "metadata"), "namespace").(string)
@@ -654,7 +654,7 @@ func collectLocalBindings(ctx context.Context, s source.Snapshot, version string
 		return true
 	}
 	if !readOnly && !closed(root, nil) {
-		return b, fmt.Errorf("derived, inherited, external or exported bindings prevent local rename")
+		return b, Refuse("UNMODELED_BINDING", "derived, inherited, external or exported bindings prevent local rename")
 	}
 	effectiveRoot := workflowRoot(projected, root)
 	effectiveRoot.shared = b.shared
@@ -832,16 +832,16 @@ func renameSelection(ctx context.Context, s source.Snapshot, version string, pos
 		for _, o := range occurrences {
 			if at >= o.span.Start && at < o.span.End {
 				if b.staticExternalCalls && key.kind != "template" {
-					return b, key, o, fmt.Errorf("external call arguments and outputs require a cross-resource binding proof; only independent local template names can be renamed")
+					return b, key, o, Refuse("UNMODELED_BINDING", "external call arguments and outputs require a cross-resource binding proof; only independent local template names can be renamed")
 				}
 				if b.blocked[key] {
-					return b, key, o, fmt.Errorf("indirect or dynamic access prevents proving all references to %q", key.name)
+					return b, key, o, Refuse("DYNAMIC_REFERENCE", fmt.Sprintf("indirect or dynamic access prevents proving all references to %q", key.name))
 				}
 				return b, key, o, nil
 			}
 		}
 	}
-	return b, renameKey{}, renameOccurrence{}, fmt.Errorf("position has no unique local symbol")
+	return b, renameKey{}, renameOccurrence{}, Refuse("NO_RENAMABLE_SYMBOL", "position has no unique local symbol")
 }
 func PrepareRename(ctx context.Context, s source.Snapshot, version string, pos source.Position) (any, error) {
 	_, key, o, err := renameSelection(ctx, s, version, pos)

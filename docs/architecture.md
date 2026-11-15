@@ -60,6 +60,7 @@ scope 的有效 target。`stream.go` 的 `Describe` 只读取配置元数据，`
 | [document_workspace.go](../internal/lsp/document_workspace.go) | 为被 exclude 或内部目录隔离的 `opened:<URI>` buffer 重新获取当前输入；Quick Fix 不会误选磁盘 scope |
 | [query_cache.go](../internal/lsp/query_cache.go) | 在获取当前输入后复用完整 scope 的最终查询结果；身份包含方法/参数、文本、配置及索引候选 generation |
 | [edits.go](../internal/lsp/edits.go) | Rename/Code Action 协议，版本化 WorkspaceEdit，延迟 resolve 的 token、输入 fingerprint 与安全性复查 |
+| [explanation.go](../internal/lsp/explanation.go) | 从当前 buffer/catalog 派生只读分析解释，区分文件和 scope 完整性；显式 source action/command 及标准错误 data，复用实际 prepareRename 检查，不保存第二套状态 |
 | [helm.go](../internal/lsp/helm.go) | 对受支持的 Helm 字面源提供原文件坐标的 Definition；同 chart 的静态目标才参与绑定，其他源查询保守返回空结果 |
 | [render.go](../internal/lsp/render.go)、[workspace/chart.go](../internal/workspace/chart.go) | 发现最近祖先 Chart，创建并复核 saved-chart action；仅执行命令时调用有界 render 回调，检查未保存/过时输入并按客户端能力打开生成 YAML |
 
@@ -150,6 +151,12 @@ Expr 与 JSON Schema 是本仓实际使用并单独记录补丁的依赖，不�
    同 size/mtime 的字节变化也能被发现。查询重新获取已知依赖；完全未知的新文件由维护扫描发现。
    维护扫描本身有 I/O，不承诺无成本。
 8. **发布和查询分别确认。** 只有接受的诊断 publication 能确认外部诊断已完成；普通 query 不修改此状态。
+
+只读解释的字段由当前不可变 snapshot、有效 target 和 catalog readiness 生成；根、配置和
+文档版本沿用现有请求 proof 检查。显式 command 使用 `window/showMessage` 展示结果，只有
+用户请求时才发送。领域安全拒绝由 [analysis/explanation.go](../internal/analysis/explanation.go)
+的类型化原因携带，原因码在拒绝发生的位置创建，不从错误字符串反推。解释中的可用状态不
+作为编辑凭据；实际 Rename 仍重新运行相同检查。
    本地诊断先发后，scope 完整时补发外部诊断。结果带 root epoch、scope generation、file stamp/hash，
    失效后不能发布旧位置或恢复旧 Quick Fix；无变化的 Ready→Ready 不反复刷新全部已打开文件。
 

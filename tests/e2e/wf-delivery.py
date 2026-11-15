@@ -64,7 +64,7 @@ def lsp_case(name):
     def rename(p,t):return request('textDocument/rename',{'textDocument':{'uri':p.as_uri()},'position':m.pos(t,'name: main',offset=6),'newName':'renamed'})
     def actions(p,t):
         start=m.pos(t,'entrypoint: main',offset=12)
-        return request('textDocument/codeAction',{'textDocument':{'uri':p.as_uri()},'range':{'start':start,'end':start}})
+        return request('textDocument/codeAction',{'textDocument':{'uri':p.as_uri()},'range':{'start':start,'end':start},'context':{'only':['quickfix']}})
     try:
         client=m.LSP(dest,work);timer=threading.Timer(45,lambda:client.p.kill() if client.p.poll() is None else None);timer.start()
         checks['stablePublication']=client.open(path,text)==[]
@@ -76,7 +76,7 @@ def lsp_case(name):
             start=m.pos(original,'name: stable')
             deadline=time.monotonic()+5;offered=[]
             while not offered and time.monotonic()<deadline:
-                offered=request('textDocument/codeAction',{'textDocument':{'uri':cfg.as_uri()},'range':{'start':start,'end':start}}).get('result',[])
+                offered=request('textDocument/codeAction',{'textDocument':{'uri':cfg.as_uri()},'range':{'start':start,'end':start},'context':{'only':['quickfix']}}).get('result',[])
                 if not offered:time.sleep(.02)
             checks['independentScopePin']=len(offered)==1
             if offered:
@@ -87,11 +87,11 @@ def lsp_case(name):
             response=rename(peer,VALID);checks['olderTargetRename']='result' in response and m.apply(VALID,response['result'],peer.as_uri(),1)==VALID.replace('entrypoint: main','entrypoint: renamed').replace('name: main','name: renamed')
             peer_typo=VALID.replace('entrypoint:', 'entrypoin:');client.change(peer,peer_typo,2)
             peer_start=m.pos(peer_typo,'entrypoin')
-            checks['olderTargetActions']=len(request('textDocument/codeAction',{'textDocument':{'uri':peer.as_uri()},'range':{'start':peer_start,'end':peer_start}}).get('result',[]))==1
+            checks['olderTargetActions']=len(request('textDocument/codeAction',{'textDocument':{'uri':peer.as_uri()},'range':{'start':peer_start,'end':peer_start},'context':{'only':['quickfix']}}).get('result',[]))==1
             # Known typo yields one exact edit; retain action across a target switch.
             typo=text.replace('entrypoint:', 'entrypoin:');client.change(path,typo,2)
             start=m.pos(typo,'entrypoin')
-            offered=request('textDocument/codeAction',{'textDocument':{'uri':path.as_uri()},'range':{'start':start,'end':start}}).get('result',[])
+            offered=request('textDocument/codeAction',{'textDocument':{'uri':path.as_uri()},'range':{'start':start,'end':start},'context':{'only':['quickfix']}}).get('result',[])
             checks['stableAction']=len(offered)==1
             if offered:
                 resolved=request('codeAction/resolve',offered[0]);checks['actionBytes']='result' in resolved and m.apply(typo,resolved['result']['edit'],path.as_uri(),2)==text

@@ -51,7 +51,7 @@ func (s *session) queueRequest(m message) queuedRequest {
 		q.input.uri = s.actions[params.Data.Token].uri
 	}
 	switch m.Method {
-	case "textDocument/hover", "textDocument/completion", "textDocument/documentSymbol", "textDocument/definition", "textDocument/references":
+	case "textDocument/hover", "textDocument/completion", "textDocument/documentSymbol", "textDocument/definition", "textDocument/references", "argo-workflows/explainAnalysis":
 		q.input.readOnly = q.input.uri != ""
 	}
 	if !q.input.readOnly {

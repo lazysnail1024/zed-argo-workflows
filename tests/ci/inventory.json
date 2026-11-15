@@ -48,7 +48,8 @@
         "tests/e2e/wf-resource-rename.py",
         "tests/e2e/wf-catalog-queries.py",
         "tests/e2e/wf-symbol-query-budget.py",
-        "tests/e2e/wf-equivalence.py"
+        "tests/e2e/wf-equivalence.py",
+        "tests/e2e/wf-analysis-status.py"
       ]
     },
     {

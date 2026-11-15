@@ -90,6 +90,11 @@ watchdog 20 秒，产品分析 deadline 仍为五秒。聚合器核对顺序、�
 
 ### 索引与请求
 
+`wf-analysis-status` 通过真实 CLI/stdio 检查磁盘与未保存 buffer 身份、独立的文件/scope
+完整性、空引用结果的可判定性、拒绝原因及打开受影响文件后的恢复、配置和 buffer 使旧动作
+失效、只读客户端的可用性。它与现有 Rename/quickfix 消费者一起运行；请求 quickfix 的旧
+消费者显式使用 LSP `context.only`，避免把只读解释 command 当成可应用编辑。
+
 持续索引消费者覆盖已知输入立即失效、漏 watcher 的维护发现、精确最终位置、buffer 优先及
 超五秒 discovery 继续收敛；慢 I/O 使用单独有来源身份的读取 overlay。workspace-symbol
 消费者检查 20,000 项输出边界、尾部低命中、零命中成本、并发编辑和取消后的恢复。

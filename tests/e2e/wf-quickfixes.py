@@ -160,7 +160,7 @@ EXPECTED = {
 
 def actions(client, path, text, needle, diagnostics=None):
     p = pos(text, needle)
-    return client.request('textDocument/codeAction', {'textDocument': {'uri': path.as_uri()}, 'range': {'start': p, 'end': p}, 'context': {'diagnostics': diagnostics or []}})
+    return client.request('textDocument/codeAction', {'textDocument': {'uri': path.as_uri()}, 'range': {'start': p, 'end': p}, 'context': {'diagnostics': diagnostics or [], 'only': ['quickfix']}})
 def edits(client, response, text, path, version=1):
     outputs = []
     for action in response.get('result', []):

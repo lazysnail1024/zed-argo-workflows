@@ -127,7 +127,7 @@ MUTATIONS = (
     ),
     Mutation(
         "resource-rename-unique", "audit", "resource Rename needs a unique declaration", "internal/analysis/externalrename.go",
-        (("if declarations != 1 {", "if declarations < 1 {"),),
+        (("if len(declarations) != 1 {", "if len(declarations) < 1 {"),),
         "wf-resource-rename.py", (("duplicate-definition", "prepareRefused"),), ("--cases", "duplicate-definition"),
     ),
     Mutation(
