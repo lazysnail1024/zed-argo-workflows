@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Resource Rename through real stdio, with independent byte/binding expectations."""
+import hashlib
 import importlib.util
 import json
 import pathlib
@@ -68,6 +69,21 @@ def apply_all(files, work, result, versions):
         seen.add(relative)
         after[relative] = m.apply(files[relative], {'documentChanges': [change]}, uri, versions[relative])
     return after, seen
+
+
+def wait_current_scope(client, path, text, version):
+    expected_hash = hashlib.sha256(text.encode()).hexdigest()
+    deadline = time.monotonic() + 3
+    while True:
+        response = client.request('argo-workflows/explainAnalysis', {'textDocument': {'uri': path.as_uri()}})
+        status = response.get('result', {})
+        identity = status.get('inputIdentity', {})
+        ready = (identity.get('uri') == path.as_uri() and identity.get('source') == 'buffer' and
+                 identity.get('version') == version and
+                 identity.get('sha256') == expected_hash and
+                 status.get('completeness') == {'document': True, 'workspace': True})
+        if ready or time.monotonic() >= deadline:
+            return ready, response
 
 
 def success(name, files=None, config=CONFIG, selected='library.yaml', new_name='renamed', reference=False, unchanged=()):
@@ -225,12 +241,15 @@ def disk_configuration(name, changed_config, overlay=False):
                 'contentChanges': [{'text': after[file]}]})
         point = m.pos(after['caller.yaml'], 'name: "renamed"', offset=7)
         query = {'textDocument': {'uri': (work / 'caller.yaml').as_uri()}, 'position': point}
-        deadline = time.monotonic() + 3
-        while True:
-            definition = client.request('textDocument/definition', query)
-            if definition.get('result') or time.monotonic() >= deadline:
-                break
-            time.sleep(.02)
+        # A forward definition can be known before the complete reverse scope.
+        # Observe each current buffer identity and scope readiness independently
+        # before making either exact navigation query; never retry references
+        # until their result happens to match the expected answer.
+        readiness = {file: wait_current_scope(client, work / file, after[file], versions[file] + 1)
+                     for file in sorted(affected)}
+        checks['postEditScopeReady'] = all(ready for ready, _ in readiness.values())
+        details['postEditAnalysis'] = {file: response for file, (_, response) in readiness.items()}
+        definition = client.request('textDocument/definition', query)
         references = client.request('textDocument/references', query | {'context': {'includeDeclaration': False}})
         details.update(definitionAfter=definition, referencesAfter=references)
         checks['bindingPreserved'] = len(definition.get('result', [])) == 1 and definition['result'][0]['uri'] == (work / 'library.yaml').as_uri()

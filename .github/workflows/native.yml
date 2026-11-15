@@ -166,6 +166,7 @@ jobs:
         python tests/ci/receipt_e2e.py --output artifacts/ci/receipt-e2e
         python tests/e2e/session_e2e.py --output artifacts/ci/session-e2e
         python tests/ci/trends_e2e.py --output artifacts/ci/trends-e2e
+        python tests/ci/transport_e2e.py --producer-only --output artifacts/ci/transport-producer-e2e
     - name: Verify exact receipt transport and selected byte materialization
       if: matrix.platform == 'linux/amd64'
       run: |-

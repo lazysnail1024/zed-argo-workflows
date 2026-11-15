@@ -93,8 +93,11 @@ def path_signature(value):
 
 def cross_signature(value):
     # Windows path.stat may synthesize executable bits for .exe/.bat/.cmd/.com
-    # while fstat does not. Same-API signatures still compare full modes.
-    return (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns, stat.S_IFMT(value.st_mode))
+    # while fstat does not. Python 3.14 path ctime aliases birthtime, whereas fd
+    # ctime is ChangeTime. Compare explicit birthtime across those APIs only;
+    # same-API signatures still compare full ctime and modes around each read.
+    timestamp = value.st_birthtime_ns if os.name == "nt" and hasattr(value, "st_birthtime_ns") else value.st_ctime_ns
+    return (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns, timestamp, stat.S_IFMT(value.st_mode))
 
 
 def safe_parents(path, create=False):

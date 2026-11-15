@@ -24,6 +24,7 @@ SPEC = json.loads(SCENARIO.read_text())
 CODEC = ROOT / "tests/ci/transport.py"
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--output", type=Path, required=True)
+parser.add_argument("--producer-only", action="store_true", help="Exercise portable pack inputs without POSIX-only hydration")
 args = parser.parse_args()
 out = args.output.resolve()
 out.mkdir(parents=True, exist_ok=False)
@@ -131,6 +132,59 @@ def declared_size(path, member, size, crc=None):
             return
         position += 46 + names + extra + comments
     raise AssertionError("independent ZIP member missing")
+
+
+def finish(expected):
+    assert {item["case"] for item in rows} == expected and len(rows) == len(expected)
+    (out / "manifest.json").write_text(json.dumps({"command": sys.argv, "testSha256": sha_bytes(Path(__file__).read_bytes()),
+        "scenarioSha256": sha_bytes(SCENARIO.read_bytes()), "codecSha256": sha_bytes(CODEC.read_bytes()), "python": sys.version,
+        "platform": sys.platform, "producerOnly": args.producer_only, "selectedCases": sorted(expected),
+        "scope": "real transport boundary; synthetic literal material is not a native domain execution"}, indent=2) + "\n")
+    raise SystemExit(0 if all(item["pass"] for item in rows) else 1)
+
+
+def edited_producer_files():
+    source, receipt, originals, modes = fixture("edited-source", physical=True,
+        extra_files={"edited/config.json": b'{"changed":true}\n', "edited/empty.log": b''})
+    observations = {}
+    for name, value in originals.items():
+        path = source / name
+        # Real producer logs/configuration are revised after their creation.
+        # On Windows 3.14 this separates path birth-backed ctime from fd ctime.
+        path.write_bytes(b"initial content before the final revision\n")
+        path.write_bytes(value)
+        before = path.lstat()
+        with path.open("rb") as stream:
+            opened = os.fstat(stream.fileno())
+        observations[name] = {"path": {key: getattr(before, key, None) for key in
+            ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns", "st_birthtime_ns", "st_mode")},
+            "fd": {key: getattr(opened, key, None) for key in
+            ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns", "st_birthtime_ns", "st_mode")}}
+    archive = out / "edited-producer.zip"
+    result = run("edited-producer-pack", ["pack", "--receipt", receipt, "--output", archive])
+    exact = False
+    if result.returncode == 0:
+        members = zip_members(archive)
+        manifest = json.loads(members["transport.json"])
+        entries = {entry["path"]: entry for entry in manifest["entries"] if entry["type"] == "file"}
+        exact = set(entries) == set(originals) and all(
+            entries[name]["size"] == len(value) and entries[name]["sha256"] == sha_bytes(value) and
+            entries[name]["mode"] == modes[name] and members["objects/" + sha_bytes(value)] == value
+            for name, value in originals.items())
+    alias_expected = sys.platform == "win32" and sys.version_info[:3] == (3, 14, 0)
+    alias_observed = any(value["path"]["st_birthtime_ns"] is not None and
+        value["path"]["st_birthtime_ns"] == value["fd"]["st_birthtime_ns"] and
+        value["path"]["st_ctime_ns"] != value["fd"]["st_ctime_ns"] for value in observations.values())
+    row("edited-producer-files", result.returncode == 0 and exact and (not alias_expected or alias_observed) and
+        all((source / name).read_bytes() == value for name, value in originals.items()),
+        exitCode=result.returncode, metadata=observations,
+        windows314AliasExpected=alias_expected, windows314AliasObserved=alias_observed,
+        inputSha256={name: sha_bytes(value) for name, value in originals.items()})
+
+
+edited_producer_files()
+if args.producer_only:
+    finish({"edited-producer-files"})
 
 
 source, receipt, originals, modes = fixture()
@@ -406,8 +460,4 @@ for name in ("set-mixed-raw-and-cas", "set-extra-file", "set-duplicate-lane", "s
         shutil.rmtree(current / "lane-one");shutil.copytree(source, current / "lane-one")
     run(name, ["hydrate-set", "--inputs", current, "--output", out / ("refused-" + name)], SPEC["refusalCases"][name])
 expected = set(SPEC["positiveCases"]) | set(SPEC["refusalCases"])
-assert {item["case"] for item in rows} == expected and len(rows) == len(expected)
-(out / "manifest.json").write_text(json.dumps({"command": sys.argv, "testSha256": sha_bytes(Path(__file__).read_bytes()),
-    "scenarioSha256": sha_bytes(SCENARIO.read_bytes()), "codecSha256": sha_bytes(CODEC.read_bytes()), "python": sys.version,
-    "selectedCases": sorted(expected), "scope": "real transport boundary; synthetic literal material is not a native domain execution"}, indent=2) + "\n")
-raise SystemExit(0 if all(item["pass"] for item in rows) else 1)
+finish(expected)

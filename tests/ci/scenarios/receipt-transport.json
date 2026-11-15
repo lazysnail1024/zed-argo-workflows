@@ -19,6 +19,7 @@
     "native/child/stderr.raw": "independent failed-consumer evidence\n"
   },
   "positiveCases": [
+    "edited-producer-files",
     "opaque-byte-roundtrip",
     "deflate-chunk-boundaries",
     "independent-duplicate-modes",

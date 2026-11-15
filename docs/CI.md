@@ -227,6 +227,12 @@ regular-byte payload 的交付，不承诺保存整个消费者工作目录的�
 大目录中的原始输入和隐藏文件仍由上传步骤完整处理；实际归档、receipt 和 gate 的内容
 hash 校验保持不变，缺失材料仍不能形成成功的验收结果。
 
+五个平台均执行 `transport_e2e.py --producer-only`：真实创建并重写收据、日志、配置和
+可执行文件后运行 pack，独立读取 ZIP 验证原始字节、内容 hash 和 mode。固定 Windows
+Python 3.14.0 还必须实际观察到 path/fd ctime 不同而 birthtime 相同；跨 API 身份比较
+使用显式 birthtime，同一 API 在读取前后的完整 ctime/mode 检查仍保留。完整 hydrate、
+路径与来源变化负向控制继续在 Linux 执行。
+
 打包拒绝物理 symlink、特殊文件、输入变化及不安全路径。解包先验证严格 JSON、清单/对象
 集合、ZIP 物理头、类型和便携路径别名，再有界读取压缩流并逐对象核对实际大小与 hash；
 不信任 ZIP 声明的解压大小来截断验证。上限为 1,000,000 个逻辑项、单文件 4 GiB、逻辑字节总量 64 GiB、

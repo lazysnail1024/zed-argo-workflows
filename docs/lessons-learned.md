@@ -399,6 +399,9 @@ proof；普通 Hover、补全及只读解释不承担这次编辑专用读取。
 应用后的独立字节/绑定/诊断预期。已观察的无关 scope 配置变化仍保留 isolated-local 编辑
 正例；未观察的完整配置身份变化可以保守拒绝。原生交付测试另固定结果构造后才发生变化，
 证明旧内存 epoch 校验本身不足以发现磁盘配置改变。
+恢复后的跨文件编辑验收先用只读解释确认两个 buffer 的当前版本、文本 hash 与完整 scope，
+再各执行一次精确 definition/references 检查。forward definition 已有结果不代表 reverse
+scope 已索引完整；后者未就绪时 references 按合同保守返回空集，不能据此前者推断操作失败。
 [编辑交付](../internal/lsp/serve.go)、[配置证明](../internal/lsp/edits.go)、
 [资源改名消费者](../tests/e2e/wf-resource-rename.py)、
 [Action 生命周期消费者](../tests/e2e/wf-reaudit-actions.py)

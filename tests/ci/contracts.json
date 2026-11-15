@@ -646,10 +646,10 @@
         {"id": {"case": "schema-only-peer"}, "assertions": ["diskUntouched", "prepareRefused", "renameRefused"]},
         {"id": {"case": "closed-after-prepare"}, "assertions": ["closedFileRefused", "prepareWorked"]},
         {"id": {"case": "changed-after-prepare"}, "assertions": ["newUnsavedCaptureRefused", "prepareWorked"]},
-        {"id": {"case": "disk-policy-without-event"}, "assertions": ["beforeMetadataPoll", "bindingPreserved", "configurationAuthority", "diskChangeObserved", "diskUntouched", "noConfigurationEvent", "prepareWorked", "recoveredExactBytes", "referencesPreserved"]},
-        {"id": {"case": "disk-invalid-without-event"}, "assertions": ["beforeMetadataPoll", "bindingPreserved", "configurationAuthority", "diskChangeObserved", "diskUntouched", "noConfigurationEvent", "prepareWorked", "recoveredExactBytes", "referencesPreserved"]},
-        {"id": {"case": "disk-scope-without-event"}, "assertions": ["beforeMetadataPoll", "bindingPreserved", "configurationAuthority", "diskChangeObserved", "diskUntouched", "noConfigurationEvent", "prepareWorked", "recoveredExactBytes", "referencesPreserved"]},
-        {"id": {"case": "configuration-overlay-authority"}, "assertions": ["beforeMetadataPoll", "bindingPreserved", "configurationAuthority", "diskChangeObserved", "diskUntouched", "noConfigurationEvent", "prepareWorked", "recoveredExactBytes", "referencesPreserved"]}
+        {"id": {"case": "disk-policy-without-event"}, "assertions": ["beforeMetadataPoll", "bindingPreserved", "configurationAuthority", "diskChangeObserved", "diskUntouched", "noConfigurationEvent", "postEditScopeReady", "prepareWorked", "recoveredExactBytes", "referencesPreserved"]},
+        {"id": {"case": "disk-invalid-without-event"}, "assertions": ["beforeMetadataPoll", "bindingPreserved", "configurationAuthority", "diskChangeObserved", "diskUntouched", "noConfigurationEvent", "postEditScopeReady", "prepareWorked", "recoveredExactBytes", "referencesPreserved"]},
+        {"id": {"case": "disk-scope-without-event"}, "assertions": ["beforeMetadataPoll", "bindingPreserved", "configurationAuthority", "diskChangeObserved", "diskUntouched", "noConfigurationEvent", "postEditScopeReady", "prepareWorked", "recoveredExactBytes", "referencesPreserved"]},
+        {"id": {"case": "configuration-overlay-authority"}, "assertions": ["beforeMetadataPoll", "bindingPreserved", "configurationAuthority", "diskChangeObserved", "diskUntouched", "noConfigurationEvent", "postEditScopeReady", "prepareWorked", "recoveredExactBytes", "referencesPreserved"]}
       ]
     },
     "wf-catalog-queries": {
