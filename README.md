@@ -171,6 +171,8 @@ for the configuration shape, scope rules and refusal/recovery behavior.
 Open a common parent folder to navigate across multiple Git repositories in one
 Workflows index. In Zed 1.28.1, folders added as separate visible roots remain
 separate indexes; adding folders to the same window does not merge their scopes.
+See [Zed workspaces and multiple repositories](docs/zed-workspaces.md) for parent
+configuration, root/scope boundaries and the current-buffer explanation.
 
 ## Standalone CLI / other editors
 
