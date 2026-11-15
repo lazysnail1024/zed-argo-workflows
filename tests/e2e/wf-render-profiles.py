@@ -23,7 +23,11 @@ HERE = pathlib.Path(__file__).resolve().parent
 CASES = ['default', 'default-host-response', 'dev', 'prod', 'reverse', 'strict-config', 'conflicts', 'editor',
          'stale-config', 'stale-values', 'stale-order', 'unsaved-values', 'unsaved-alias',
          'same-version-reopen', 'selected-scope', 'cache-owned-custom', 'cache-refusals',
-         'cancel', 'during-render-change']
+         'cancel', 'during-render-change', 'custom-output-rotation']
+selected_cases = set(filter(None, os.environ.get('WF_RENDER_PROFILE_CASES', '').split(',')))
+if selected_cases:
+    if not selected_cases.issubset(CASES): raise SystemExit('unknown WF_RENDER_PROFILE_CASES selection')
+    CASES = [name for name in CASES if name in selected_cases]
 
 if len(sys.argv) == 5:
     out = pathlib.Path(sys.argv[2]).resolve(); out.mkdir(parents=True, exist_ok=True)
@@ -38,7 +42,7 @@ if len(sys.argv) == 5:
         runs.append({'command': command, 'exitCode': result.returncode, 'cases': len(child)})
     sha = lambda path: hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
     (out / 'results.json').write_text(json.dumps(rows, indent=2) + '\n')
-    (out / 'manifest.json').write_text(json.dumps({'command': sys.argv, 'pythonVersion': sys.version,
+    (out / 'manifest.json').write_text(json.dumps({'command': sys.argv, 'selectedCases': CASES, 'pythonVersion': sys.version,
         'runs': runs, 'binarySha256': sha(sys.argv[1]), 'testSha256': sha(__file__),
         'helmSha256': {label: sha(tool) for label, tool in zip(['helm3', 'helm4'], sys.argv[3:])}}, indent=2) + '\n')
     raise SystemExit(0 if len(rows) == 2 * len(CASES) and all(r['pass'] for r in rows) and all(r['exitCode'] == 0 for r in runs) else 1)
@@ -237,8 +241,12 @@ def editor_case(name):
         elif name == 'same-version-reopen':
             c.send('textDocument/didClose', {'textDocument': {'uri': file.as_uri()}}); c.open(file, TEMPLATE, 1, language_id='helm')
         response = c.request('workspace/executeCommand', action['command'])
+        if name == 'unsaved-values': c.request('workspace/symbol', {'query': 'wire-order-barrier'})
         checks = {'profile_action': True, 'refused': response.get('error', {}).get('code') == -32801,
                   'no_helm': not log.exists(), 'no_generated_view': not any(m.get('method') == 'window/showDocument' for m in c.received)}
+        if name == 'unsaved-values':
+            checks['actionable_refusal_message'] = any(e.get('method') == 'window/showMessage' and
+                'save all chart buffers' in e.get('params', {}).get('message', '').lower() and str(dirty) in e.get('params', {}).get('message', '') for e in c.received)
         if name in ('unsaved-values', 'unsaved-alias'):
             dirty.write_text('environment: unsaved\nimage: alpine\n')
             c.send('textDocument/didSave', {'textDocument': {'uri': dirty.as_uri()}})
@@ -323,6 +331,30 @@ def live(pid):
     except FileNotFoundError: return False
 
 
+def custom_output_rotation():
+    dest, work, env, log, tool = setup('custom-output-rotation'); marker = dest / 'started'; release = dest / 'release'
+    tool.write_text('#!/usr/bin/env python3\nimport os,sys,pathlib,time\nif sys.argv[1]=="template":\n pathlib.Path(' + repr(str(marker)) + ').write_text("started")\n while not pathlib.Path(' + repr(str(release)) + ').exists():time.sleep(.02)\nos.execv(' + repr(str(HELM)) + ',[' + repr(str(HELM)) + ']+sys.argv[1:])\n'); tool.chmod(0o755)
+    output = dest / 'generated'; detached = dest / 'detached-output'
+    before = {name: m.sha(work / name) for name in FILES}
+    argv = [str(m.BINARY), 'render-check', '--root', str(work), '--file', str(work / 'charts/demo/templates/workflow.yaml'), '--profile', 'dev', '--output', str(output)]
+    process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+    try:
+        deadline = time.monotonic() + 8
+        while not marker.exists() and time.monotonic() < deadline: time.sleep(.02)
+        assert marker.exists() and output.is_dir(), 'render did not reach held tool'
+        output.rename(detached); output.symlink_to(work / 'charts/demo', target_is_directory=True); release.write_text('go')
+        stdout, stderr = process.communicate(timeout=15)
+        (dest / 'render.stdout').write_bytes(stdout); (dest / 'render.stderr').write_bytes(stderr)
+        m.save(dest / 'render.command.json', {'argv': argv, 'exitCode': process.returncode})
+        report = parsed(stdout)
+        return {'refused': process.returncode == 2 and bool(report.get('error')),
+                'source_unchanged': before == {name: m.sha(work / name) for name in FILES} and not any((work / 'charts/demo' / name).exists() for name in ['rendered.yaml', 'render-report.json', 'helm.stdout', 'helm.stderr']),
+                'no_redirected_writes': list(detached.iterdir()) == [],
+                'raw_failure_retained': 'kind: Workflow' in report.get('stdout', '')}, report
+    finally:
+        if process.poll() is None: process.kill(); process.communicate()
+
+
 def held_render(name):
     dest, work, env, log, tool = setup(name); marker = dest / 'started.json'; release = dest / 'release'
     tool.write_text('#!/usr/bin/env python3\nimport os,sys,pathlib,subprocess,json,time\nif sys.argv[1]=="version":os.execv(' + repr(str(HELM)) + ',[' + repr(str(HELM)) + ']+sys.argv[1:])\nchild=subprocess.Popen(["/usr/bin/sleep","600"])\np=pathlib.Path(' + repr(str(marker)) + ');q=p.with_suffix(".tmp");q.write_text(json.dumps({"helm":os.getpid(),"child":child.pid,"group":os.getpgrp()}));q.replace(p)\nprint("partial held output",flush=True)\nwhile not pathlib.Path(' + repr(str(release)) + ').exists():time.sleep(.02)\nchild.terminate();child.wait()\nos.execv(' + repr(str(HELM)) + ',[' + repr(str(HELM)) + ']+sys.argv[1:])\n'); tool.chmod(0o755)
@@ -366,13 +398,13 @@ RUNNERS = {name: (lambda name=name: cli_case(name)) for name in ['default', 'dev
 RUNNERS.update({name: (lambda name=name: editor_case(name)) for name in ['editor', 'stale-config', 'stale-values', 'stale-order', 'unsaved-values', 'unsaved-alias', 'same-version-reopen']})
 RUNNERS.update({'strict-config': strict_config, 'conflicts': conflicts, 'selected-scope': selected_scope,
                 'default-host-response': default_host_response,
-                'cache-owned-custom': cache_owned_custom, 'cache-refusals': cache_refusals,
+                'cache-owned-custom': cache_owned_custom, 'cache-refusals': cache_refusals, 'custom-output-rotation': custom_output_rotation,
                 'cancel': lambda: held_render('cancel'), 'during-render-change': lambda: held_render('during-render-change')})
 for name in CASES:
     try:
         assertions, details = RUNNERS[name](); m.result(name, assertions, details)
     except Exception as error: m.result(name, {'completed': False}, {'error': repr(error), 'traceback': traceback.format_exc()})
-m.save(m.OUT / 'manifest.json', {'command': sys.argv, 'pythonVersion': sys.version,
+m.save(m.OUT / 'manifest.json', {'command': sys.argv, 'selectedCases': CASES, 'pythonVersion': sys.version,
     'binarySha256': m.sha(m.BINARY), 'testSha256': m.sha(pathlib.Path(__file__)), 'helperSha256': m.sha(HELPER), 'helmSha256': m.sha(HELM),
     'expectedCases': CASES, 'inputs': {str(p.relative_to(m.OUT)): m.sha(p) for p in m.OUT.rglob('*') if p.is_file() and '/input/' in str(p)}})
 raise SystemExit(0 if len(m.RESULTS) == len(CASES) and all(r['pass'] for r in m.RESULTS) else 1)

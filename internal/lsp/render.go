@@ -201,13 +201,13 @@ func (s *session) renderRequest(m message) (bool, error) {
 	}
 	request, err := s.currentRender(command.Arguments[0])
 	if err != nil {
-		return true, s.failure(m.ID, -32801, err.Error())
+		return true, s.renderPreflightRefusal(m, err)
 	}
 	if m.Method == "codeAction/resolve" {
 		return true, s.reply(m.ID, json.RawMessage(m.Params))
 	}
 	if err := s.renderSaved(request); err != nil {
-		return true, s.failure(m.ID, -32801, err.Error())
+		return true, s.renderPreflightRefusal(m, err)
 	}
 	result, err := s.render(s.context(), request)
 	if err != nil {
@@ -243,6 +243,23 @@ func (s *session) renderRequest(m message) (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// Some hosts hide executeCommand error.data and show only a generic failure.
+// An explicitly invoked preflight refusal also carries the actual guard reason
+// as a message. Resolve/collection remain silent, and running-tool cancellation
+// or stale-output failures never send a late notification. The owner still
+// validates this worker's authority before publishing either frame.
+func (s *session) renderPreflightRefusal(m message, reason error) error {
+	if err := s.failure(m.ID, -32801, reason.Error()); err != nil {
+		return err
+	}
+	if m.Method != "workspace/executeCommand" || s.context().Err() != nil {
+		return nil
+	}
+	return s.write(map[string]any{"jsonrpc": "2.0", "method": "window/showMessage", "params": map[string]any{
+		"type": 2, "message": "Argo Workflows render-check refused: " + reason.Error(),
+	}})
 }
 
 func (s *session) withRenderAction(uri string, actions []map[string]any) []map[string]any {

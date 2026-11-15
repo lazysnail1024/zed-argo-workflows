@@ -213,6 +213,75 @@ func renderOutputOutsideChart(chart, output string) error {
 	}
 }
 
+// Custom output has no ownership marker and is never cleanup-owned. Hold its
+// actual directory across the tool lifetime so replacing the visible pathname
+// cannot redirect writes into source or another directory. Every artifact is
+// created once and exclusively; an unexpected existing leaf is never truncated.
+type customRenderOutput struct {
+	root       *os.Root
+	path, real string
+	identity   os.FileInfo
+}
+
+func openCustomRenderOutput(path string) (*customRenderOutput, error) {
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return nil, err
+	}
+	root, err := os.OpenRoot(real)
+	if err != nil {
+		return nil, err
+	}
+	file, err := root.Open(".")
+	if err != nil {
+		root.Close()
+		return nil, err
+	}
+	info, err := file.Stat()
+	file.Close()
+	if err != nil {
+		root.Close()
+		return nil, err
+	}
+	output := &customRenderOutput{root: root, path: path, real: real, identity: info}
+	if err := output.check(); err != nil {
+		root.Close()
+		return nil, err
+	}
+	return output, nil
+}
+
+func (output *customRenderOutput) check() error {
+	real, err := filepath.EvalSymlinks(output.path)
+	info, statErr := os.Stat(output.path)
+	if err != nil || statErr != nil || real != output.real || !info.IsDir() || !os.SameFile(info, output.identity) {
+		return fmt.Errorf("custom output directory changed during render; refusing redirected writes or publication")
+	}
+	return nil
+}
+
+func (output *customRenderOutput) write(name string, data []byte) error {
+	if err := output.check(); err != nil {
+		return err
+	}
+	file, err := output.root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		return err
+	}
+	count, writeErr := file.Write(data)
+	closeErr := file.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if count != len(data) {
+		return io.ErrShortWrite
+	}
+	return output.check()
+}
+
 // CLI and the editor execute exactly the same resolved request. The output
 // store seals raw failure/cancellation evidence too; sealing proves ownership,
 // not successful rendering. Preflight failures do not allocate cache entries.
@@ -220,6 +289,7 @@ func renderResolved(ctx context.Context, request workspace.RenderRequest, helm, 
 	var rawStdout, rawStderr []byte
 	rawExit := 0
 	var store *rendercache.Store
+	var custom *customRenderOutput
 	seal := func() error {
 		if store != nil {
 			return store.Seal()
@@ -306,8 +376,15 @@ func renderResolved(ctx context.Context, request workspace.RenderRequest, helm, 
 		}
 		defer store.Close()
 		output = store.Directory
-	} else if err := os.MkdirAll(output, 0755); err != nil {
-		return fail(err)
+	} else {
+		if err := os.MkdirAll(output, 0755); err != nil {
+			return fail(err)
+		}
+		custom, err = openCustomRenderOutput(output)
+		if err != nil {
+			return fail(err)
+		}
+		defer custom.root.Close()
 	}
 	if err := renderOutputOutsideChart(request.ChartRealPath, output); err != nil {
 		return fail(err)
@@ -316,7 +393,7 @@ func renderResolved(ctx context.Context, request workspace.RenderRequest, helm, 
 		if store != nil {
 			return store.Write(name, data)
 		}
-		return os.WriteFile(filepath.Join(output, name), data, 0644)
+		return custom.write(name, data)
 	}
 	command := request.Arguments()
 	stdout, stderr, exitCode, executionErr := toolRun(ctx, helm, command, env)
@@ -353,17 +430,30 @@ func renderResolved(ctx context.Context, request workspace.RenderRequest, helm, 
 		}
 		return write("render-report.json", append(data, '\n'))
 	}
-	if err := save(); err != nil {
-		return fail(err)
+	failReport := func(reason error) (int, string, error) {
+		report["error"] = reason.Error()
+		if ctx.Err() != nil {
+			report["cancelled"] = true
+			report["error"] = ctx.Err().Error()
+		}
+		if err := save(); err != nil {
+			return fail(fmt.Errorf("%w; preserving render report: %v", reason, err))
+		}
+		return fail(reason)
 	}
 	if executionErr != nil {
-		return fail(fmt.Errorf("Helm exited %d: %s: %w", exitCode, stderr, executionErr))
+		return failReport(fmt.Errorf("Helm exited %d: %s: %w", exitCode, stderr, executionErr))
 	}
 	if !inputsUnchanged {
-		return fail(workspace.ErrRenderInputsChanged)
+		return failReport(workspace.ErrRenderInputsChanged)
 	}
 	if err := write("rendered.yaml", stdout); err != nil {
-		return fail(err)
+		return failReport(err)
+	}
+	if custom != nil {
+		if err := custom.check(); err != nil {
+			return failReport(err)
+		}
 	}
 	var checked bytes.Buffer
 	code := runWithIO(ctx, []string{"check", "--root", output, "--target-version", request.TargetVersion, "--format", "json"}, &checked, errorWriter)
@@ -375,16 +465,18 @@ func renderResolved(ctx context.Context, request workspace.RenderRequest, helm, 
 			report["cancelled"] = true
 			report["error"] = ctx.Err().Error()
 		}
-		if err := save(); err != nil {
-			return fail(err)
-		}
-		return fail(workspace.ErrRenderInputsChanged)
+		return failReport(workspace.ErrRenderInputsChanged)
 	}
 	if err := save(); err != nil {
 		return fail(err)
 	}
 	if err := seal(); err != nil {
 		return fail(err)
+	}
+	if custom != nil {
+		if err := custom.check(); err != nil {
+			return fail(err)
+		}
 	}
 	if ctx.Err() != nil {
 		return fail(ctx.Err())

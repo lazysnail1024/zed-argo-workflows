@@ -81,7 +81,9 @@ worktree 构建，避免 ignored Go/C/embed 文件污染；这不宣称二进制
 dev/prod/reverse values 预期、实际工具调用日志和完整 stdio 帧验证 profile 结果，
 收集/resolve 零执行、配置/values/lifetime 过期拒绝与新动作恢复、scope 隔离、
 showDocument 响应后的下一请求、取消后代回收和无延迟打开，以及失败库存的保留与
-显式清理。缓存负例分别从真实生成的独立目录开始，避免被复制标记拒绝掩盖内容、
+显式清理。实际执行前的拒绝消息须包含需要保存的 values 路径；运行中的自定义输出
+目录被替换成源 chart 链接时，源字节必须保持不变，原始工具输出仍由失败响应保留。
+缓存负例分别从真实生成的独立目录开始，避免被复制标记拒绝掩盖内容、
 额外文件或符号链接保护。`wf-quickfixes` 的 native 消费者同时验证 v2 配置 pin 只改变
 目标字段，保留 profile、values 顺序及重复项；对应行和 assertion 集合由 contracts
 文件独立固定。生成目录的所有权检查不等同于 Windows GUI 验收或所有竞争时序证明。

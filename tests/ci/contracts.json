@@ -15,7 +15,7 @@
         {"id": {"case": "helm3/stale-config"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
         {"id": {"case": "helm3/stale-values"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
         {"id": {"case": "helm3/stale-order"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
-        {"id": {"case": "helm3/unsaved-values"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
+        {"id": {"case": "helm3/unsaved-values"}, "assertions": ["actionable_refusal_message", "fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
         {"id": {"case": "helm3/unsaved-alias"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
         {"id": {"case": "helm3/same-version-reopen"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
         {"id": {"case": "helm3/selected-scope"}, "assertions": ["matching_scope", "no_chart_scope_borrowing", "no_scope_borrowing", "profile_chart_scope"]},
@@ -23,6 +23,7 @@
         {"id": {"case": "helm3/cache-refusals"}, "assertions": ["all_inputs_preserved", "all_refused", "outside_preserved"]},
         {"id": {"case": "helm3/cancel"}, "assertions": ["descendants_reaped", "failed_cache_owned", "failed_cache_removable", "no_result_view", "profile_action", "raw_retained", "refused"]},
         {"id": {"case": "helm3/during-render-change"}, "assertions": ["descendants_reaped", "failed_cache_owned", "failed_cache_removable", "no_result_view", "profile_action", "raw_retained", "refused"]},
+        {"id": {"case": "helm3/custom-output-rotation"}, "assertions": ["no_redirected_writes", "raw_failure_retained", "refused", "source_unchanged"]},
         {"id": {"case": "helm4/default"}, "assertions": ["independent_output", "source_unchanged", "success"]},
         {"id": {"case": "helm4/default-host-response"}, "assertions": ["natural_exit", "no_helm_until_execute", "response_then_request", "shown_generated"]},
         {"id": {"case": "helm4/dev"}, "assertions": ["argv_order", "capabilities", "helm_identity", "independent_output", "ordered_provenance", "source_unchanged", "success"]},
@@ -34,14 +35,15 @@
         {"id": {"case": "helm4/stale-config"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
         {"id": {"case": "helm4/stale-values"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
         {"id": {"case": "helm4/stale-order"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
-        {"id": {"case": "helm4/unsaved-values"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
+        {"id": {"case": "helm4/unsaved-values"}, "assertions": ["actionable_refusal_message", "fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
         {"id": {"case": "helm4/unsaved-alias"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
         {"id": {"case": "helm4/same-version-reopen"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
         {"id": {"case": "helm4/selected-scope"}, "assertions": ["matching_scope", "no_chart_scope_borrowing", "no_scope_borrowing", "profile_chart_scope"]},
         {"id": {"case": "helm4/cache-owned-custom"}, "assertions": ["created_owned", "custom_preserved", "output_alias_preserves_source", "owned_removed"]},
         {"id": {"case": "helm4/cache-refusals"}, "assertions": ["all_inputs_preserved", "all_refused", "outside_preserved"]},
         {"id": {"case": "helm4/cancel"}, "assertions": ["descendants_reaped", "failed_cache_owned", "failed_cache_removable", "no_result_view", "profile_action", "raw_retained", "refused"]},
-        {"id": {"case": "helm4/during-render-change"}, "assertions": ["descendants_reaped", "failed_cache_owned", "failed_cache_removable", "no_result_view", "profile_action", "raw_retained", "refused"]}
+        {"id": {"case": "helm4/during-render-change"}, "assertions": ["descendants_reaped", "failed_cache_owned", "failed_cache_removable", "no_result_view", "profile_action", "raw_retained", "refused"]},
+        {"id": {"case": "helm4/custom-output-rotation"}, "assertions": ["no_redirected_writes", "raw_failure_retained", "refused", "source_unchanged"]}
       ]
     },
     "wf-compatibility": {

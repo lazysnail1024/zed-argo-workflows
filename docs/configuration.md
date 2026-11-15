@@ -238,6 +238,9 @@ with the same document version also invalidates an old action. Save changes and
 request a fresh action to recover. Accepted input changes or cancellation prevent
 late messages and generated-document requests; a host's response to
 `window/showDocument` leaves the language-server connection usable.
+An explicit execution refused before Helm starts also shows the actual guard
+reason in a message, so hosts that hide command error details still explain
+which inputs need attention. Collecting or resolving actions remains silent.
 
 Every default output uses a unique directory under
 `UserCacheDir/argo-workflows-ls/render`. The rendered YAML, raw Helm stdout/stderr
@@ -260,7 +263,12 @@ operation. Failed/cancelled inventories are removable when their integrity is
 intact. Unsealed or changed directories remain available for manual inspection.
 An explicit `--output` directory is never cleanup-owned, including one placed
 under the normal cache parent. Both custom and managed output locations must
-resolve outside the chart. There is no automatic cleanup or eviction.
+resolve outside the chart. Custom output must start empty. Its directory handle
+and placement identity remain bound across Helm execution, and fixed artifacts
+are created exclusively through that handle. Replacing the output pathname
+refuses further writes and publication; the CLI failure response retains raw
+Helm streams even when the displaced directory cannot safely receive a report.
+There is no automatic cleanup or eviction.
 
 ## Boundaries
 

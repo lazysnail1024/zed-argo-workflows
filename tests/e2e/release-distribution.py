@@ -191,6 +191,7 @@ def main():
         executable = stage / stage_record["binaryAsset"]
         identity = json.loads(invoke("execute-staged-native", [executable, "version", "--json"]).stdout)
         record("exact-native-identity", {"sameIdentity": identity == build_record["identity"],
+                                         "configurationSchemas": identity["configSchemaVersions"] == [1, 2],
                                          "release": identity["buildMode"] == "release",
                                          "exactCommit": identity["sourceCommit"] == commit})
         if args.platform == "windows/amd64":
