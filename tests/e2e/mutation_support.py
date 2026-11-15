@@ -54,6 +54,21 @@ class Mutation:
 
 MUTATIONS = (
     Mutation(
+        "compatibility-joint-intersection", "contracts", "modeled candidates require the schema and semantic intersection", "internal/analysis/compatibility.go",
+        (("item.Candidates = schemaSet.intersect(semanticSet).strings()", "item.Candidates = schemaSet.strings()"),),
+        "wf-compatibility.py", (("joint-empty", "joint_empty"),),
+    ),
+    Mutation(
+        "compatibility-marker-backport", "contracts", "absent marker starts separately on the 4.0 branch", "internal/analysis/version_rules.go",
+        (("workflowVersionAtLeast(version, 7, 16) && !versionBefore40Marker(version)", "workflowVersionAtLeast(version, 7, 16)"),),
+        "wf-compatibility.py", (("absent-output-marker", "real_exact_boundaries"), ("absent-output-marker", "boundary_candidates")),
+    ),
+    Mutation(
+        "compatibility-incomplete-external", "contracts", "partial external findings cannot exclude candidate versions", "internal/analysis/compatibility.go",
+        (("if !complete[document.Target.ID] {\n\t\t\tcontinue\n\t\t}", "if false {\n\t\t\tcontinue\n\t\t}"),),
+        "wf-compatibility.py", (("incomplete-external", "no_partial_exclusion"),),
+    ),
+    Mutation(
         "toolkit-depth-boundary", "contracts", "ablate-toolkit-budget.py",
         "vendor/github.com/lazysnail1024/k8s-crd-toolkit/yamlview/internal/parser/parser.go",
         (("if depth > 256 {", "if depth >= 256 {"),),

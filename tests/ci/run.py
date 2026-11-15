@@ -40,6 +40,7 @@ NATIVE = (
     "wf-shared-yaml-projection", "wf-responsive-editing",
     "wf-resource-rename", "wf-catalog-queries", "wf-symbol-query-budget", "wf-equivalence",
     "wf-analysis-status",
+    "wf-compatibility",
 )
 EXTENDED = (
     "wf2-targets", "wf3-yaml", "wf4-external-lsp",

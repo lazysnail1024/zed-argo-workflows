@@ -122,6 +122,23 @@ arguments returned by the source action; changed buffer/configuration/root input
 invalidate that action. Explanations are requested explicitly and do not generate
 background message notifications.
 
+Both file explanation paths include `analysis.compatibility` (or `compatibility`
+in the custom LSP result). It contains catalog and modeled-rule provenance hashes
+and separate records for each owned resource in the YAML stream. Each record has
+`schemaCandidates`, `semanticCandidates`, their `candidates` intersection,
+versioned `exclusions`, and `unknowns`. `evaluated: false` leaves candidate arrays
+null; it does not claim a proven empty set. `modeledComplete: false` means some
+modeled context or explicit coverage area remains unknown even if evaluation
+returned possible candidates. The message labels these **candidates under modeled
+static constraints** and summarizes up to four resources; the structured result
+retains all resource records. See [the full contract](multi-version-support.md).
+
+Compatibility work runs only for explicit explanation requests. Normal diagnostics,
+completion, hover and opening files keep their existing paths. An incomplete scope
+can still have complete local candidate information, but partial external findings
+cannot eliminate versions. The source action retains its existing input and scope
+publication proofs; a candidate list never authorizes a later edit.
+
 Rename errors include `error.data.reasonCode`, `nextStep` and `relatedLocations`.
 The originating safety guard supplies codes such as `INDEX_INCOMPLETE`,
 `AMBIGUOUS_BINDING`, `TARGET_UNKNOWN`, `AFFECTED_FILE_NOT_OPEN`,

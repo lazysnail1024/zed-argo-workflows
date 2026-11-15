@@ -24,7 +24,8 @@ type catalogVersion struct {
 		URL               string   `json:"url"`
 		AvailableVersions []string `json:"availableVersions"`
 		Schemas           map[string]struct {
-			File string `json:"file"`
+			File           string     `json:"file"`
+			BranchVersions [][]string `json:"branchVersions"`
 		} `json:"normalizedSchemas"`
 	} `json:"sources"`
 }
@@ -143,6 +144,24 @@ func SchemaHash(version string) string {
 		return ""
 	}
 	return index[version].Hash
+}
+
+// SchemaBranchVersions maps the compiled automatic AnyOf branches to complete
+// release contracts. It is generated with branch interning, not inferred from
+// exact-file hashes or permissive editor query selection.
+func SchemaBranchVersions(apiVersion, kind string) ([][]string, error) {
+	index, err := catalogIndex()
+	if err != nil {
+		return nil, err
+	}
+	for _, source := range index[DefaultVersion].Sources {
+		if source.Kind == kind {
+			if schema, ok := source.Schemas[apiVersion]; ok {
+				return schema.BranchVersions, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("%w for automatic GVK %s/%s", ErrSchemaUnavailable, apiVersion, kind)
 }
 
 // SchemaSource identifies the fixed upstream input of the current target/GVK.

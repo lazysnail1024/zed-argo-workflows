@@ -98,6 +98,7 @@ type AnalysisExplanation struct {
 	Reasons       []*Refusal                       `json:"reasons"`
 	Operations    map[string]OperationAvailability `json:"operations"`
 	References    *ReferenceStatus                 `json:"references,omitempty"`
+	Compatibility *CompatibilityExplanation        `json:"compatibility,omitempty"`
 }
 
 func ExplainDocument(ctx context.Context, document workspace.Document, inputSource string, version *int32, complete bool) AnalysisExplanation {
@@ -120,4 +121,16 @@ func ExplainDocument(ctx context.Context, document workspace.Document, inputSour
 		status.Phase = "incomplete"
 	}
 	return status
+}
+
+// Disk acquisition can finish while a sibling YAML resource is unevaluable.
+// Reuse the resolver's completed-scope fact instead of treating an enumerated
+// file set as a proof that every modeled external binding is known.
+func (status *AnalysisExplanation) ExplainCompatibility(ctx context.Context, document workspace.Document, w workspace.Workspace) {
+	status.Compatibility = ExplainCompatibility(ctx, document, w)
+	if status.Completeness.Workspace && !status.Compatibility.ScopeComplete {
+		status.Completeness.Workspace = false
+		status.Phase = "incomplete"
+		status.Reasons = append(status.Reasons, Refuse("INDEX_INCOMPLETE", "The selected scope contains unavailable or unevaluable external-reference inputs."))
+	}
 }

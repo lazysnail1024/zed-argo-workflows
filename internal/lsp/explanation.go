@@ -92,25 +92,35 @@ func (s *session) explainAnalysis(uri string, position *analysis.Position) (anal
 	if !complete && status.Completeness.Document {
 		status.Phase = s.explanationPhase(uri)
 	}
+	w := workspace.Workspace{Root: d.Target.Root, Documents: []workspace.Document{d}, IncompleteScopes: map[string]bool{d.Target.ID: true}}
+	s.catalog.mu.Lock()
+	if root := s.catalog.roots[s.root(uri)]; root != nil {
+		w.Config = root.header.Config
+	}
+	s.catalog.mu.Unlock()
+	if complete {
+		acquired, err := s.resourceEditWorkspace(d)
+		if err == nil {
+			w = acquired
+		} else {
+			status.Reasons = append(status.Reasons, analysis.Refuse("INDEX_INCOMPLETE", err.Error()))
+		}
+	}
+	if w.IncompleteScopes[d.Target.ID] {
+		status.Completeness.Workspace = false
+		if status.Completeness.Document {
+			status.Phase = "indexing"
+		}
+	}
+	status.ExplainCompatibility(s.context(), d, w)
 	if position == nil {
 		return status, nil
 	}
 	status.References = &analysis.ReferenceStatus{Complete: false}
-	if !complete {
+	if !status.Completeness.Workspace {
 		status.References.Refusal = analysis.Refuse("INDEX_INCOMPLETE", "reference search requires the complete selected scope")
 		status.Operations["rename"] = operationRefusal("rename", analysis.Refuse("INDEX_INCOMPLETE", "rename requires the complete selected scope"))
 		return status, nil
-	}
-	w, err := s.resourceEditWorkspace(d)
-	if err != nil {
-		status.Completeness.Workspace = false
-		status.Phase = "incomplete"
-		status.Operations["rename"] = operationRefusal("rename", analysis.Refuse("INDEX_INCOMPLETE", err.Error()))
-		return status, nil
-	}
-	if w.IncompleteScopes[d.Target.ID] {
-		status.Completeness.Workspace = false
-		status.Phase = "indexing"
 	}
 	pos := source.Position{Line: position.Line, UTF16Column: position.Character}
 	status.References.Count = len(analysis.ScopeReferences(s.context(), w, uri, pos, false))
@@ -212,6 +222,27 @@ func explanationMessage(status analysis.AnalysisExplanation) string {
 		lines = append(lines, reason.ReasonCode+": "+reason.Message+" "+reason.NextStep)
 		for _, location := range reason.RelatedLocations {
 			lines = append(lines, "Related file: "+location.URI)
+		}
+	}
+	if compatible := status.Compatibility; compatible != nil {
+		lines = append(lines, compatible.Label+" (per resource; controller execution and admission are unmodeled):")
+		for i, resource := range compatible.Resources {
+			if i == 4 {
+				lines = append(lines, fmt.Sprintf("%d additional resources are available in the structured explanation.", len(compatible.Resources)-i))
+				break
+			}
+			if !resource.Evaluated {
+				lines = append(lines, resource.Kind+"/"+resource.Name+": candidate analysis unavailable.")
+				continue
+			}
+			rangeText := ""
+			if len(resource.Candidates) > 0 {
+				rangeText = fmt.Sprintf("; first %s, last %s (may contain gaps)", resource.Candidates[0], resource.Candidates[len(resource.Candidates)-1])
+			}
+			lines = append(lines, fmt.Sprintf("%s/%s: %d candidates%s; schema %d, modeled rules %d; unknown areas %d.", resource.Kind, resource.Name, len(resource.Candidates), rangeText, len(resource.SchemaCandidates), len(resource.SemanticCandidates), len(resource.Unknowns)))
+		}
+		if !compatible.Evaluated {
+			lines = append(lines, "Candidate evaluation is incomplete; review the current input.")
 		}
 	}
 	if status.References != nil {

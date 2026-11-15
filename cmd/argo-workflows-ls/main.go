@@ -251,7 +251,9 @@ func runWithIO(parent context.Context, args []string, stdout, stderr io.Writer) 
 			found := false
 			for _, document := range input.Documents {
 				if string(document.Snapshot.URI()) == uri {
-					result["analysis"] = analysis.ExplainDocument(ctx, document, "disk", nil, !input.IncompleteScopes[document.Target.ID])
+					status := analysis.ExplainDocument(ctx, document, "disk", nil, !input.IncompleteScopes[document.Target.ID])
+					status.ExplainCompatibility(ctx, document, input)
+					result["analysis"] = status
 					found = true
 					break
 				}

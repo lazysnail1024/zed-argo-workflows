@@ -93,6 +93,14 @@ Its `analysis.inputIdentity.source` is `disk`; the editor uses `buffer` and incl
 the current document version and content hash. This distinction matters for
 unsaved edits and configuration buffers.
 
+The same explicit explanation includes **candidates under modeled static
+constraints** for each YAML resource: whole-release schema candidates, candidates
+allowed by the modeled rules, their intersection, and versioned exclusion reasons.
+The message shows counts and range endpoints; the structured response retains exact
+versions and source locations. Dynamic or unresolved areas remain unknown, and
+controller execution and admission are outside this model. This does not change
+the existing `auto` diagnostic policy. See [version explanation and provenance](docs/multi-version-support.md).
+
 ## Helm charts
 
 Install Zed's Helm extension for Helm syntax and Helm language-server features.

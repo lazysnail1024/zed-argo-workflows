@@ -692,7 +692,7 @@ func collectLocalBindings(ctx context.Context, s source.Snapshot, version string
 	if !readOnly || workflowMember(spec, "workflowTemplateRef").Kind() == yamlview.Empty {
 		b.callValue(spec, "entrypoint", workflowMember(spec, "arguments"), templates)
 	}
-	if !readOnly || workflowMember(spec, "workflowTemplateRef").Kind() == yamlview.Empty || !workflowVersionAtLeast(version, 4, 6) {
+	if !readOnly || workflowMember(spec, "workflowTemplateRef").Kind() == yamlview.Empty || !workflowFeature(version, externalExit) {
 		b.callValue(spec, "onExit", workflowMember(spec, "arguments"), templates)
 	}
 	b.hooksValue(spec, templates)

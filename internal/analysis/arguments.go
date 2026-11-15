@@ -23,10 +23,10 @@ func workflowVersionAtLeast(version string, minor, patch int) bool {
 }
 
 // Argument validity is independent of whether any callee declares this name.
-func argumentValueError(argument any, version string, templateValidation bool) (string, bool) {
+func argumentValueDecision(argument any, version string, templateValidation bool) (string, bool, []string) {
 	name, _ := queryMember(argument, "name").(string)
 	from := queryMember(argument, "valueFrom")
-	if version != compat.DefaultVersion && from != nil && (workflowVersionAtLeast(version, 5, 5) || strings.HasPrefix(version, "3.4.") && workflowVersionAtLeast(version, 4, 17)) {
+	if from != nil && workflowFeature(version, argumentValueFromRestriction) {
 		allowed := argumentValue(from, "configMapKeyRef", "supplied")
 		event, _ := queryMember(from, "event").(string)
 		allowed = allowed || event != ""
@@ -36,16 +36,23 @@ func argumentValueError(argument any, version string, templateValidation bool) (
 			forbidden = forbidden || text != ""
 		}
 		if !allowed || forbidden {
-			return "argument parameter " + name + " has a valueFrom form that is not allowed", true
+			return "argument parameter " + name + " has a valueFrom form that is not allowed", true, []string{"argument-value-from-restriction"}
 		}
 	}
-	if templateValidation && workflowVersionAtLeast(version, 2, 4) {
-		return "", false
+	if templateValidation && workflowFeature(version, templateEmptyArguments) {
+		return "", false, nil
 	}
-	if queryMember(argument, "value") == nil && (!workflowVersionAtLeast(version, 2, 0) || from == nil) {
-		return "argument parameter " + name + " requires value or an allowed valueFrom", false
+	if queryMember(argument, "value") == nil && (!workflowFeature(version, argumentValueFrom) || from == nil) {
+		rules := []string{}
+		if from != nil {
+			rules = append(rules, "argument-value-from")
+		}
+		if templateValidation {
+			rules = append(rules, "template-empty-arguments")
+		}
+		return "argument parameter " + name + " requires value or an allowed valueFrom", false, rules
 	}
-	return "", false
+	return "", false, nil
 }
 
 func argumentValue(node any, fields ...string) bool {
@@ -56,8 +63,14 @@ func argumentValue(node any, fields ...string) bool {
 	}
 	return false
 }
-func missingArguments(version string, callee any, arguments ...any) []string {
-	missing := []string{}
+
+type missingArgument struct {
+	name    string
+	ruleIDs []string
+}
+
+func missingArguments(version string, callee any, arguments ...any) []missingArgument {
+	missing := []missingArgument{}
 	for _, kind := range []string{"parameters", "artifacts"} {
 		selected := map[string]any{}
 		for _, args := range arguments {
@@ -78,27 +91,36 @@ func missingArguments(version string, callee any, arguments ...any) []string {
 				continue
 			}
 			optional := false
+			rules := []string{}
 			if kind == "parameters" {
 				optional = argumentValue(input, "default", "value", "valueFrom")
 				value := queryMember(arg, "value")
 				literal, _ := value.(string)
-				if version != compat.DefaultVersion && workflowVersionAtLeast(version, 7, 16) && literal == "__argo-internal.absent-optional-output__" {
+				if workflowFeature(version, absentOutputMarker) && literal == "__argo-internal.absent-optional-output__" {
 					// An exact absent-output marker leaves the input fallback intact.
+					rules = append(rules, "absent-output-marker")
 				} else if value != nil {
 					optional = true
 				} else if supplied {
-					if version != compat.DefaultVersion && workflowVersionAtLeast(version, 4, 10) {
+					if workflowFeature(version, argumentOverwritesDefault) {
+						if optional {
+							rules = append(rules, "argument-overwrites-default")
+						}
 						optional = false
 					}
-					if workflowVersionAtLeast(version, 2, 5) && queryMember(queryMember(arg, "valueFrom"), "configMapKeyRef") != nil {
-						optional = true
+					if queryMember(queryMember(arg, "valueFrom"), "configMapKeyRef") != nil {
+						if workflowFeature(version, argumentConfigMap) {
+							optional = true
+						} else {
+							rules = append(rules, "argument-configmap")
+						}
 					}
 				}
 			} else {
 				optional = queryMember(input, "optional") == true || argumentValue(input, "s3", "artifactory", "git", "http", "raw", "oss", "gcs", "azure", "hdfs")
 			}
 			if !optional {
-				missing = append(missing, kind+"."+name)
+				missing = append(missing, missingArgument{kind + "." + name, rules})
 			}
 		}
 	}

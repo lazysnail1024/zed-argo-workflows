@@ -88,6 +88,15 @@ watchdog 20 秒，产品分析 deadline 仍为五秒。聚合器核对顺序、�
 报告和退出状态，最后一个 shard 保留其他 CLI/LSP、CEL 及缺失 kind 断言。
 [版本消费者](../tests/e2e/wf-multi-version.py)、[聚合自测](../tests/ci/test_multi_version.py)
 
+`wf-compatibility` 进入同一 native runner/inventory/独立 assertion 合同，按资源验证 Schema
+候选、已建模规则候选及交集，覆盖九组语义边界和两条回移分支、来源身份、真实 auto/exact
+对照、动态/不完整 scope、原因归属、未保存 buffer 和旧动作拒绝。它不替代全 146 版本检查。
+`compatibility-joint-intersection`、`compatibility-marker-backport` 和
+`compatibility-incomplete-external` 三个 contracts mutation 必须让指定真实断言失败。
+`check-modeled-rules.py` 在生成 schema 前以及该消费者中验证语义来源清单；相同 CRD hash
+不能代替语义源码和调用条件审查。可选本地源文件校验核对精确 blob、函数和调用方 hash，
+该证据仅覆盖声明的边界样本，不表示执行了所有版本的上游 controller。
+
 ### 索引与请求
 
 `wf-analysis-status` 通过真实 CLI/stdio 检查磁盘与未保存 buffer 身份、独立的文件/scope

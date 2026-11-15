@@ -1,6 +1,29 @@
 {
   "schemaVersion": 1,
   "consumers": {
+    "wf-compatibility": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "argument-value-from"}, "assertions": ["auto_unchanged", "boundary_candidates", "bounded_work", "exclusion_guard", "input_unchanged", "real_exact_boundaries"]},
+        {"id": {"case": "template-empty-arguments"}, "assertions": ["auto_unchanged", "boundary_candidates", "bounded_work", "exclusion_guard", "input_unchanged", "real_exact_boundaries"]},
+        {"id": {"case": "argument-configmap"}, "assertions": ["auto_unchanged", "boundary_candidates", "bounded_work", "exclusion_guard", "input_unchanged", "real_exact_boundaries"]},
+        {"id": {"case": "dag-omitted"}, "assertions": ["auto_unchanged", "boundary_candidates", "bounded_work", "exclusion_guard", "input_unchanged", "real_exact_boundaries"]},
+        {"id": {"case": "workflow-parameters-json"}, "assertions": ["auto_unchanged", "boundary_candidates", "bounded_work", "exclusion_guard", "input_unchanged", "real_exact_boundaries"]},
+        {"id": {"case": "external-exit"}, "assertions": ["auto_unchanged", "boundary_candidates", "bounded_work", "exclusion_guard", "input_unchanged", "real_exact_boundaries"]},
+        {"id": {"case": "argument-overwrites-default"}, "assertions": ["auto_unchanged", "boundary_candidates", "bounded_work", "exclusion_guard", "input_unchanged", "real_exact_boundaries"]},
+        {"id": {"case": "argument-value-from-restriction"}, "assertions": ["auto_unchanged", "boundary_candidates", "bounded_work", "exclusion_guard", "input_unchanged", "real_exact_boundaries"]},
+        {"id": {"case": "absent-output-marker"}, "assertions": ["auto_unchanged", "boundary_candidates", "bounded_work", "exclusion_guard", "input_unchanged", "real_exact_boundaries"]},
+        {"id": {"case": "schema-boundaries"}, "assertions": ["introduced", "removed", "schema_exclusion", "whole_document"]},
+        {"id": {"case": "joint-empty"}, "assertions": ["auto_still_passes", "honest_label", "joint_empty", "rules_independent_of_crd", "schema_nonempty", "semantic_nonempty"]},
+        {"id": {"case": "unknowns"}, "assertions": ["call_forms_unknown", "damaged_unevaluated", "dynamic_keeps_possible", "dynamic_unknown", "external_unknown"]},
+        {"id": {"case": "separate-resources"}, "assertions": ["distinct_identity", "no_workspace_intersection", "separate_candidates"]},
+        {"id": {"case": "identity-and-pin"}, "assertions": ["catalog_identity", "covered_rules", "disk_identity", "evidence_scope", "maintenance_check", "rule_identity", "selected_pin"]},
+        {"id": {"case": "editor"}, "assertions": ["buffer_identity", "disk_unchanged", "stale_refused", "unsaved_candidates", "visible_label"]},
+        {"id": {"case": "schema-only"}, "assertions": ["absence_explained", "introduced_kind", "semantics_unknown"]},
+        {"id": {"case": "incomplete-external"}, "assertions": ["incomplete_unknown", "no_partial_exclusion", "scope_incomplete"]},
+        {"id": {"case": "causal-rules"}, "assertions": ["invariant_no_false_gate", "template_boundary_id", "traversal_boundary", "traversal_id"]}
+      ]
+    },
     "wf-analysis-status": {
       "assertionKey": "assertions",
       "rows": [
