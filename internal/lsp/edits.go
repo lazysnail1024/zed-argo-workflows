@@ -11,6 +11,7 @@ import (
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/analysis"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 	"path/filepath"
@@ -25,6 +26,49 @@ type pendingAction struct {
 	revision                                source.Revision
 	plan                                    edit.Plan
 	local                                   bool
+}
+
+// This records the metadata actually used to authorize a completed edit. It is
+// checked by the owner before publishing, not refreshed into an old scope proof.
+type editConfiguration struct {
+	root, override, identity string
+}
+
+func (s *session) replyEdit(id json.RawMessage, w workspace.Workspace, result any) error {
+	s.editConfiguration = &editConfiguration{w.Root, s.override, catalogIdentity(w, s.override)}
+	return s.reply(id, result)
+}
+
+func (s *session) checkEditConfiguration(ctx context.Context, expected *editConfiguration) error {
+	owned := false
+	for _, root := range s.roots {
+		owned = owned || root == expected.root
+	}
+	if !owned || s.override != expected.override {
+		return analysis.Refuse("STALE_INPUT", "edit configuration owner or target override changed")
+	}
+	uri, err := fileuri.FromPath(filepath.Join(expected.root, ".argo-workflows-ls.yaml"))
+	if err != nil {
+		return analysis.Refuse("STALE_INPUT", "edit configuration identity is unavailable: "+err.Error())
+	}
+	var overlay *string
+	if b, opened := s.buffers[uri]; opened {
+		if b.unavailable != "" {
+			return analysis.Refuse("STALE_INPUT", "edit configuration buffer is unavailable: "+b.unavailable, analysis.Location{URI: uri})
+		}
+		text := b.snapshot.Text()
+		overlay = &text
+	}
+	// Describe uses the existing bounded configuration reader and strict parser.
+	// An accepted config buffer stays authoritative over its saved disk bytes.
+	current, err := workspace.Describe(ctx, expected.root, expected.override, overlay)
+	if err != nil {
+		return analysis.Refuse("STALE_INPUT", "edit configuration is unavailable: "+err.Error(), analysis.Location{URI: uri})
+	}
+	if catalogIdentity(current, expected.override) != expected.identity {
+		return analysis.Refuse("STALE_INPUT", "edit configuration changed; request a new action after configuration refresh", analysis.Location{URI: uri})
+	}
+	return nil
 }
 
 func detachedPlan(plan edit.Plan) edit.Plan {
@@ -214,7 +258,7 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		if _, err := edit.Apply(b.snapshot, b.snapshot.Revision()+1, action.plan); err != nil {
 			return false, 0, s.failure(m.ID, -32801, err.Error())
 		}
-		return false, 0, s.reply(m.ID, map[string]any{"title": action.title, "kind": "quickfix", "edit": versionedEdit(action.uri, b, action.plan), "data": map[string]any{"token": p.Data.Token}})
+		return false, 0, s.replyEdit(m.ID, w, map[string]any{"title": action.title, "kind": "quickfix", "edit": versionedEdit(action.uri, b, action.plan), "data": map[string]any{"token": p.Data.Token}})
 	}
 	var p struct {
 		TextDocument protocol.TextDocumentIdentifier `json:"textDocument"`
@@ -326,7 +370,7 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 				buffer := s.buffers[string(file)]
 				changes = append(changes, map[string]any{"textDocument": map[string]any{"uri": file, "version": buffer.version}, "edits": analysis.PlanEdits(buffer.snapshot, plans[file])})
 			}
-			return false, 0, s.reply(m.ID, map[string]any{"documentChanges": changes})
+			return false, 0, s.replyEdit(m.ID, w, map[string]any{"documentChanges": changes})
 		}
 		plan, err := analysis.RenameLocal(ctx, b.snapshot, d.Target.Version, pos, p.NewName)
 		if err != nil {
@@ -335,7 +379,7 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		if err := analysis.SafeScopePlan(ctx, w, d, plan); err != nil {
 			return false, 0, s.failureError(m.ID, -32602, m.Method, err)
 		}
-		return false, 0, s.reply(m.ID, versionedEdit(uri, b, plan))
+		return false, 0, s.replyEdit(m.ID, w, versionedEdit(uri, b, plan))
 	case "textDocument/codeAction":
 		local, err := s.localEditWorkspace(d)
 		if err != nil {

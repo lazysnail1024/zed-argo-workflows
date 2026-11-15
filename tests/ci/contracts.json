@@ -493,7 +493,9 @@
         {"id": {"case": "changed-dependency"}, "assertions": ["actionOffered", "freshActionOffered", "freshDependencyExactEdit", "immediateExactEdit", "independentPeerKeepsLocalEdit"]},
         {"id": {"case": "isolated-reference"}, "assertions": ["callerStillUnresolved", "callerUnmodified", "isolatedActionOffered", "isolatedExactEdit", "isolatedRepairClean", "noCrossScopeDefinitionAfter", "noCrossScopeDefinitionBefore"]},
         {"id": {"case": "isolated-config-policy"}, "assertions": ["actionOffered", "documentBytesUnchanged", "effectiveConfigChangeRefused", "effectiveReferenceStateChanged", "freshActionOffered", "freshConfigExactEdit", "immediateExactEdit", "initialReferenceState", "unrelatedScopeConfigStillValid"]},
-        {"id": {"case": "isolated-config-namespace"}, "assertions": ["actionOffered", "documentBytesUnchanged", "effectiveConfigChangeRefused", "effectiveReferenceStateChanged", "freshActionOffered", "freshConfigExactEdit", "immediateExactEdit", "initialReferenceState", "unrelatedScopeConfigStillValid"]}
+        {"id": {"case": "isolated-config-namespace"}, "assertions": ["actionOffered", "documentBytesUnchanged", "effectiveConfigChangeRefused", "effectiveReferenceStateChanged", "freshActionOffered", "freshConfigExactEdit", "immediateExactEdit", "initialReferenceState", "unrelatedScopeConfigStillValid"]},
+        {"id": {"case": "disk-target-without-event"}, "assertions": ["actionOffered", "appliedDiagnosticsClean", "beforeMetadataPoll", "changedConfigurationRefused", "diskChangeObserved", "diskUnchanged", "immediateExactEdit", "noConfigurationEvent", "restoredExactEdit"]},
+        {"id": {"case": "disk-invalid-without-event"}, "assertions": ["actionOffered", "appliedDiagnosticsClean", "beforeMetadataPoll", "changedConfigurationRefused", "diskChangeObserved", "diskUnchanged", "immediateExactEdit", "noConfigurationEvent", "restoredExactEdit"]}
       ]
     },
     "wf-reaudit-queries": {
@@ -643,7 +645,11 @@
         {"id": {"case": "inline-reference"}, "assertions": ["diskUntouched", "prepareRefused", "renameRefused"]},
         {"id": {"case": "schema-only-peer"}, "assertions": ["diskUntouched", "prepareRefused", "renameRefused"]},
         {"id": {"case": "closed-after-prepare"}, "assertions": ["closedFileRefused", "prepareWorked"]},
-        {"id": {"case": "changed-after-prepare"}, "assertions": ["newUnsavedCaptureRefused", "prepareWorked"]}
+        {"id": {"case": "changed-after-prepare"}, "assertions": ["newUnsavedCaptureRefused", "prepareWorked"]},
+        {"id": {"case": "disk-policy-without-event"}, "assertions": ["beforeMetadataPoll", "bindingPreserved", "configurationAuthority", "diskChangeObserved", "diskUntouched", "noConfigurationEvent", "prepareWorked", "recoveredExactBytes", "referencesPreserved"]},
+        {"id": {"case": "disk-invalid-without-event"}, "assertions": ["beforeMetadataPoll", "bindingPreserved", "configurationAuthority", "diskChangeObserved", "diskUntouched", "noConfigurationEvent", "prepareWorked", "recoveredExactBytes", "referencesPreserved"]},
+        {"id": {"case": "disk-scope-without-event"}, "assertions": ["beforeMetadataPoll", "bindingPreserved", "configurationAuthority", "diskChangeObserved", "diskUntouched", "noConfigurationEvent", "prepareWorked", "recoveredExactBytes", "referencesPreserved"]},
+        {"id": {"case": "configuration-overlay-authority"}, "assertions": ["beforeMetadataPoll", "bindingPreserved", "configurationAuthority", "diskChangeObserved", "diskUntouched", "noConfigurationEvent", "prepareWorked", "recoveredExactBytes", "referencesPreserved"]}
       ]
     },
     "wf-catalog-queries": {

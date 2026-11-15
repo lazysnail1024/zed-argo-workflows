@@ -375,5 +375,27 @@ didOpen 前等待该索引明确就绪，再执行相同的 20/100/20 阶段。�
 [物化与保留控制](../tests/ci/receipt_materialization_e2e.py)、
 [下载后领域复核](../tests/ci/downloaded_material_e2e.py)
 
+## 22. 未观察到磁盘配置变化时，索引 epoch 仍可能有效
+
+**真实宿主观察与 stdio 复现。** 多仓库验收曾在外部修改配置后短暂显示旧的完整分析状态。
+Workflows 未请求动态文件 watch 注册，后台配置刷新有 30 秒节流。随后对冻结二进制的独立
+stdio fixture 在一秒内改变磁盘 policy、scope、target 或写入无效键，不发送配置事件，
+实际 Rename 和已 resolve Quick Fix 仍返回了可应用编辑。宿主观察本身未执行这次改名；
+实际错误编辑由临时 fixture 的字节、版本和完整原始协议复现。
+
+**当前修复。** 产生 WorkspaceEdit 的三个出口记录实际采用的配置身份；会话 owner 在交付
+前重新取得有效配置，保持打开的 config overlay 优先、磁盘读取有界。不同或不可用的配置
+返回 `STALE_INPUT`，不把新配置拼进旧的 scope/语义证明。读取后再次检查输入和 catalog
+proof；普通 Hover、补全及只读解释不承担这次编辑专用读取。它不保证原子文件系统快照，
+也不把之前可用的 Prepare Rename 或 Explain 结果当作最终编辑许可。
+
+**防回归。** 原 Rename/action 消费者增加无事件磁盘变化、有效 overlay、配置恢复和实际
+应用后的独立字节/绑定/诊断预期。已观察的无关 scope 配置变化仍保留 isolated-local 编辑
+正例；未观察的完整配置身份变化可以保守拒绝。原生交付测试另固定结果构造后才发生变化，
+证明旧内存 epoch 校验本身不足以发现磁盘配置改变。
+[编辑交付](../internal/lsp/serve.go)、[配置证明](../internal/lsp/edits.go)、
+[资源改名消费者](../tests/e2e/wf-resource-rename.py)、
+[Action 生命周期消费者](../tests/e2e/wf-reaudit-actions.py)
+
 这些规则描述当前源码要求；某次修复是否已经交付，应核对实际 release 和二进制身份。
 CI、WASI 运行时与真实 Zed 编辑会话的结果分别记录，不能互相代替。

@@ -302,3 +302,15 @@ scope alone does not authorize Rename: current input, complete scope, unique
 binding, precise source locations and affected open-file versions must also be
 proven. Input, index and analysis-budget failures remain visible as incomplete
 analysis. See [architecture](architecture.md) and [troubleshooting](distribution.md#troubleshooting-and-editor-acceptance).
+
+Before publishing a Rename or resolved Quick Fix `WorkspaceEdit`, the session
+owner reacquires the effective root configuration and compares it with the
+configuration used to authorize that edit. An accepted configuration buffer
+remains authoritative; otherwise this uses a fresh bounded disk read. Changed,
+invalid or unavailable configuration refuses the edit with `STALE_INPUT`, even
+without a watched-file notification. Existing input and catalog proofs are
+checked again after that read. This is a delivery-time check, not an atomic
+filesystem snapshot or permission to reuse an earlier Prepare Rename result.
+Read-only explanations still describe the configuration observed by the catalog;
+they do not themselves authorize an edit. The extra read/decode is attributed to
+the edit request's opt-in work trace, after its worker service and before reply.

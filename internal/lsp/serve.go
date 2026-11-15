@@ -100,6 +100,7 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 		clone.factBoundary = ""
 		clone.factMixed = false
 		clone.proofs = nil
+		clone.editConfiguration = nil
 
 		clone.queryKey = ""
 		clone.queryResults = map[string]json.RawMessage{}
@@ -414,6 +415,19 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 				current = s.requestCurrent(*lane.active)
 			}
 			valid := s.catalog.valid(result.proofs)
+			var editErr error
+			if lane != nil && current && valid && !result.canceled && !lane.canceled && result.err == nil && result.state.editConfiguration != nil {
+				// A disk config change need not have produced a client event or
+				// reached the throttled background metadata refresh. Reacquire its
+				// effective source only for an actual WorkspaceEdit, at delivery.
+				// The worker context has ended; use a bounded owner context while
+				// accounting this read to the same request's actual work.
+				ctx, cancel := context.WithTimeout(result.trace.Context(s.catalog.ctx), 5*time.Second)
+				editErr = s.checkEditConfiguration(ctx, result.state.editConfiguration)
+				cancel()
+				current = s.requestCurrent(*lane.active)
+				valid = editErr == nil && s.catalog.valid(result.proofs)
+			}
 			outcome := "discarded"
 			if current && valid && !result.canceled && (lane == nil || !lane.canceled) {
 				outcome = "delivered"
@@ -448,7 +462,11 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 					code, reason = -32801, "workspace input changed during request"
 					outcome = "stale"
 				}
-				_ = s.failure(lane.active.message.ID, code, reason)
+				if editErr != nil {
+					_ = s.failureError(lane.active.message.ID, -32801, lane.active.message.Method, editErr)
+				} else {
+					_ = s.failure(lane.active.message.ID, code, reason)
+				}
 				result.trace.Reply(outcome)
 			}
 			// No request/session retains a second persistent batch beside the

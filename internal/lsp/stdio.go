@@ -47,6 +47,7 @@ type session struct {
 	focus, method        string
 	callerDefinitions    bool
 	proofs               []catalogProof
+	editConfiguration    *editConfiguration
 	localPublication     bool
 	queryResults         map[string]json.RawMessage
 	queryBytes           int

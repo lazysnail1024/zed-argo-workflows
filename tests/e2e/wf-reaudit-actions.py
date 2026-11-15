@@ -3,6 +3,7 @@
 import importlib.util
 import pathlib
 import sys
+import time
 import traceback
 
 if len(sys.argv) not in (3, 5) or (len(sys.argv) == 5 and sys.argv[3] != '--cases'):
@@ -294,6 +295,49 @@ def isolated_config(name, relative, field):
         client.close()
 
 
+def disk_configuration(name, changed):
+    dest, work = m.setup(name, {'workflow.yaml': BROKEN}, m.CONFIG)
+    path, config = work / 'workflow.yaml', work / '.argo-workflows-ls.yaml'
+    (dest / 'configuration-before.yaml').write_bytes(m.CONFIG.encode())
+    (dest / 'configuration-changed.yaml').write_bytes(changed.encode())
+    (dest / 'expected-applied.yaml').write_bytes(VALID.encode())
+    m.save(dest / 'expected.json', {'changedResolve': 'STALE_INPUT', 'configurationAuthority': 'disk'})
+    started = time.monotonic()
+    client = m.LSP(dest, work)
+    checks, responses = {}, {}
+    try:
+        diagnostics = client.open(path, BROKEN, 3)
+        responses['offered'], action = offer(client, path, BROKEN, diagnostics)
+        checks['actionOffered'] = action is not None
+        if action is None:
+            return checks, responses
+        responses['immediate'] = client.request('codeAction/resolve', action)
+        checks['immediateExactEdit'] = exact_edit(responses['immediate'], path, BROKEN, 3)
+        sent_before = len(client.sent)
+        config.write_bytes(changed.encode())
+        checks['diskChangeObserved'] = config.read_bytes() == changed.encode()
+        responses['changedConfiguration'] = client.request('codeAction/resolve', action)
+        responses['secondsSinceSession'] = time.monotonic() - started
+        checks['beforeMetadataPoll'] = responses['secondsSinceSession'] < 10
+        checks['noConfigurationEvent'] = all(
+            item.get('method') not in ('workspace/didChangeWatchedFiles', 'workspace/didChangeConfiguration',
+                                       'textDocument/didOpen', 'textDocument/didSave', 'textDocument/didChange')
+            for item in client.sent[sent_before:])
+        checks['changedConfigurationRefused'] = (refused(responses['changedConfiguration']) and
+            responses['changedConfiguration'].get('error', {}).get('data', {}).get('reasonCode') == 'STALE_INPUT')
+        config.write_bytes(m.CONFIG.encode())
+        responses['restoredOffer'], restored = offer(client, path, BROKEN, diagnostics)
+        responses['restoredResolve'] = client.request('codeAction/resolve', restored) if restored else {}
+        checks['restoredExactEdit'] = exact_edit(responses['restoredResolve'], path, BROKEN, 3)
+        applied = m.apply(BROKEN, responses['restoredResolve']['result']['edit'], path.as_uri(), 3)
+        (dest / 'applied.yaml').write_bytes(applied.encode())
+        checks['appliedDiagnosticsClean'] = applied == VALID and clean(client.change(path, applied, 4))
+        checks['diskUnchanged'] = path.read_bytes() == BROKEN.encode() and config.read_bytes() == m.CONFIG.encode()
+        return checks, responses
+    finally:
+        client.close()
+
+
 CASES = (
     ('regular', lambda: lifecycle('regular', 'workflows/a.yaml')),
     ('excluded', lambda: lifecycle('excluded', 'generated/a.yaml')),
@@ -305,6 +349,10 @@ CASES = (
         'isolated-config-policy', 'generated/a.yaml', 'referencePolicy')),
     ('isolated-config-namespace', lambda: isolated_config(
         'isolated-config-namespace', '.argo-ls/a.yaml', 'defaultNamespace')),
+    ('disk-target-without-event', lambda: disk_configuration(
+        'disk-target-without-event', m.CONFIG.replace('"3.6.0"', '"3.5.0"'))),
+    ('disk-invalid-without-event', lambda: disk_configuration(
+        'disk-invalid-without-event', m.CONFIG + 'unsupportedFixtureSetting: true\n')),
 )
 selected = sys.argv[4].split(',') if len(sys.argv) == 5 else [name for name, _ in CASES]
 known = {name for name, _ in CASES}

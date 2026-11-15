@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -14,6 +15,72 @@ import (
 	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
 )
+
+func TestCompletedEditRechecksConfigurationAtDelivery(t *testing.T) {
+	c := testCatalogNoWorkers(t)
+	root := t.TempDir()
+	path := filepath.Join(root, ".argo-workflows-ls.yaml")
+	configuration := "schemaVersion: 1\ntargetVersion: '3.6.0'\nreferencePolicy: closed\n"
+	write := func(text string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(text), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(configuration)
+	header, err := workspace.Describe(context.Background(), root, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.roots[root] = &catalogRoot{header: header, epoch: 7}
+	owner := session{catalog: c, roots: []string{root}, buffers: map[string]buffer{}}
+	request := owner.queueRequest(message{ID: json.RawMessage("1"), Method: "textDocument/rename"})
+	worker := owner
+	var output bytes.Buffer
+	worker.out = &output
+	worker.proofs = []catalogProof{{root: root, epoch: 7}}
+	if err := worker.replyEdit(request.message.ID, header, map[string]any{"documentChanges": []any{}}); err != nil {
+		t.Fatal(err)
+	}
+	if output.Len() == 0 || worker.editConfiguration == nil {
+		t.Fatal("fixture must finish constructing a worker result before the disk change")
+	}
+	write(strings.Replace(configuration, "referencePolicy: closed", "referencePolicy: open", 1))
+	if !owner.requestCurrent(request) || !c.valid(worker.proofs) {
+		t.Fatal("a disk-only config change must not masquerade as an accepted client/catalog event")
+	}
+	refused := func() {
+		t.Helper()
+		err := owner.checkEditConfiguration(context.Background(), worker.editConfiguration)
+		refusal, ok := err.(*analysis.Refusal)
+		if !ok || refusal.ReasonCode != "STALE_INPUT" {
+			t.Fatalf("completed edit kept obsolete configuration authority: %v", err)
+		}
+	}
+	refused()
+	write(configuration)
+	if err := owner.checkEditConfiguration(context.Background(), worker.editConfiguration); err != nil {
+		t.Fatalf("restored exact configuration did not recover: %v", err)
+	}
+
+	// Delivery uses the owner's accepted overlay, even if saved bytes are now
+	// invalid. An unavailable overlay cannot fall back to either disk or header.
+	uri, err := fileuri.FromPath(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := source.New(source.URI(uri), 1, configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner.buffers[uri] = buffer{snapshot: snapshot, version: 9}
+	write(configuration + "unsupportedFixtureSetting: true\n")
+	if err := owner.checkEditConfiguration(context.Background(), worker.editConfiguration); err != nil {
+		t.Fatalf("saved config displaced the accepted overlay: %v", err)
+	}
+	owner.buffers[uri] = buffer{snapshot: snapshot, version: 10, unavailable: "configuration buffer exceeds its limit"}
+	refused()
+}
 
 func TestReadOnlyClosureKeepsSnapshotsWithTheirProofs(t *testing.T) {
 	c := testCatalogNoWorkers(t)

@@ -131,6 +131,12 @@ watchdog 20 秒，产品分析 deadline 仍为五秒。聚合器核对顺序、�
 失效、只读客户端的可用性。它与现有 Rename/quickfix 消费者一起运行；请求 quickfix 的旧
 消费者显式使用 LSP `context.only`，避免把只读解释 command 当成可应用编辑。
 
+`wf-resource-rename` 与 `wf-reaudit-actions` 另以真实 stdio 请求验证未发送 watch/config
+事件的磁盘配置变化：policy、scope、target 或无效键不能在后台 metadata 刷新前继续授权
+实际 Rename/已 resolve Quick Fix。配置 overlay 仍优先于磁盘；恢复后的新请求必须生成
+精确版本化编辑，实际应用后绑定或诊断正确。最终交付原生测试补充已构造结果后才改配置的
+时序，原 epoch/proof 仍有效时也须拒绝；它不单独代替外部消费者的真实编辑验证。
+
 持续索引消费者覆盖已知输入立即失效、漏 watcher 的维护发现、精确最终位置、buffer 优先及
 超五秒 discovery 继续收敛；慢 I/O 使用单独有来源身份的读取 overlay。workspace-symbol
 消费者检查 20,000 项输出边界、尾部低命中、零命中成本、并发编辑和取消后的恢复。
