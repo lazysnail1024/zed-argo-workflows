@@ -114,6 +114,11 @@ watchdog 20 秒，产品分析 deadline 仍为五秒。聚合器核对顺序、�
 真实补全结果、冷 Schema 编译、恢复/合成解析、缓存命中之前的当前读取和解析、trace-off
 等价性，以及取消回复到 worker 释放的不同时间。计数不是由输出命中率推算；原始 stderr
 保留后台和取消/丢弃工作的独立归属。计时为描述性证据，不新增或放宽资源门限。
+固定 warm 补全 fixture 另要求源解析不超过一次、总解析不超过三次，且投影不超过已测的六次；
+选定关闭依赖仍由 inotify 独立要求每次读取一次。该工作量合同来自先冻结的实际计数基线，
+不把结果缓存命中或恢复事实数当作解析减少。`ablate-query-facts.py` 的 `open-restoration`
+只禁用打开文档的恢复调用，必须让该工作量断言失败，同时完成全部五行消费者并保留正确
+候选、trace-off 等价性和读取约束；原有 `snapshot-bytes` 仍验证完整文本身份不能省略。
 
 `wf-equivalence` 保留原九种历史，另由固定字面量 fixture 比较 incremental/fresh 的真实
 版本化 Rename、补全和已 resolve Quick Fix 的完整应用结果。UTF-16 非 BMP 字符与 CRLF、

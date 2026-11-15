@@ -285,6 +285,13 @@ def work_trace():
         'acquisition_before_hit_visible': len(warm) == 2 and all(w.get('resultCacheHits', 0) == 1 and
             w.get('parseCalls', 0) > 0 and w.get('parseBytes', 0) > 0 and w.get('readFiles', 0) == 1 and
             w.get('readBytes', 0) > 0 for w in warm),
+        # Frozen instrumentation-only 909d5b0 performs two source parses and
+        # four total parses for each of these fixed warm requests. Reusing the
+        # accepted open source must remove at least one source parse. The six
+        # direct/synthetic query projections were not reduced by this reuse;
+        # they and the independent selected-file read remain measured work.
+        'warm_source_work_bounded': len(warm) == 2 and all(w.get('parseSourceCalls', 0) <= 1 and
+            w.get('parseCalls', 0) <= 3 and w.get('projectionCalls', 0) <= 6 for w in warm),
         'independent_fresh_reads': all(q['fileOpens'] == {'selected': 1, 'unrelated': 0}
             for sample in samples for q in sample['externalQueries']),
         'correlated_lifecycle': len(by_id) >= 5 and all(r.get('sequence', 0) > 0 and

@@ -1362,7 +1362,7 @@
         {"id": {"case": "local-completion-io"}, "assertions": ["all_candidates_correct", "initial_diagnostics_complete", "no_protocol_errors", "no_scope_reads"]},
         {"id": {"case": "external-completion-io"}, "assertions": ["exact_scope_candidates", "no_protocol_errors", "no_unrelated_scope_reads", "one_scope_acquisition_per_query"]},
         {"id": {"case": "configuration-io"}, "assertions": ["no_resource_reads", "valid_config_clean"]},
-        {"id": {"case": "work-trace-calibration"}, "assertions": ["acquisition_before_hit_visible", "cold_work_visible", "correlated_lifecycle", "independent_candidates", "independent_fresh_reads", "query_work_visible", "trace_off_equivalent"]},
+        {"id": {"case": "work-trace-calibration"}, "assertions": ["acquisition_before_hit_visible", "cold_work_visible", "correlated_lifecycle", "independent_candidates", "independent_fresh_reads", "query_work_visible", "trace_off_equivalent", "warm_source_work_bounded"]},
         {"id": {"case": "work-trace-cancellation"}, "assertions": ["cancel_reply_and_release", "cancelled_work_retained", "current_successor", "one_terminal_each", "successor_slot_recovered", "worker_start_observed"]}
       ]
     },

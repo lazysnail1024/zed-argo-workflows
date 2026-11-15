@@ -354,7 +354,14 @@ func (s *session) queryDocument(uri string) (workspace.Document, error) {
 		return workspace.Document{}, fmt.Errorf("document is outside workspace")
 	}
 	if _, ok := s.buffers[uri]; ok {
-		return s.bufferDocument(uri)
+		document, err := s.bufferDocument(uri)
+		if err == nil && s.catalog != nil {
+			// Buffer/header acquisition remains authoritative. The shared store
+			// restores only exact snapshot/release facts into this invocation;
+			// it supplies neither input proofs nor workspace completeness.
+			s.catalog.facts.Restore(s.context(), workspace.Workspace{Documents: []workspace.Document{document}})
+		}
+		return document, err
 	}
 	document, proof, err := s.catalog.document(s.context(), uri)
 	if err == nil {
