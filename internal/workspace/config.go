@@ -25,12 +25,13 @@ type Scope struct {
 }
 type Config struct {
 	targetSource     string
-	SchemaVersion    int      `json:"schemaVersion"`
-	TargetVersion    string   `json:"targetVersion"`
-	ReferencePolicy  string   `json:"referencePolicy"`
-	DefaultNamespace string   `json:"defaultNamespace"`
-	Exclude          []string `json:"exclude"`
-	Scopes           []Scope  `json:"scopes"`
+	SchemaVersion    int                      `json:"schemaVersion"`
+	TargetVersion    string                   `json:"targetVersion"`
+	ReferencePolicy  string                   `json:"referencePolicy"`
+	DefaultNamespace string                   `json:"defaultNamespace"`
+	Exclude          []string                 `json:"exclude"`
+	Scopes           []Scope                  `json:"scopes"`
+	RenderProfiles   map[string]RenderProfile `json:"renderProfiles,omitempty"`
 }
 type Target struct {
 	ID               string  `json:"id"`
@@ -152,7 +153,8 @@ func loadConfig(root string, overlay *string) (Config, []byte, error) {
 	// Presence matters: an explicit pin equal to the default still comes from
 	// root configuration, while a configuration containing only policy does not.
 	var selection struct {
-		TargetVersion *string `json:"targetVersion"`
+		TargetVersion  *string         `json:"targetVersion"`
+		RenderProfiles json.RawMessage `json:"renderProfiles"`
 	}
 	if err = yaml.Unmarshal(raw, &selection); err != nil {
 		return c, nil, err
@@ -160,8 +162,19 @@ func loadConfig(root string, overlay *string) (Config, []byte, error) {
 	if selection.TargetVersion != nil {
 		c.targetSource = "root"
 	}
-	if c.SchemaVersion != 1 {
+	if c.SchemaVersion != 1 && c.SchemaVersion != 2 {
 		return c, nil, fmt.Errorf("unsupported configuration schemaVersion")
+	}
+	if c.SchemaVersion == 1 && len(selection.RenderProfiles) != 0 {
+		return c, nil, fmt.Errorf("renderProfiles requires configuration schemaVersion 2")
+	}
+	if string(selection.RenderProfiles) == "null" {
+		return c, nil, fmt.Errorf("renderProfiles must be an object")
+	}
+	for name, profile := range c.RenderProfiles {
+		if err := validateRenderProfile(name, profile); err != nil {
+			return c, nil, err
+		}
 	}
 	if c.ReferencePolicy != "open" && c.ReferencePolicy != "closed" {
 		return c, nil, fmt.Errorf("invalid referencePolicy")

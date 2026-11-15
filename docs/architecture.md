@@ -30,6 +30,8 @@ ClusterWorkflowTemplate、CronWorkflow 有工作流语义；其余四种提供 s
 | [cmd/argo-workflows-ls/main.go](../cmd/argo-workflows-ls/main.go) | 分派 `version`、`check`、`serve --stdio`、`explain-config` 等命令；CLI 组装报告并冻结终止状态，统一报告完整性和退出码 |
 | [tools.go](../cmd/argo-workflows-ls/tools.go)、[Unix](../cmd/argo-workflows-ls/process_unix.go)/[Windows](../cmd/argo-workflows-ls/process_windows.go) 进程支持 | 显式 `render-check`、`lint-official`；子进程超时、合并输出预算及进程组/Job Object 回收 |
 | [internal/workspace](../internal/workspace) | 产品配置、scope/target 选择、候选文件和 Helm 边界、稳定有界磁盘读取、CLI 一次性收集及请求输入预算 |
+| [workspace/render.go](../internal/workspace/render.go) | CLI/LSP 共用的只读 RenderRequest；profile、root/scope、源文件及有序 values 身份；收集和解析动作不启动工具 |
+| [internal/rendercache](../internal/rendercache) | 默认生成目录的持有句柄、来源标记和精确库存；显式列出/删除，拒绝更改、外来文件及路径替换；自定义输出不进入所有权登记 |
 | [internal/helmsource](../internal/helmsource/source.go) | 识别真实 Helm action，按原始字节位置投影受支持的字面量和简单标量；结构性 action、动态键或不明确身份拒绝导航；Identity 投影只用于选择显式 render 动作 |
 | [internal/fileuri](../internal/fileuri/fileuri.go) | 本地绝对路径和 file URI 互转；包含 Windows 盘符及转义边界 |
 | [internal/buildinfo](../internal/buildinfo/info.go) | 原生版本、源码身份与 Go build metadata 中实际链接的 toolkit 版本 |

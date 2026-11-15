@@ -2,10 +2,16 @@ package lsp
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/lazysnail1024/zed-argo-workflows/internal/analysis"
@@ -15,7 +21,7 @@ import (
 
 // RenderCommand executes the same bounded explicit CLI operation used outside
 // Zed. The command entry point supplies it; analysis never starts programs.
-type RenderCommand func(context.Context, string, string, string) (map[string]any, error)
+type RenderCommand func(context.Context, workspace.RenderRequest) (map[string]any, error)
 
 func (s *session) renderDocument(uri string) (string, error) {
 	root := s.root(uri)
@@ -56,36 +62,109 @@ func (s *session) renderDocument(uri string) (string, error) {
 	}
 	return chart, nil
 }
+
+type renderArgument struct {
+	URI             string          `json:"uri"`
+	Root            string          `json:"root"`
+	Version         int32           `json:"version"`
+	Revision        source.Revision `json:"revision"`
+	Epoch           uint64          `json:"epoch"`
+	RootEpoch       uint64          `json:"rootEpoch"`
+	Profile         string          `json:"profile"`
+	RequestIdentity string          `json:"requestIdentity"`
+}
+
+func (s *session) renderRootEpoch(uri string) uint64 {
+	s.catalog.mu.Lock()
+	defer s.catalog.mu.Unlock()
+	if root := s.catalog.roots[s.root(uri)]; root != nil {
+		return root.inputEpoch
+	}
+	return 0
+}
+
+func (s *session) resolveRender(uri, profile string) (workspace.RenderRequest, error) {
+	if _, err := s.renderDocument(uri); err != nil {
+		return workspace.RenderRequest{}, err
+	}
+	name, err := filePath(uri)
+	if err != nil {
+		return workspace.RenderRequest{}, err
+	}
+	return workspace.ResolveRenderRequest(s.context(), workspace.RenderOptions{Root: s.root(uri), File: name, TargetVersion: s.override, Profile: profile, RequireChartInRoot: true})
+}
+
+func (s *session) currentRender(arg renderArgument) (workspace.RenderRequest, error) {
+	b, opened := s.buffers[arg.URI]
+	if !opened || b.version != arg.Version || b.snapshot.Revision() != arg.Revision || s.epoch != arg.Epoch || s.root(arg.URI) != arg.Root || s.renderRootEpoch(arg.URI) != arg.RootEpoch {
+		return workspace.RenderRequest{}, workspace.ErrRenderInputsChanged
+	}
+	request, err := s.resolveRender(arg.URI, arg.Profile)
+	if err != nil || request.RequestIdentity != arg.RequestIdentity {
+		return workspace.RenderRequest{}, workspace.ErrRenderInputsChanged
+	}
+	return request, nil
+}
+
+func renderInside(root, name string) bool {
+	rel, err := filepath.Rel(root, name)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// Every participating open buffer must agree with saved disk bytes, including
+// values outside the chart and symlink/hard-link aliases of those inputs.
+func (s *session) renderSaved(request workspace.RenderRequest) error {
+	for uri, b := range s.buffers {
+		name, err := filePath(uri)
+		if err != nil {
+			continue
+		}
+		real, _ := filepath.EvalSymlinks(name)
+		affected := renderInside(request.Chart, name) || real != "" && renderInside(request.ChartRealPath, real)
+		inputPath := ""
+		info, _ := os.Stat(name)
+		for path, resolved := range request.InputRealPaths {
+			if name == path || real != "" && real == resolved {
+				affected, inputPath = true, path
+				break
+			}
+			if info != nil {
+				other, e := os.Stat(path)
+				if e == nil && os.SameFile(info, other) {
+					affected, inputPath = true, path
+					break
+				}
+			}
+		}
+		if !affected {
+			continue
+		}
+		if b.unavailable != "" {
+			return fmt.Errorf("save all chart buffers, configuration and selected values before render-check: %s", name)
+		}
+		if inputPath != "" {
+			hash := sha256.Sum256([]byte(b.snapshot.Text()))
+			if hex.EncodeToString(hash[:]) == request.InputSHA256[inputPath] {
+				continue
+			}
+		} else {
+			disk, err := workspace.ReadText(s.context(), name)
+			if err == nil && disk == b.snapshot.Text() {
+				continue
+			}
+		}
+		return fmt.Errorf("save all chart buffers, configuration and selected values before render-check: %s", name)
+	}
+	return nil
+}
+
 func (s *session) renderRequest(m message) (bool, error) {
 	if s.render == nil {
 		return false, nil
 	}
-	if m.Method == "codeAction/resolve" {
-		var action struct {
-			Command struct {
-				Command   string   `json:"command"`
-				Arguments []string `json:"arguments"`
-			} `json:"command"`
-		}
-		if json.Unmarshal(m.Params, &action) == nil && action.Command.Command == "argo-workflows.renderCheck" {
-			args := action.Command.Arguments
-			if len(args) != 2 {
-				return true, s.failure(m.ID, -32602, "invalid render action")
-			}
-			if _, err := s.renderDocument(args[0]); err != nil {
-				return true, s.failure(m.ID, -32602, err.Error())
-			}
-			if args[1] != fmt.Sprint(s.buffers[args[0]].version) {
-				return true, s.failure(m.ID, -32801, "render action is stale")
-			}
-			return true, s.reply(m.ID, json.RawMessage(m.Params))
-		}
-	}
 	if m.Method == "textDocument/codeAction" {
 		var p struct {
-			TextDocument struct {
-				URI string `json:"uri"`
-			} `json:"textDocument"`
+			TextDocument struct{ URI string } `json:"textDocument"`
 		}
 		if json.Unmarshal(m.Params, &p) != nil {
 			return false, nil
@@ -98,43 +177,56 @@ func (s *session) renderRequest(m message) (bool, error) {
 		}
 		return true, s.reply(m.ID, s.withRenderAction(p.TextDocument.URI, nil))
 	}
-	if m.Method != "workspace/executeCommand" {
+	if m.Method != "workspace/executeCommand" && m.Method != "codeAction/resolve" {
 		return false, nil
 	}
-	var p struct {
-		Command   string   `json:"command"`
-		Arguments []string `json:"arguments"`
+	params := m.Params
+	if m.Method == "codeAction/resolve" {
+		var action struct{ Command json.RawMessage }
+		if json.Unmarshal(params, &action) != nil || len(action.Command) == 0 {
+			return false, nil
+		}
+		params = action.Command
 	}
-	if json.Unmarshal(m.Params, &p) != nil || p.Command != "argo-workflows.renderCheck" || len(p.Arguments) != 2 {
-		return true, s.failure(m.ID, -32602, "unknown command or invalid arguments")
+	var identity struct{ Command string }
+	if json.Unmarshal(params, &identity) != nil || identity.Command != "argo-workflows.renderCheck" {
+		return false, nil
 	}
-	uri := p.Arguments[0]
-	chart, err := s.renderDocument(uri)
+	var command struct {
+		Command   string
+		Arguments []renderArgument
+	}
+	if json.Unmarshal(params, &command) != nil || len(command.Arguments) != 1 {
+		return true, s.failure(m.ID, -32602, "invalid render action arguments")
+	}
+	request, err := s.currentRender(command.Arguments[0])
 	if err != nil {
-		return true, s.failure(m.ID, -32602, err.Error())
+		return true, s.failure(m.ID, -32801, err.Error())
 	}
-	if p.Arguments[1] != fmt.Sprint(s.buffers[uri].version) {
-		return true, s.failure(m.ID, -32801, "render action is stale; request a new action")
+	if m.Method == "codeAction/resolve" {
+		return true, s.reply(m.ID, json.RawMessage(m.Params))
 	}
-	for other, b := range s.buffers {
-		name, e := filePath(other)
-		if e != nil {
-			continue
-		}
-		rel, e := filepath.Rel(chart, name)
-		config := name == filepath.Join(s.root(uri), ".argo-workflows-ls.yaml")
-		if !config && (e != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
-			continue
-		}
-		disk, e := workspace.ReadText(s.context(), name)
-		if e != nil || b.unavailable != "" || disk != b.snapshot.Text() {
-			return true, s.failure(m.ID, -32801, "save all chart buffers before render-check")
-		}
+	if err := s.renderSaved(request); err != nil {
+		return true, s.failure(m.ID, -32801, err.Error())
 	}
-	name, _ := filePath(uri)
-	result, err := s.render(s.context(), s.root(uri), name, s.override)
+	result, err := s.render(s.context(), request)
 	if err != nil {
-		return true, s.failure(m.ID, -32803, err.Error())
+		code := -32803
+		if errors.Is(err, workspace.ErrRenderInputsChanged) {
+			code = -32801
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			code = -32800
+		}
+		return true, s.failure(m.ID, code, err.Error())
+	}
+	// The worker owner also checks accepted input authority before publishing
+	// these messages. Disk-only changes are rechecked here independently.
+	if !request.Current(s.context()) {
+		return true, s.failure(m.ID, -32801, workspace.ErrRenderInputsChanged.Error())
+	}
+	if err := s.reply(m.ID, result); err != nil {
+		return true, err
 	}
 	message := fmt.Sprintf("Argo Workflows render-check finished (exit %v). Generated YAML: %v", result["exitCode"], result["generatedFile"])
 	if err := s.write(map[string]any{"jsonrpc": "2.0", "method": "window/showMessage", "params": map[string]any{"type": 3, "message": message}}); err != nil {
@@ -150,16 +242,38 @@ func (s *session) renderRequest(m message) (bool, error) {
 			return true, err
 		}
 	}
-	return true, s.reply(m.ID, result)
+	return true, nil
 }
 
 func (s *session) withRenderAction(uri string, actions []map[string]any) []map[string]any {
-	if s.render == nil {
+	if s.render == nil || !s.explainActionAllowed {
 		return actions
 	}
 	if _, err := s.renderDocument(uri); err != nil {
 		return actions
 	}
-	title := "Argo Workflows: render and check saved chart"
-	return append(actions, map[string]any{"title": title, "kind": "source", "command": map[string]any{"title": title, "command": "argo-workflows.renderCheck", "arguments": []string{uri, fmt.Sprint(s.buffers[uri].version)}}})
+	root := s.root(uri)
+	header, err := workspace.Describe(s.context(), root, s.override, nil)
+	if err != nil {
+		return actions
+	}
+	names := []string{""}
+	for name := range header.Config.RenderProfiles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	b := s.buffers[uri]
+	for _, profile := range names {
+		request, err := s.resolveRender(uri, profile)
+		if err != nil {
+			continue
+		}
+		title := "Argo Workflows: render and check saved chart"
+		if profile != "" {
+			title += " (" + profile + ")"
+		}
+		arg := renderArgument{URI: uri, Root: root, Version: b.version, Revision: b.snapshot.Revision(), Epoch: s.epoch, RootEpoch: s.renderRootEpoch(uri), Profile: profile, RequestIdentity: request.RequestIdentity}
+		actions = append(actions, map[string]any{"title": title, "kind": "source", "command": map[string]any{"title": title, "command": "argo-workflows.renderCheck", "arguments": []renderArgument{arg}}})
+	}
+	return actions
 }

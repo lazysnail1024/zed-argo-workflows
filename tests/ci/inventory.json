@@ -119,7 +119,8 @@
         "tests/e2e/wf-remediation-render.py",
         "tests/e2e/wf-reaudit-query-io.py",
         "tests/e2e/wf-render-discovery.py",
-        "tests/e2e/wf-render-cancel.py"
+        "tests/e2e/wf-render-cancel.py",
+        "tests/e2e/wf-render-profiles.py"
       ]
     },
     {

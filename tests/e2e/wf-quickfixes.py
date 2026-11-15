@@ -299,11 +299,13 @@ spec:
     pin_case('pin-explicit-auto-scope',scope+'    targetVersion: "auto"\n','name: dev',[])
     pin_case('pin-root-older-exact','schemaVersion: 1\n','schemaVersion',['schemaVersion: 1\ntargetVersion: "3.5.0"\n'],override='3.5.0',expected_version='3.5.0')
     pin_case('pin-root-latest-exact','schemaVersion: 1\n','schemaVersion',['schemaVersion: 1\ntargetVersion: "4.1.6"\n'],override='4.1.6',expected_version='4.1.6')
+    profiles='schemaVersion: 2\n# retained profile order\nrenderProfiles:\n  dev:\n    chart: charts/demo\n    values: [env/common.yaml, env/dev.yaml, env/common.yaml]\n    releaseName: acceptance\n'
+    pin_case('pin-v2-profiles',profiles,'schemaVersion',[profiles+'targetVersion: "3.6.0"\n'],override='3.6.0')
 except Exception:
     result('runner-error',{'exception':False},{'traceback':traceback.format_exc()})
 finally:
     files={str(p.relative_to(OUT)):sha(p) for p in OUT.rglob('*') if p.is_file() and p.name not in ('manifest.json','results.json')}
     save(OUT/'manifest.json',{'command':[sys.executable,str(pathlib.Path(__file__).resolve()),str(BINARY),str(OUT)],'pythonVersion':sys.version,'binarySha256':sha(BINARY),'testSha256':sha(pathlib.Path(__file__)),'expectedSha256':sha(HERE/'wf-quickfixes.expected.json'),'files':files})
     (OUT/'rerun.txt').write_text(f'python3 {pathlib.Path(__file__).resolve()} {BINARY} {OUT}\n')
-    complete = {row['case'] for row in RESULTS} == SELECTED if SELECTED else len(RESULTS) == 32
+    complete = {row['case'] for row in RESULTS} == SELECTED if SELECTED else len(RESULTS) == 33
     sys.exit(0 if complete and RESULTS and all(r['pass'] for r in RESULTS) else 1)

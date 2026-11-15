@@ -67,7 +67,7 @@ EXTENDED = (
     "wf-preflight-budget", "wf-expr-error-text", "wf-schema-query-sibling",
     "wf-remediation-matrix", "wf-remediation-graph",
     "wf2-assets", "wf5-official", "wf5-render", "wf-remediation-render",
-     "wf-reaudit-query-io", "wf-render-discovery", "wf-render-cancel",
+     "wf-reaudit-query-io", "wf-render-discovery", "wf-render-cancel", "wf-render-profiles",
 )
 AGGREGATED = {
     "wf-argument-supply": "case", "wf-inheritance-family": "version",
@@ -579,7 +579,7 @@ def suite(args):
         env = os.environ.copy()
         if args.tools:
             env["WF_TEST_ARGO_BINARY"] = str(args.tools / "argo")
-        if name == "wf-render-discovery":
+        if name in ("wf-render-discovery", "wf-render-profiles"):
             if not args.tools:
                 raise ValueError("Helm discovery integration requires --tools")
             argv += [args.tools / "helm", args.tools / "helm4" / "helm"]

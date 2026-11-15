@@ -120,8 +120,8 @@ MUTATIONS = (
         "wf5-official.py", (("mismatch", "exit"),), tool="argo",
     ),
     Mutation(
-        "render-capabilities", "contracts", "ablate-render.py", "cmd/argo-workflows-ls/tools.go",
-        ((', "--kube-version", *kube', ''),),
+        "render-capabilities", "contracts", "ablate-render.py", "internal/workspace/render.go",
+        ((', "--kube-version", r.KubeVersion', ''),),
         "wf5-render.py", (("real-helm-render", "actual_capabilities"),), tool="helm",
     ),
     Mutation(

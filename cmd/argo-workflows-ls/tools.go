@@ -8,16 +8,15 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/rendercache"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
 	"io"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"syscall"
@@ -130,126 +129,152 @@ func renderCheck(args []string) int {
 func renderCheckContext(ctx context.Context, args []string, outputWriter, errorWriter io.Writer) int {
 	flags := flag.NewFlagSet("render-check", flag.ContinueOnError)
 	flags.SetOutput(errorWriter)
-	root := flags.String("root", ".", "source root")
-	scope := flags.String("scope", "", "source scope")
-	target := flags.String("target-version", "", "exact target")
-	chart := flags.String("chart", "", "local chart directory (default: nearest Chart.yaml)")
-	file := flags.String("file", "", "current saved chart file")
+	options := workspace.RenderOptions{}
+	flags.StringVar(&options.Root, "root", ".", "source root")
+	flags.StringVar(&options.Scope, "scope", "", "source scope")
+	flags.StringVar(&options.TargetVersion, "target-version", "", "exact target")
+	flags.StringVar(&options.Profile, "profile", "", "named saved render profile")
+	flags.StringVar(&options.Chart, "chart", "", "local chart directory (default: nearest Chart.yaml)")
+	flags.StringVar(&options.File, "file", "", "current saved chart file")
 	helm := flags.String("helm-binary", "", "absolute Helm 3 or 4 path (default: PATH)")
-	output := flags.String("output", "", "generated input directory")
-	release := flags.String("release-name", "argo-ls", "release name")
-	namespace := flags.String("namespace", "default", "namespace")
-	kube := flags.String("kube-version", "1.31.0", "Kubernetes capabilities version")
+	output := flags.String("output", "", "generated input directory (custom output is never cleanup-owned)")
+	flags.StringVar(&options.ReleaseName, "release-name", "argo-ls", "release name")
+	flags.StringVar(&options.Namespace, "namespace", "default", "namespace")
+	flags.StringVar(&options.KubeVersion, "kube-version", "1.31.0", "Kubernetes capabilities version")
 	var values, apiVersions arguments
-	flags.Var(&values, "values", "local values file")
+	flags.Var(&values, "values", "local values file (repeat in override order)")
 	flags.Var(&apiVersions, "api-version", "extra capability")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
 	}
+	options.Values, options.APIVersions = values, apiVersions
+	var conflict string
+	flags.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "chart", "values", "release-name", "namespace", "kube-version", "api-version":
+			conflict = f.Name
+		}
+	})
+	if options.Profile != "" && conflict != "" {
+		fmt.Fprintln(errorWriter, "--profile cannot be combined with --"+conflict)
+		return 2
+	}
+	request, err := workspace.ResolveRenderRequest(ctx, options)
+	if err != nil {
+		return renderFailure(ctx, outputWriter, errorWriter, err, nil, nil, 0)
+	}
+	code, _, _ := renderResolved(ctx, request, *helm, *output, outputWriter, errorWriter)
+	return code
+}
+
+func renderFailure(ctx context.Context, outputWriter, errorWriter io.Writer, err error, stdout, stderr []byte, toolExit int) int {
+	exit := 2
+	if ctx.Err() != nil {
+		err, exit = ctx.Err(), 3
+	}
+	report := map[string]any{"operation": "render-check", "product": "argo-workflows", "analysisComplete": false,
+		"error": err.Error(), "toolExitCode": toolExit, "stdout": string(stdout), "stderr": string(stderr)}
+	if writeErr := json.NewEncoder(outputWriter).Encode(report); writeErr != nil {
+		fmt.Fprintln(errorWriter, writeErr)
+		return 2
+	}
+	return exit
+}
+
+// Resolve existing ancestors before checking an output that may not exist yet.
+// Lexical separation alone lets an output-directory alias write into a chart.
+func renderOutputOutsideChart(chart, output string) error {
+	current := output
+	var suffix []string
+	for {
+		real, err := filepath.EvalSymlinks(current)
+		if err == nil {
+			for i := len(suffix) - 1; i >= 0; i-- {
+				real = filepath.Join(real, suffix[i])
+			}
+			rel, err := filepath.Rel(chart, real)
+			if err != nil || rel == "." || rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				return fmt.Errorf("output directory must be outside the chart input directory")
+			}
+			return nil
+		}
+		if !os.IsNotExist(err) {
+			return err
+		}
+		if _, exists := os.Lstat(current); exists == nil {
+			return fmt.Errorf("output ancestor is an unresolved symlink: %s", current)
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return err
+		}
+		suffix = append(suffix, filepath.Base(current))
+		current = parent
+	}
+}
+
+// CLI and the editor execute exactly the same resolved request. The output
+// store seals raw failure/cancellation evidence too; sealing proves ownership,
+// not successful rendering. Preflight failures do not allocate cache entries.
+func renderResolved(ctx context.Context, request workspace.RenderRequest, helm, output string, outputWriter, errorWriter io.Writer) (int, string, error) {
 	var rawStdout, rawStderr []byte
 	rawExit := 0
-	fail := func(err error) int {
-		exit := 2
-		if ctx.Err() != nil {
-			err = ctx.Err()
-			exit = 3
+	var store *rendercache.Store
+	seal := func() error {
+		if store != nil {
+			return store.Seal()
 		}
-		report := map[string]any{"operation": "render-check", "product": "argo-workflows", "analysisComplete": false, "error": err.Error(), "toolExitCode": rawExit, "stdout": string(rawStdout), "stderr": string(rawStderr)}
-		if writeErr := json.NewEncoder(outputWriter).Encode(report); writeErr != nil {
-			fmt.Fprintln(errorWriter, writeErr)
-			return 2
-		}
-		return exit
+		return nil
 	}
-	if *file != "" {
-		absolute, err := filepath.Abs(*file)
-		if err != nil {
-			return fail(err)
+	fail := func(err error) (int, string, error) {
+		if sealErr := seal(); sealErr != nil {
+			err = fmt.Errorf("%w; sealing render evidence: %v", err, sealErr)
 		}
-		*file = absolute
+		return renderFailure(ctx, outputWriter, errorWriter, err, rawStdout, rawStderr, rawExit), "", err
 	}
-	if *helm == "" {
+	if !request.Current(ctx) {
+		return fail(workspace.ErrRenderInputsChanged)
+	}
+	if helm == "" {
 		resolved, err := exec.LookPath("helm")
 		if err != nil {
 			return fail(fmt.Errorf("Helm not found on PATH: %w", err))
 		}
-		*helm, err = filepath.Abs(resolved)
+		helm, err = filepath.Abs(resolved)
 		if err != nil {
 			return fail(err)
 		}
 	}
-	if !filepath.IsAbs(*helm) {
+	if !filepath.IsAbs(helm) {
 		return fail(fmt.Errorf("--helm-binary must be absolute"))
 	}
-	if *chart == "" {
-		start := *file
-		if start == "" {
-			start = *root
-		}
-		found, err := workspace.NearestChart(start)
+	inputs, realPaths, err := request.Inputs(ctx, helm)
+	if err != nil {
+		return fail(err)
+	}
+	if output != "" {
+		output, err = filepath.Abs(output)
 		if err != nil {
 			return fail(err)
 		}
-		*chart = found
+		if entries, err := os.ReadDir(output); err == nil && len(entries) > 0 {
+			return fail(fmt.Errorf("output directory must be empty"))
+		} else if err != nil && !os.IsNotExist(err) {
+			return fail(err)
+		}
 	}
-	if *output == "" {
+	outputPlacement := output
+	if outputPlacement == "" {
 		cache, err := os.UserCacheDir()
 		if err != nil {
 			return fail(err)
 		}
-		base := filepath.Join(cache, "argo-workflows-ls", "render")
-		if err := os.MkdirAll(base, 0755); err != nil {
-			return fail(err)
-		}
-		*output, err = os.MkdirTemp(base, "chart-")
+		outputPlacement, err = filepath.Abs(filepath.Join(cache, "argo-workflows-ls", "render"))
 		if err != nil {
 			return fail(err)
 		}
 	}
-	chartPath, err := filepath.Abs(*chart)
-	if err != nil {
-		return fail(err)
-	}
-	if _, err := os.Stat(filepath.Join(chartPath, "Chart.yaml")); err != nil {
-		return fail(err)
-	}
-	outputPath, err := filepath.Abs(*output)
-	if err != nil {
-		return fail(err)
-	}
-	if entries, err := os.ReadDir(outputPath); err == nil && len(entries) > 0 {
-		return fail(fmt.Errorf("output directory must be empty"))
-	} else if err != nil && !os.IsNotExist(err) {
-		return fail(err)
-	}
-	if relative, err := filepath.Rel(chartPath, outputPath); err != nil || relative == "." || relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return fail(fmt.Errorf("output directory must be outside the chart input directory"))
-	}
-	if *file != "" && *scope == "" {
-		header, err := workspace.Describe(ctx, *root, *target, nil)
-		if err != nil {
-			return fail(err)
-		}
-		uri, err := fileuri.FromPath(*file)
-		if err != nil {
-			return fail(err)
-		}
-		snapshot, err := source.New(source.URI(uri), 0, "")
-		if err != nil {
-			return fail(err)
-		}
-		document, err := workspace.OpenDocument(header, snapshot, *target)
-		if err != nil {
-			return fail(err)
-		}
-		*scope = document.Target.Scope
-	}
-	inputs, err := renderInputs(ctx, chartPath, *helm, *root, values)
-	if err != nil {
-		return fail(err)
-	}
-	version, err := selectedTarget(ctx, *root, *scope, *target)
-	if err != nil {
+	if err := renderOutputOutsideChart(request.ChartRealPath, outputPlacement); err != nil {
 		return fail(err)
 	}
 	temp, err := os.MkdirTemp("", "argo-workflows-helm-")
@@ -262,7 +287,7 @@ func renderCheckContext(ctx context.Context, args []string, outputWriter, errorW
 		return fail(err)
 	}
 	env := []string{"PATH=" + os.Getenv("PATH"), "LANG=C.UTF-8", "KUBECONFIG=" + kubeconfig, "HELM_PLUGINS=" + filepath.Join(temp, "plugins"), "HELM_CACHE_HOME=" + filepath.Join(temp, "cache"), "HELM_CONFIG_HOME=" + filepath.Join(temp, "config"), "HELM_DATA_HOME=" + filepath.Join(temp, "data")}
-	versionOut, versionErr, versionCode, err := toolRun(ctx, *helm, []string{"version", "--short"}, env)
+	versionOut, versionErr, versionCode, err := toolRun(ctx, helm, []string{"version", "--short"}, env)
 	rawStdout, rawStderr, rawExit = versionOut, versionErr, versionCode
 	toolVersion := strings.TrimSpace(string(versionOut))
 	if err != nil {
@@ -271,56 +296,104 @@ func renderCheckContext(ctx context.Context, args []string, outputWriter, errorW
 	if !strings.HasPrefix(toolVersion, "v3.") && !strings.HasPrefix(toolVersion, "v4.") {
 		return fail(fmt.Errorf("Helm 3 or 4 is required; got %s", toolVersion))
 	}
-	command := []string{"template", *release, chartPath, "--namespace", *namespace, "--kube-version", *kube, "--include-crds"}
-	for _, path := range values {
-		absolute, e := filepath.Abs(path)
-		if e != nil {
-			return fail(e)
-		}
-		if _, e = os.Stat(absolute); e != nil {
-			return fail(e)
-		}
-		command = append(command, "--values", absolute)
+	if !request.InputsEqual(ctx, helm, inputs, realPaths) {
+		return fail(workspace.ErrRenderInputsChanged)
 	}
-	for _, api := range apiVersions {
-		command = append(command, "--api-versions", api)
+	if output == "" {
+		store, err = rendercache.Create()
+		if err != nil {
+			return fail(err)
+		}
+		defer store.Close()
+		output = store.Directory
+	} else if err := os.MkdirAll(output, 0755); err != nil {
+		return fail(err)
 	}
-	stdout, stderr, exitCode, executionErr := toolRun(ctx, *helm, command, env)
-	currentInputs, inputErr := renderInputs(ctx, chartPath, *helm, *root, values)
-	inputsUnchanged := inputErr == nil && reflect.DeepEqual(inputs, currentInputs)
+	if err := renderOutputOutsideChart(request.ChartRealPath, output); err != nil {
+		return fail(err)
+	}
+	write := func(name string, data []byte) error {
+		if store != nil {
+			return store.Write(name, data)
+		}
+		return os.WriteFile(filepath.Join(output, name), data, 0644)
+	}
+	command := request.Arguments()
+	stdout, stderr, exitCode, executionErr := toolRun(ctx, helm, command, env)
 	rawStdout, rawStderr, rawExit = stdout, stderr, exitCode
-	if err := os.MkdirAll(outputPath, 0755); err != nil {
+	inputsUnchanged := request.InputsEqual(ctx, helm, inputs, realPaths)
+	if err := write("helm.stdout", stdout); err != nil {
 		return fail(err)
 	}
-	if err := os.WriteFile(filepath.Join(outputPath, "helm.stdout"), stdout, 0644); err != nil {
-		return fail(err)
-	}
-	if err := os.WriteFile(filepath.Join(outputPath, "helm.stderr"), stderr, 0644); err != nil {
+	if err := write("helm.stderr", stderr); err != nil {
 		return fail(err)
 	}
 	hash := sha256.Sum256(stdout)
-	report := map[string]any{"command": append([]string{*helm}, command...), "toolVersion": toolVersion, "exitCode": exitCode, "targetVersion": version, "releaseName": *release, "namespace": *namespace, "kubeVersion": *kube, "apiVersions": []string(apiVersions), "stdoutSha256": hex.EncodeToString(hash[:]), "generatedFile": filepath.Join(outputPath, "rendered.yaml"), "chart": chartPath, "inputSha256": inputs, "inputsUnchanged": inputsUnchanged}
-	save := func() {
-		data, _ := json.MarshalIndent(report, "", "  ")
-		if err := os.WriteFile(filepath.Join(outputPath, "render-report.json"), append(data, '\n'), 0644); err != nil {
-			fmt.Fprintln(errorWriter, err)
-		}
+	generated := filepath.Join(output, "rendered.yaml")
+	report := map[string]any{"command": append([]string{helm}, command...), "toolVersion": toolVersion, "exitCode": exitCode,
+		"targetVersion": request.TargetVersion, "scope": request.Scope, "root": request.Root, "selectedFile": request.SelectedFile,
+		"profile": request.Profile, "values": request.Values, "requestIdentity": request.RequestIdentity,
+		"releaseName": request.ReleaseName, "namespace": request.Namespace, "kubeVersion": request.KubeVersion, "apiVersions": request.APIVersions,
+		"helmIdentity": map[string]string{"path": helm, "sha256": inputs[helm], "version": toolVersion},
+		"stdoutSha256": hex.EncodeToString(hash[:]), "generatedFile": generated, "chart": request.Chart,
+		"inputSha256": inputs, "inputRealPaths": realPaths, "inputsUnchanged": inputsUnchanged}
+	if executionErr != nil {
+		report["error"] = executionErr.Error()
+	} else if !inputsUnchanged {
+		report["error"] = workspace.ErrRenderInputsChanged.Error()
 	}
-	save()
+	if ctx.Err() != nil {
+		report["cancelled"] = true
+		report["error"] = ctx.Err().Error()
+	}
+	save := func() error {
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return err
+		}
+		return write("render-report.json", append(data, '\n'))
+	}
+	if err := save(); err != nil {
+		return fail(err)
+	}
 	if executionErr != nil {
 		return fail(fmt.Errorf("Helm exited %d: %s: %w", exitCode, stderr, executionErr))
 	}
 	if !inputsUnchanged {
-		return fail(fmt.Errorf("render inputs changed during Helm execution; discard this output and run render-check again"))
+		return fail(workspace.ErrRenderInputsChanged)
 	}
-	if err := os.WriteFile(filepath.Join(outputPath, "rendered.yaml"), stdout, 0644); err != nil {
+	if err := write("rendered.yaml", stdout); err != nil {
 		return fail(err)
 	}
-	fmt.Fprintln(errorWriter, "Generated YAML:", filepath.Join(outputPath, "rendered.yaml"))
-	code := runWithIO(ctx, []string{"check", "--root", outputPath, "--target-version", version, "--format", "json"}, outputWriter, errorWriter)
+	var checked bytes.Buffer
+	code := runWithIO(ctx, []string{"check", "--root", output, "--target-version", request.TargetVersion, "--format", "json"}, &checked, errorWriter)
 	report["checkExitCode"] = code
-	save()
-	return code
+	if !request.InputsEqual(ctx, helm, inputs, realPaths) {
+		report["inputsUnchanged"] = false
+		report["error"] = workspace.ErrRenderInputsChanged.Error()
+		if ctx.Err() != nil {
+			report["cancelled"] = true
+			report["error"] = ctx.Err().Error()
+		}
+		if err := save(); err != nil {
+			return fail(err)
+		}
+		return fail(workspace.ErrRenderInputsChanged)
+	}
+	if err := save(); err != nil {
+		return fail(err)
+	}
+	if err := seal(); err != nil {
+		return fail(err)
+	}
+	if ctx.Err() != nil {
+		return fail(ctx.Err())
+	}
+	fmt.Fprintln(errorWriter, "Generated YAML:", generated)
+	if _, err := io.Copy(outputWriter, &checked); err != nil {
+		return 2, "", err
+	}
+	return code, generated, nil
 }
 
 func lintOfficial(args []string) int {
@@ -415,110 +488,14 @@ func lintOfficial(args []string) int {
 	return 2
 }
 
-// Bind render results to the selected local chart, values, executable and pin.
-// Inputs are bounded and regular files; chart symlinks would hide dependencies.
-func renderInputs(ctx context.Context, chart, helm, root string, values []string) (map[string]string, error) {
-	result := map[string]string{}
-	remaining := int64(128 * 1024 * 1024)
-	add := func(name string) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		absolute, err := filepath.Abs(name)
-		if err != nil {
-			return err
-		}
-		info, err := os.Stat(absolute)
-		if err != nil {
-			return err
-		}
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("render input is not a regular file: %s", absolute)
-		}
-		if info.Size() > remaining {
-			return fmt.Errorf("render input provenance exceeds 128 MiB")
-		}
-		file, err := os.Open(absolute)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-		hash := sha256.New()
-		count, err := io.Copy(hash, io.LimitReader(file, remaining+1))
-		if err != nil {
-			return err
-		}
-		remaining -= count
-		if remaining < 0 {
-			return fmt.Errorf("render input provenance exceeds 128 MiB")
-		}
-		result[absolute] = hex.EncodeToString(hash.Sum(nil))
-		return nil
-	}
-	err := filepath.WalkDir(chart, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("chart symlinks prevent complete input provenance: %s", path)
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		if len(result) >= 20000 {
-			return fmt.Errorf("render input provenance exceeds 20000 files")
-		}
-		return add(path)
-	})
-	if err != nil {
-		return nil, err
-	}
-	for _, value := range values {
-		if err := add(value); err != nil {
-			return nil, err
-		}
-	}
-	if err := add(helm); err != nil {
-		return nil, err
-	}
-	config, err := filepath.Abs(filepath.Join(root, ".argo-workflows-ls.yaml"))
-	if err != nil {
-		return nil, err
-	}
-	if _, err := os.Stat(config); os.IsNotExist(err) {
-		result[config] = "absent"
-	} else if err != nil {
-		return nil, err
-	} else if err := add(config); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-func renderForEditor(ctx context.Context, root, file, target string) (map[string]any, error) {
-	cache, err := os.UserCacheDir()
-	if err != nil {
-		return nil, err
-	}
-	base := filepath.Join(cache, "argo-workflows-ls", "render")
-	if err := os.MkdirAll(base, 0755); err != nil {
-		return nil, err
-	}
-	output, err := os.MkdirTemp(base, "chart-")
-	if err != nil {
-		return nil, err
-	}
-	args := []string{"--root", root, "--file", file, "--output", output}
-	if target != "" {
-		args = append(args, "--target-version", target)
-	}
+func renderForEditor(ctx context.Context, request workspace.RenderRequest) (map[string]any, error) {
 	var stdout, stderr bytes.Buffer
-	code := renderCheckContext(ctx, args, &stdout, &stderr)
+	code, generated, err := renderResolved(ctx, request, "", "", &stdout, &stderr)
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
+	}
+	if err != nil {
+		return nil, err
 	}
 	if code != 0 && code != 1 {
 		return nil, fmt.Errorf("render-check failed: %s %s", stdout.String(), stderr.String())
@@ -527,5 +504,35 @@ func renderForEditor(ctx context.Context, root, file, target string) (map[string
 	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		return nil, err
 	}
-	return map[string]any{"exitCode": code, "generatedFile": filepath.Join(output, "rendered.yaml"), "report": report}, nil
+	return map[string]any{"exitCode": code, "generatedFile": generated, "report": report}, nil
+}
+
+func renderCache(args []string, outputWriter, errorWriter io.Writer) int {
+	flags := flag.NewFlagSet("render-cache", flag.ContinueOnError)
+	flags.SetOutput(errorWriter)
+	remove := flags.String("remove", "", "remove one verified generated cache directory")
+	if flags.Parse(args) != nil || flags.NArg() != 0 {
+		return 2
+	}
+	if *remove != "" {
+		if err := rendercache.Remove(*remove); err != nil {
+			json.NewEncoder(outputWriter).Encode(map[string]any{"removed": false, "directory": *remove, "error": err.Error()})
+			return 2
+		}
+		if err := json.NewEncoder(outputWriter).Encode(map[string]any{"removed": true, "directory": *remove}); err != nil {
+			fmt.Fprintln(errorWriter, err)
+			return 2
+		}
+		return 0
+	}
+	entries, err := rendercache.List()
+	if err != nil {
+		fmt.Fprintln(errorWriter, err)
+		return 2
+	}
+	if err := json.NewEncoder(outputWriter).Encode(map[string]any{"entries": entries}); err != nil {
+		fmt.Fprintln(errorWriter, err)
+		return 2
+	}
+	return 0
 }

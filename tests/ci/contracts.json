@@ -1,6 +1,49 @@
 {
   "schemaVersion": 1,
   "consumers": {
+    "wf-render-profiles": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "helm3/default"}, "assertions": ["independent_output", "source_unchanged", "success"]},
+        {"id": {"case": "helm3/default-host-response"}, "assertions": ["natural_exit", "no_helm_until_execute", "response_then_request", "shown_generated"]},
+        {"id": {"case": "helm3/dev"}, "assertions": ["argv_order", "capabilities", "helm_identity", "independent_output", "ordered_provenance", "source_unchanged", "success"]},
+        {"id": {"case": "helm3/prod"}, "assertions": ["argv_order", "capabilities", "helm_identity", "independent_output", "ordered_provenance", "source_unchanged", "success"]},
+        {"id": {"case": "helm3/reverse"}, "assertions": ["argv_order", "capabilities", "helm_identity", "independent_output", "ordered_provenance", "source_unchanged", "success"]},
+        {"id": {"case": "helm3/strict-config"}, "assertions": ["identity_contract", "invalid_rejected", "no_helm", "v2_supported"]},
+        {"id": {"case": "helm3/conflicts"}, "assertions": ["no_helm", "overrides_rejected"]},
+        {"id": {"case": "helm3/editor"}, "assertions": ["explicit_output", "list_resolve_no_helm", "profile_action", "show_document_response", "source_unchanged"]},
+        {"id": {"case": "helm3/stale-config"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
+        {"id": {"case": "helm3/stale-values"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
+        {"id": {"case": "helm3/stale-order"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
+        {"id": {"case": "helm3/unsaved-values"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
+        {"id": {"case": "helm3/unsaved-alias"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
+        {"id": {"case": "helm3/same-version-reopen"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
+        {"id": {"case": "helm3/selected-scope"}, "assertions": ["matching_scope", "no_chart_scope_borrowing", "no_scope_borrowing", "profile_chart_scope"]},
+        {"id": {"case": "helm3/cache-owned-custom"}, "assertions": ["created_owned", "custom_preserved", "output_alias_preserves_source", "owned_removed"]},
+        {"id": {"case": "helm3/cache-refusals"}, "assertions": ["all_inputs_preserved", "all_refused", "outside_preserved"]},
+        {"id": {"case": "helm3/cancel"}, "assertions": ["descendants_reaped", "failed_cache_owned", "failed_cache_removable", "no_result_view", "profile_action", "raw_retained", "refused"]},
+        {"id": {"case": "helm3/during-render-change"}, "assertions": ["descendants_reaped", "failed_cache_owned", "failed_cache_removable", "no_result_view", "profile_action", "raw_retained", "refused"]},
+        {"id": {"case": "helm4/default"}, "assertions": ["independent_output", "source_unchanged", "success"]},
+        {"id": {"case": "helm4/default-host-response"}, "assertions": ["natural_exit", "no_helm_until_execute", "response_then_request", "shown_generated"]},
+        {"id": {"case": "helm4/dev"}, "assertions": ["argv_order", "capabilities", "helm_identity", "independent_output", "ordered_provenance", "source_unchanged", "success"]},
+        {"id": {"case": "helm4/prod"}, "assertions": ["argv_order", "capabilities", "helm_identity", "independent_output", "ordered_provenance", "source_unchanged", "success"]},
+        {"id": {"case": "helm4/reverse"}, "assertions": ["argv_order", "capabilities", "helm_identity", "independent_output", "ordered_provenance", "source_unchanged", "success"]},
+        {"id": {"case": "helm4/strict-config"}, "assertions": ["identity_contract", "invalid_rejected", "no_helm", "v2_supported"]},
+        {"id": {"case": "helm4/conflicts"}, "assertions": ["no_helm", "overrides_rejected"]},
+        {"id": {"case": "helm4/editor"}, "assertions": ["explicit_output", "list_resolve_no_helm", "profile_action", "show_document_response", "source_unchanged"]},
+        {"id": {"case": "helm4/stale-config"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
+        {"id": {"case": "helm4/stale-values"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
+        {"id": {"case": "helm4/stale-order"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
+        {"id": {"case": "helm4/unsaved-values"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
+        {"id": {"case": "helm4/unsaved-alias"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
+        {"id": {"case": "helm4/same-version-reopen"}, "assertions": ["fresh_action_recovers", "no_generated_view", "no_helm", "profile_action", "refused"]},
+        {"id": {"case": "helm4/selected-scope"}, "assertions": ["matching_scope", "no_chart_scope_borrowing", "no_scope_borrowing", "profile_chart_scope"]},
+        {"id": {"case": "helm4/cache-owned-custom"}, "assertions": ["created_owned", "custom_preserved", "output_alias_preserves_source", "owned_removed"]},
+        {"id": {"case": "helm4/cache-refusals"}, "assertions": ["all_inputs_preserved", "all_refused", "outside_preserved"]},
+        {"id": {"case": "helm4/cancel"}, "assertions": ["descendants_reaped", "failed_cache_owned", "failed_cache_removable", "no_result_view", "profile_action", "raw_retained", "refused"]},
+        {"id": {"case": "helm4/during-render-change"}, "assertions": ["descendants_reaped", "failed_cache_owned", "failed_cache_removable", "no_result_view", "profile_action", "raw_retained", "refused"]}
+      ]
+    },
     "wf-compatibility": {
       "assertionKey": "assertions",
       "rows": [
@@ -278,7 +321,8 @@
         {"id": {"case": "pin-auto-inherited-scope"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "no_pin_action", "request_succeeded"]},
         {"id": {"case": "pin-explicit-auto-scope"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "no_pin_action", "request_succeeded"]},
         {"id": {"case": "pin-root-older-exact"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "persisted_without_override", "request_succeeded", "stale_rejected", "target_preserved"]},
-        {"id": {"case": "pin-root-latest-exact"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "persisted_without_override", "request_succeeded", "stale_rejected", "target_preserved"]}
+        {"id": {"case": "pin-root-latest-exact"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "persisted_without_override", "request_succeeded", "stale_rejected", "target_preserved"]},
+        {"id": {"case": "pin-v2-profiles"}, "assertions": ["disk_unchanged", "exact_pin_bytes", "persisted_without_override", "request_succeeded", "stale_rejected", "target_preserved"]}
       ]
     },
     "wf-local-rename": {

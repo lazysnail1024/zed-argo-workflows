@@ -77,6 +77,15 @@ worktree 构建，避免 ignored Go/C/embed 文件污染；这不宣称二进制
 | Zed package/snippets | 包 bytes、来源身份、精确 snippet 展开由 native CLI 消费 | 独立 package 与负向控制。 |
 | 已发布包安装 | 文件系统安装、校验、替换、失败恢复与回滚 | 固定 fixture 和精确本次 release 两个入口。 |
 
+`wf-render-profiles` 在 extended suite 中使用两个固定真实 Helm major。它以独立
+dev/prod/reverse values 预期、实际工具调用日志和完整 stdio 帧验证 profile 结果，
+收集/resolve 零执行、配置/values/lifetime 过期拒绝与新动作恢复、scope 隔离、
+showDocument 响应后的下一请求、取消后代回收和无延迟打开，以及失败库存的保留与
+显式清理。缓存负例分别从真实生成的独立目录开始，避免被复制标记拒绝掩盖内容、
+额外文件或符号链接保护。`wf-quickfixes` 的 native 消费者同时验证 v2 配置 pin 只改变
+目标字段，保留 profile、values 顺序及重复项；对应行和 assertion 集合由 contracts
+文件独立固定。生成目录的所有权检查不等同于 Windows GUI 验收或所有竞争时序证明。
+
 同一完整基线可供相同 suite/参数/环境下的多个 mutation 复用；每个 mutant 只修改一个保护
 或语义规则，仍核验完整 case/assertion inventory。跨平台合同与兼容性版本不会因分组而减少。
 

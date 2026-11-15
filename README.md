@@ -149,7 +149,18 @@ The nearest ancestor `Chart.yaml` is selected. `--chart`, `--helm-binary`, `--va
 `--output`, release/namespace and capability flags remain available. Each default
 output gets a fresh directory under the user cache, outside the chart, with rendered
 YAML, Helm stdout/stderr and provenance. Diagnostics point to generated YAML;
-source files are unchanged. Delete obsolete cache runs when no longer needed.
+source files are unchanged. Configuration schema `2` adds named `renderProfiles`
+with ordered root-relative values files and fixed release, namespace and
+capability settings. Select the matching named source action or run
+`render-check --root . --profile dev`; the default action remains available.
+Both paths recheck saved inputs before execution and refuse stale actions.
+
+Run `render-cache` to list generated entries and
+`render-cache --remove /absolute/generated/directory` to remove one verified
+owned inventory. Changed files and custom `--output` directories are preserved.
+Failures and cancellation retain raw evidence. See the
+[profile and cleanup contract](docs/configuration.md#saved-render-profiles-and-generated-cache)
+for the configuration shape, scope rules and refusal/recovery behavior.
 
 Open a common parent folder to navigate across multiple Git repositories in one
 Workflows index. In Zed 1.28.1, folders added as separate visible roots remain

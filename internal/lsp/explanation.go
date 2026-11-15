@@ -216,10 +216,12 @@ func (s *session) explanationRootEpoch(uri string) uint64 {
 }
 
 func explanationMessage(status analysis.AnalysisExplanation) string {
+	seen := map[string]bool{}
 	lines := []string{fmt.Sprintf("Argo Workflows analysis (%s input, version %v): root %s; scope %s; document complete: %t; workspace scope complete: %t.",
 		status.InputIdentity.Source, *status.InputIdentity.Version, status.Root, status.Scope, status.Completeness.Document, status.Completeness.Workspace)}
 	for _, reason := range status.Reasons {
 		lines = append(lines, reason.ReasonCode+": "+reason.Message+" "+reason.NextStep)
+		seen[reason.ReasonCode+":"+reason.Message] = true
 		for _, location := range reason.RelatedLocations {
 			lines = append(lines, "Related file: "+location.URI)
 		}
@@ -246,16 +248,23 @@ func explanationMessage(status analysis.AnalysisExplanation) string {
 		}
 	}
 	if status.References != nil {
-		lines = append(lines, fmt.Sprintf("References found: %d; complete static reference proof: %t.", status.References.Count, status.References.Complete))
-		if status.References.Refusal != nil {
-			lines = append(lines, status.References.ReasonCode+": "+status.References.Message)
+		if status.References.Complete {
+			lines = append(lines, fmt.Sprintf("Complete static reference proof: %d references found.", status.References.Count))
+		} else {
+			lines = append(lines, fmt.Sprintf("Reference completeness is unknown; %d references observed so far.", status.References.Count))
+		}
+		if status.References.Refusal != nil && !seen[status.References.ReasonCode+":"+status.References.Message] {
+			lines = append(lines, status.References.ReasonCode+": "+status.References.Message+" "+status.References.NextStep)
+			seen[status.References.ReasonCode+":"+status.References.Message] = true
 		}
 	}
 	if operation, ok := status.Operations["rename"]; ok {
 		if operation.Allowed {
 			lines = append(lines, "Rename is available for the selected symbol; execution revalidates its inputs.")
 		} else {
-			lines = append(lines, operation.ReasonCode+": "+operation.Message+" "+operation.NextStep)
+			if !seen[operation.ReasonCode+":"+operation.Message] {
+				lines = append(lines, operation.ReasonCode+": "+operation.Message+" "+operation.NextStep)
+			}
 			for _, location := range operation.RelatedLocations {
 				lines = append(lines, "Affected file: "+location.URI)
 			}

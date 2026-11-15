@@ -32,7 +32,7 @@ not a namespace discovered from Kubernetes.
 
 | Key | Default | Current behavior |
 | --- | --- | --- |
-| `schemaVersion` | `1` | Only configuration schema `1` is accepted. |
+| `schemaVersion` | `1` | Schemas `1` and `2` are accepted. Named render profiles require `2`. |
 | `targetVersion` | `auto` | Accepts the bundled automatic mode or an exact supported release, such as `3.6.0`; no nearest-version fallback. |
 | `referencePolicy` | `open` | `open` leaves missing external resources as Information; `closed` can report Error only after the selected scope is complete and the resource identity is known. |
 | `defaultNamespace` | Empty | Used when a namespaced resource omits `metadata.namespace`; an empty value leaves the namespace unknown. ClusterWorkflowTemplate remains cluster-scoped. |
@@ -41,6 +41,7 @@ not a namespace discovered from Kubernetes.
 | `scopes[].name` | Required | Nonempty and unique; `unassigned` is reserved. |
 | `scopes[].include` | Required | Nonempty list of root-relative globs; controls membership and cross-file reference boundaries. |
 | `scopes[].targetVersion` | Inherits root | Overrides the root target for that scope. |
+| `renderProfiles` | Empty | Schema `2` only: named saved-chart render settings; see below. Schema `1` rejects this key even when empty or null. |
 
 Globs use `/` on every platform. `**` must occupy a complete segment. Absolute
 patterns, backslashes, empty path segments and `..` are rejected. The parser is
@@ -174,6 +175,88 @@ schema work. LSP discovery instead persists across independent request deadlines
 saved chart with Helm 3 or 4 and checks generated YAML. `lint-official` explicitly
 runs a supplied Argo CLI; neither command runs implicitly while editing. For
 render settings and source-navigation limits, see the [README](../README.md).
+
+## Saved render profiles and generated cache
+
+Use a named profile when a chart needs repeatable values, namespace or capability
+settings. The existing default render action and CLI defaults remain available.
+
+```yaml
+schemaVersion: 2
+targetVersion: "3.6.0"
+renderProfiles:
+  dev:
+    chart: charts/demo
+    values: [env/common.yaml, env/dev.yaml]
+    releaseName: acceptance
+    namespace: testing
+    kubeVersion: "1.31.0"
+    apiVersions: [example.com/v1]
+  prod:
+    chart: charts/demo
+    values: [env/common.yaml, env/prod.yaml]
+    namespace: production
+```
+
+Profile names contain 1–64 ASCII letters, digits, dots, dashes or underscores and
+start with a letter or digit. `chart` is required. Chart and values paths are relative to the owning workspace
+root, use `/`, and cannot escape it through `..`, absolute paths or symlinks.
+Values are applied in their declared order; repeated paths are retained. Omitted
+release name, namespace and Kubernetes version use `argo-ls`, `default` and
+`1.31.0`. `apiVersions` adds explicit capabilities. Unknown keys, duplicate profile
+names, invalid path syntax and flag-shaped release names are rejected. This is a
+fixed parameter set; profiles do not contain executable commands or arbitrary
+Helm flags.
+
+```sh
+argo-workflows-ls render-check --root . --profile dev
+argo-workflows-ls render-check --root . --file charts/demo/templates/workflow.yaml --profile prod
+argo-workflows-ls render-cache
+argo-workflows-ls render-cache --remove /absolute/path/from/the/cache/list
+```
+
+With `--file`, the selected source chooses scope and must belong to the configured
+chart. Without it, a profile derives scope from its `Chart.yaml`. `--scope` must
+agree with that membership; it cannot borrow another scope's target. Existing
+target override precedence still applies. A profile cannot be combined with
+`--chart`, `--values`, `--release-name`, `--namespace`, `--kube-version` or
+`--api-version`, even if an explicit flag repeats the profile value. `--output`
+and `--helm-binary` remain available. Outside profiles, CLI values paths retain
+their current-working-directory interpretation.
+
+The editor offers the default action plus **render and check saved chart (dev)**
+and other profiles for the selected owned chart. Listing or resolving actions
+never starts Helm. Execution uses the same resolved request as the CLI and
+requires saved chart, configuration and chosen values buffers, including values
+outside the chart and aliases of those files. It rechecks the selected buffer's
+lifetime, root/scope, profile, ordered values paths and input bytes. A close/reopen
+with the same document version also invalidates an old action. Save changes and
+request a fresh action to recover. Accepted input changes or cancellation prevent
+late messages and generated-document requests; a host's response to
+`window/showDocument` leaves the language-server connection usable.
+
+Every default output uses a unique directory under
+`UserCacheDir/argo-workflows-ls/render`. The rendered YAML, raw Helm stdout/stderr
+and `render-report.json` stay outside the source chart. Reports record profile,
+scope/target, resolved arguments, ordered values with hashes, executable path/hash
+and version, input hashes, request identity and input-change status. Helm failure,
+cancellation and stale input retain their available raw streams and report; a
+failed render does not claim generated YAML exists. Inputs are bounded to 20,000
+files and 128 MiB, and combined subprocess output to 10 MiB. Chart symlinks are
+refused because they prevent complete local provenance.
+
+`render-cache` lists immediate generated directories with an `owned` flag and
+refusal reason. Removal is explicit and verifies the product marker, native
+directory identity and exact file inventory, content and modes through held
+directory handles. Changed files, extra user files, symlinks, copied markers and
+foreign directories are refused. It never recursively sweeps a directory.
+Normal concurrent changes can cause a refusal, possibly after some verified
+artifacts were already removed; cleanup is not a transactional filesystem
+operation. Failed/cancelled inventories are removable when their integrity is
+intact. Unsealed or changed directories remain available for manual inspection.
+An explicit `--output` directory is never cleanup-owned, including one placed
+under the normal cache parent. Both custom and managed output locations must
+resolve outside the chart. There is no automatic cleanup or eviction.
 
 ## Boundaries
 

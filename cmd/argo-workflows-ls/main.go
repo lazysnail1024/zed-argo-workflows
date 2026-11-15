@@ -63,7 +63,7 @@ func runWithIO(parent context.Context, args []string, stdout, stderr io.Writer) 
 			fmt.Fprintln(stderr, "usage: version --json")
 			return 2
 		}
-		emit(map[string]any{"product": "argo-workflows", "serverVersion": buildinfo.ServerVersion, "adapterContractVersion": 1, "analysisReady": true, "defaultTargetVersion": compat.DefaultVersion, "acceptedTargetVersions": compat.SupportedVersions(), "supportedTargetVersions": compat.SupportedVersions(), "supportedMajors": compat.SupportedMajors(), "supportedVersionRange": compat.SupportedRange(), "automaticVersionSupport": true, "configSchemaVersions": []int{1}, "reportSchemaVersions": []int{1}, "toolkitVersion": buildinfo.ToolkitVersion(), "catalogHash": compat.Hash(), "sourceCommit": buildinfo.Commit(), "dirty": buildinfo.IsDirty(), "buildMode": buildinfo.BuildMode})
+		emit(map[string]any{"product": "argo-workflows", "serverVersion": buildinfo.ServerVersion, "adapterContractVersion": 1, "analysisReady": true, "defaultTargetVersion": compat.DefaultVersion, "acceptedTargetVersions": compat.SupportedVersions(), "supportedTargetVersions": compat.SupportedVersions(), "supportedMajors": compat.SupportedMajors(), "supportedVersionRange": compat.SupportedRange(), "automaticVersionSupport": true, "configSchemaVersions": []int{1, 2}, "reportSchemaVersions": []int{1}, "toolkitVersion": buildinfo.ToolkitVersion(), "catalogHash": compat.Hash(), "sourceCommit": buildinfo.Commit(), "dirty": buildinfo.IsDirty(), "buildMode": buildinfo.BuildMode})
 		return 0
 	case "check":
 		flags := flag.NewFlagSet("check", flag.ContinueOnError)
@@ -220,6 +220,8 @@ func runWithIO(parent context.Context, args []string, stdout, stderr io.Writer) 
 		return lsp.Serve(os.Stdin, stdout, stderr, renderForEditor)
 	case "render-check":
 		return renderCheck(args[1:])
+	case "render-cache":
+		return renderCache(args[1:], stdout, stderr)
 	case "lint-official":
 		return lintOfficial(args[1:])
 	case "explain-config":

@@ -28,6 +28,8 @@ type message struct {
 	ID      json.RawMessage `json:"id"`
 	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params"`
+	Result  json.RawMessage `json:"result"`
+	Error   json.RawMessage `json:"error"`
 }
 type buffer struct {
 	snapshot    source.Snapshot
@@ -107,7 +109,31 @@ func read(r *bufio.Reader) (message, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return m, err
 	}
-	if m.JSONRPC != "2.0" || m.Method == "" {
+	if m.JSONRPC != "2.0" {
+		return m, fmt.Errorf("invalid JSON-RPC request")
+	}
+	if m.Method == "" {
+		// The server requests window/showDocument. Its host response has no
+		// method and must reach Serve's response branch instead of terminating
+		// the connection. Methodless notifications and mixed envelopes remain
+		// invalid; only this server's string request IDs are accepted here.
+		var fields map[string]json.RawMessage
+		var id string
+		_ = json.Unmarshal(data, &fields)
+		_, hasMethod := fields["method"]
+		if hasMethod || len(m.Params) != 0 || json.Unmarshal(m.ID, &id) != nil || !strings.HasPrefix(id, "argo-workflows-render:") || (len(m.Result) == 0) == (len(m.Error) == 0) {
+			return m, fmt.Errorf("invalid JSON-RPC response")
+		}
+		if len(m.Error) > 0 {
+			var failure struct {
+				Code    *int    `json:"code"`
+				Message *string `json:"message"`
+			}
+			if json.Unmarshal(m.Error, &failure) != nil || failure.Code == nil || failure.Message == nil {
+				return m, fmt.Errorf("invalid JSON-RPC response error")
+			}
+		}
+	} else if len(m.Result) != 0 || len(m.Error) != 0 {
 		return m, fmt.Errorf("invalid JSON-RPC request")
 	}
 	return m, nil
