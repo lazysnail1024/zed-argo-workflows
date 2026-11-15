@@ -80,6 +80,27 @@ bounded request lane. See [current capabilities and boundaries](docs/architectur
 Installed releases use their recorded source commit; development capabilities do
 not imply that an older released binary contains them.
 
+Use **Argo Workflows: explain current analysis** from the file's code actions to
+inspect the current buffer, owning root and scope, and separate document/workspace
+completeness. At a symbol it also explains whether Rename is available, why it is
+refused, and which affected file to open. An empty reference result is explicitly
+marked incomplete when the selected scope or binding cannot be proven. The action
+is read-only; it never changes namespaces or reference policy. Clients without
+versioned edit support can still request the explanation.
+
+For the saved input, run `argo-workflows-ls explain-config --root . --file example.yaml`.
+Its `analysis.inputIdentity.source` is `disk`; the editor uses `buffer` and includes
+the current document version and content hash. This distinction matters for
+unsaved edits and configuration buffers.
+
+The same explicit explanation includes **candidates under modeled static
+constraints** for each YAML resource: whole-release schema candidates, candidates
+allowed by the modeled rules, their intersection, and versioned exclusion reasons.
+The message shows counts and range endpoints; the structured response retains exact
+versions and source locations. Dynamic or unresolved areas remain unknown, and
+controller execution and admission are outside this model. This does not change
+the existing `auto` diagnostic policy. See [version explanation and provenance](docs/multi-version-support.md).
+
 ## Helm charts
 
 Install Zed's Helm extension for Helm syntax and Helm language-server features.
@@ -116,6 +137,12 @@ only when selected, uses Helm from `PATH`, opens generated YAML when the editor
 supports it, and reports the check exit code. No `.zed/tasks.json` or product configuration is needed. It never
 runs on save. Helm 3 and 4 are accepted; chart `values.yaml` is loaded by Helm.
 
+The source action requires the conservative source projection to recognize an
+Argo Workflows resource. Some valid Helm source patterns, including an unquoted
+scalar concatenating multiple actions with a literal dash, cannot be recognized
+and receive no action. The explicit CLI render command remains available for
+those charts; this source-recognition limit does not mean Helm rejects them.
+
 The same explicit operation is available in a terminal:
 
 ```sh
@@ -128,11 +155,24 @@ The nearest ancestor `Chart.yaml` is selected. `--chart`, `--helm-binary`, `--va
 `--output`, release/namespace and capability flags remain available. Each default
 output gets a fresh directory under the user cache, outside the chart, with rendered
 YAML, Helm stdout/stderr and provenance. Diagnostics point to generated YAML;
-source files are unchanged. Delete obsolete cache runs when no longer needed.
+source files are unchanged. Configuration schema `2` adds named `renderProfiles`
+with ordered root-relative values files and fixed release, namespace and
+capability settings. Select the matching named source action or run
+`render-check --root . --profile dev`; the default action remains available.
+Both paths recheck saved inputs before execution and refuse stale actions.
+
+Run `render-cache` to list generated entries and
+`render-cache --remove /absolute/generated/directory` to remove one verified
+owned inventory. Changed files and custom `--output` directories are preserved.
+Failures and cancellation retain raw evidence. See the
+[profile and cleanup contract](docs/configuration.md#saved-render-profiles-and-generated-cache)
+for the configuration shape, scope rules and refusal/recovery behavior.
 
 Open a common parent folder to navigate across multiple Git repositories in one
 Workflows index. In Zed 1.28.1, folders added as separate visible roots remain
 separate indexes; adding folders to the same window does not merge their scopes.
+See [Zed workspaces and multiple repositories](docs/zed-workspaces.md) for parent
+configuration, root/scope boundaries and the current-buffer explanation.
 
 ## Standalone CLI / other editors
 

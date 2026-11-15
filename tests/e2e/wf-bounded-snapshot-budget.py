@@ -114,7 +114,9 @@ try:
   'unknownDiskURIIsNotHydrated':reads==0 and all(x['location']['uri']!=extra.as_uri() for x in r.get('result',[])),
   'fullBufferReservation':indexed['retainedTextBytes']==128*MiB},{'response':r,'extraFileOpens':reads,'state':indexed})
  extra.unlink()
- position=m.pos(caller,'paralelism');request={'textDocument':{'uri':paths[-1].as_uri()},'range':{'start':position,'end':position}}
+ # This consumer measures applicable local fixes; source explanation commands
+ # remain available through their own explicit action kind.
+ position=m.pos(caller,'paralelism');request={'textDocument':{'uri':paths[-1].as_uri()},'range':{'start':position,'end':position},'context':{'only':['quickfix'],'diagnostics':[]}}
  def local_edits():
   actions=client.request('textDocument/codeAction',request);resolved=[];fixed=[]
   for action in actions.get('result',[]):

@@ -351,5 +351,60 @@ didOpen 前等待该索引明确就绪，再执行相同的 20/100/20 阶段。�
 [真实版本矩阵](../tests/e2e/wf-multi-version.py)、
 [兼容机制负对照](../tests/e2e/wf-multi-version-ablation.py)
 
+## 21. 归档自洽不代表材料完整或消费者通过
+
+**可观察问题。** 新的收据传输原型曾把 ZIP 声明的解压大小作为读到 EOF 的依据；恶意包
+把声明改成零并重签外层 hash，底层仍有非空压缩流，却能返回成功。另一处先预检 lane，
+后按同一路径重开包，允许间隙中的合法包替换改变已选择的 lane。真实 render consumer
+还保留 file symlink；原 `--move-payload` 移动的是链接本体，会使 referent 丢失或留下
+不能独立交付的 payload。
+
+**当前修复。** 传输解析绑定 local/central 物理头和边界，实际有界解压并核对 CRC、EOF、
+内容 hash 与大小；整套恢复绑定预检文件身份、返回 lane 和最终输入集合。物化先复制所有
+已选文件链接，按原 evidence digest 复核 link/target 身份，成功后才移动普通 referent。
+收据、producer manifest 和子报告保留原字节；恢复文件相互独立，传输指标不混入 gate 树。
+
+**防回归。** 固定输入控制保留了零声明但非空流、真实预检后替换、逐文件读取后的新增
+目录成员、选中链接变化，以及同内容不同 mode 的独立副本。真实 profiles 材料链经过
+物化、pack/hydrate 后仍由原 consumer verifier 复核。生产验证器合同要求的原始子流缺失、
+错误 source/attempt 和零 cases 即使重签传输 hash 仍须被匹配原身份的生产验证器拒绝。
+首轮误选未被旧验证器要求的非聚合流，旧验证器接受的结果作为 oracle 校准失败保留，不能
+据此宣称任意 raw stream 都会被该历史版本检查。历史材料重放不记为新消费者执行。
+打包或上传失败的 raw fallback 同时覆盖已移动 receipt 和剩余 evidence。
+
+**有界解压的尾部。** GitHub gate 又暴露了合法大对象被拒绝的路径：一次有界 deflate
+读取可以消费最后一个压缩字节，却仍在解码器内保留输出。仅按压缩输入剩余量循环会误报
+截断；恰好整 MiB 的测试也可能看不到该问题。读取达到输出上限后继续用空输入有界排空，
+再验证实际 EOF、大小与 CRC。真实 pack/hydrate 正例覆盖一 MiB 前后一个字节、跨第二个
+输出块及不可压缩的多输入块；原大小伪造、内容 hash、归档截断和路径拒绝控制继续执行。
+[传输控制](../tests/ci/transport_e2e.py)、
+[物化与保留控制](../tests/ci/receipt_materialization_e2e.py)、
+[下载后领域复核](../tests/ci/downloaded_material_e2e.py)
+
+## 22. 未观察到磁盘配置变化时，索引 epoch 仍可能有效
+
+**真实宿主观察与 stdio 复现。** 多仓库验收曾在外部修改配置后短暂显示旧的完整分析状态。
+Workflows 未请求动态文件 watch 注册，后台配置刷新有 30 秒节流。随后对冻结二进制的独立
+stdio fixture 在一秒内改变磁盘 policy、scope、target 或写入无效键，不发送配置事件，
+实际 Rename 和已 resolve Quick Fix 仍返回了可应用编辑。宿主观察本身未执行这次改名；
+实际错误编辑由临时 fixture 的字节、版本和完整原始协议复现。
+
+**当前修复。** 产生 WorkspaceEdit 的三个出口记录实际采用的配置身份；会话 owner 在交付
+前重新取得有效配置，保持打开的 config overlay 优先、磁盘读取有界。不同或不可用的配置
+返回 `STALE_INPUT`，不把新配置拼进旧的 scope/语义证明。读取后再次检查输入和 catalog
+proof；普通 Hover、补全及只读解释不承担这次编辑专用读取。它不保证原子文件系统快照，
+也不把之前可用的 Prepare Rename 或 Explain 结果当作最终编辑许可。
+
+**防回归。** 原 Rename/action 消费者增加无事件磁盘变化、有效 overlay、配置恢复和实际
+应用后的独立字节/绑定/诊断预期。已观察的无关 scope 配置变化仍保留 isolated-local 编辑
+正例；未观察的完整配置身份变化可以保守拒绝。原生交付测试另固定结果构造后才发生变化，
+证明旧内存 epoch 校验本身不足以发现磁盘配置改变。
+恢复后的跨文件编辑验收先用只读解释确认两个 buffer 的当前版本、文本 hash 与完整 scope，
+再各执行一次精确 definition/references 检查。forward definition 已有结果不代表 reverse
+scope 已索引完整；后者未就绪时 references 按合同保守返回空集，不能据此前者推断操作失败。
+[编辑交付](../internal/lsp/serve.go)、[配置证明](../internal/lsp/edits.go)、
+[资源改名消费者](../tests/e2e/wf-resource-rename.py)、
+[Action 生命周期消费者](../tests/e2e/wf-reaudit-actions.py)
+
 这些规则描述当前源码要求；某次修复是否已经交付，应核对实际 release 和二进制身份。
 CI、WASI 运行时与真实 Zed 编辑会话的结果分别记录，不能互相代替。

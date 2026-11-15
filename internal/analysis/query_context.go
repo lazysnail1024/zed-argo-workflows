@@ -3,6 +3,7 @@ package analysis
 import (
 	"context"
 	"errors"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	"strconv"
 	"strings"
 
@@ -60,6 +61,7 @@ func queryField(ctx context.Context, snapshot source.Snapshot, version string, p
 				if err != nil {
 					return fieldContext{}, err
 				}
+				worktrace.Parse(ctx, worktrace.ParseRecoveryCalls, len(original.Text()))
 				recovered, err := yamlview.Parse(ctx, original)
 				if err != nil {
 					return fieldContext{}, err
@@ -71,6 +73,7 @@ func queryField(ctx context.Context, snapshot source.Snapshot, version string, p
 					}
 				}
 			}
+			worktrace.Add(ctx, worktrace.ProjectionCalls, 1)
 			projected, err := yamlvalue.Project(ctx, original, candidate, yamlvalue.Options{MaxNodes: 100000, MaxVisits: 100000, RejectExplicitTags: true})
 			if err != nil {
 				return fieldContext{}, err
@@ -99,6 +102,7 @@ func queryField(ctx context.Context, snapshot source.Snapshot, version string, p
 		// Artificial tokens have a separate result budget and cannot read or
 		// populate the invocation's immutable snapshot/projection handoff.
 		queryCtx := context.WithValue(WithLogicalResult(ctx), invocationKey{}, (*invocation)(nil))
+		worktrace.Parse(queryCtx, worktrace.ParseSyntheticCalls, len(temporary.Text()))
 		view, err := yamlview.Parse(queryCtx, temporary)
 		if err != nil {
 			return fieldContext{}, err
@@ -186,6 +190,7 @@ func queryField(ctx context.Context, snapshot source.Snapshot, version string, p
 					field.existing[field.name] = true
 				}
 				// A first sequence token can be either an object key or a scalar item.
+				worktrace.SchemaQuery(ctx, worktrace.SchemaLookups)
 				query, err := schemaquery.Lookup(ctx, schema, path, value, schemaquery.Limits{})
 				if errors.Is(err, schemaquery.ErrUnsupported) && templateNameDocumentation(schema, append(append([]string{}, path...), field.name)) != nil {
 					err = nil

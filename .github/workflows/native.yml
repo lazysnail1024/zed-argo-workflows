@@ -166,6 +166,14 @@ jobs:
         python tests/ci/receipt_e2e.py --output artifacts/ci/receipt-e2e
         python tests/e2e/session_e2e.py --output artifacts/ci/session-e2e
         python tests/ci/trends_e2e.py --output artifacts/ci/trends-e2e
+        python tests/ci/transport_e2e.py --producer-only --output artifacts/ci/transport-producer-e2e
+    - name: Verify selected file link materialization on this native host
+      run: python tests/ci/receipt_materialization_e2e.py --producer-only --output artifacts/ci/materialization-producer-e2e
+    - name: Verify exact receipt transport and selected byte materialization
+      if: matrix.platform == 'linux/amd64'
+      run: |-
+        python tests/ci/transport_e2e.py --output artifacts/ci/transport-e2e
+        python tests/ci/receipt_materialization_e2e.py --output artifacts/ci/receipt-materialization-e2e
     - name: Build actual native server and record source/toolchain identity
       id: build
       run: python tests/ci/run.py build --platform "${{ matrix.platform }}" --release-version "${{ needs.prepare.outputs.version }}" --output artifacts/ci/build
@@ -232,8 +240,23 @@ jobs:
       shell: bash
       run: python tests/ci/control.py receipt --plan artifacts/native-plan.json --lane "native-${{ matrix.artifact }}" --evidence artifacts/ci --move-payload --output
         artifacts/receipt/native-${{ matrix.artifact }}.json
+    - name: Pack self-contained original lane bytes
+      id: pack_receipt
+      run: python tests/ci/transport.py pack --receipt artifacts/receipt/native-${{ matrix.artifact }}.json --output artifacts/transport/lane.zip --report artifacts/transport-metrics.json
+    - name: Locate retained evidence without hashing its contents
+      id: evidence_paths
+      if: always()
+      shell: bash
+      run: |
+        python - <<'PY_PATHS'
+        import os
+        from pathlib import Path
+        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+            for key, path in (('raw', 'artifacts/ci'), ('moved', 'artifacts/receipt')):
+                output.write(f'{key}={str(Path(path).is_dir()).lower()}\n')
+        PY_PATHS
     - name: Retain native logs, failed fixtures and packages
-      if: ${{ failure() && hashFiles('artifacts/ci/**') != '' }}
+      if: ${{ failure() && steps.evidence_paths.outputs.raw == 'true' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: workflows-native-${{ matrix.artifact }}-${{ github.sha }}
@@ -242,14 +265,27 @@ jobs:
         if-no-files-found: error
         retention-days: 30
         compression-level: 6
-    - if: ${{ always() && hashFiles('artifacts/receipt/**') != '' }}
+    - if: ${{ always() && steps.pack_receipt.outcome == 'success' }}
+      id: upload_receipt
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: native-receipt-native-${{ matrix.artifact }}-${{ github.run_id }}-${{ github.run_attempt }}
-        path: artifacts/receipt/
+        path: artifacts/transport/lane.zip
         include-hidden-files: true
         retention-days: 30
         if-no-files-found: error
+        compression-level: 0
+    - name: Retain raw moved payload if transport or upload fails
+      if: ${{ always() && steps.evidence_paths.outputs.moved == 'true' && (steps.pack_receipt.outcome != 'success' || steps.upload_receipt.outcome != 'success') }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: raw-native-receipt-native-${{ matrix.artifact }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: |-
+          artifacts/receipt/
+          artifacts/transport-metrics.json
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 30
         compression-level: 6
     if: needs.selection.outputs.mode == 'full'
   extended:
@@ -308,8 +344,23 @@ jobs:
       shell: bash
       run: python tests/ci/control.py receipt --plan artifacts/native-plan.json --lane "extended-${{ matrix.shard }}" --evidence artifacts/ci --move-payload --output artifacts/receipt/extended-${{
         matrix.shard }}.json
+    - name: Pack self-contained original lane bytes
+      id: pack_receipt
+      run: python tests/ci/transport.py pack --receipt artifacts/receipt/extended-${{ matrix.shard }}.json --output artifacts/transport/lane.zip --report artifacts/transport-metrics.json
+    - name: Locate retained evidence without hashing its contents
+      id: evidence_paths
+      if: always()
+      shell: bash
+      run: |
+        python - <<'PY_PATHS'
+        import os
+        from pathlib import Path
+        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+            for key, path in (('raw', 'artifacts/ci'), ('moved', 'artifacts/receipt')):
+                output.write(f'{key}={str(Path(path).is_dir()).lower()}\n')
+        PY_PATHS
     - name: Retain semantic evidence including failed runs
-      if: ${{ failure() && hashFiles('artifacts/ci/**') != '' }}
+      if: ${{ failure() && steps.evidence_paths.outputs.raw == 'true' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: workflows-semantic-${{ matrix.shard }}-${{ github.sha }}
@@ -318,14 +369,27 @@ jobs:
         if-no-files-found: error
         retention-days: 30
         compression-level: 6
-    - if: ${{ always() && hashFiles('artifacts/receipt/**') != '' }}
+    - if: ${{ always() && steps.pack_receipt.outcome == 'success' }}
+      id: upload_receipt
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: native-receipt-extended-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
-        path: artifacts/receipt/
+        path: artifacts/transport/lane.zip
         include-hidden-files: true
         retention-days: 30
         if-no-files-found: error
+        compression-level: 0
+    - name: Retain raw moved payload if transport or upload fails
+      if: ${{ always() && steps.evidence_paths.outputs.moved == 'true' && (steps.pack_receipt.outcome != 'success' || steps.upload_receipt.outcome != 'success') }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: raw-native-receipt-extended-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: |-
+          artifacts/receipt/
+          artifacts/transport-metrics.json
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 30
         compression-level: 6
     if: needs.selection.outputs.mode == 'full'
   resources:
@@ -379,8 +443,23 @@ jobs:
       shell: bash
       run: python tests/ci/control.py receipt --plan artifacts/native-plan.json --lane "resources-${{ matrix.suite }}" --evidence artifacts/ci --move-payload --output
         artifacts/receipt/resources-${{ matrix.suite }}.json
+    - name: Pack self-contained original lane bytes
+      id: pack_receipt
+      run: python tests/ci/transport.py pack --receipt artifacts/receipt/resources-${{ matrix.suite }}.json --output artifacts/transport/lane.zip --report artifacts/transport-metrics.json
+    - name: Locate retained evidence without hashing its contents
+      id: evidence_paths
+      if: always()
+      shell: bash
+      run: |
+        python - <<'PY_PATHS'
+        import os
+        from pathlib import Path
+        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+            for key, path in (('raw', 'artifacts/ci'), ('moved', 'artifacts/receipt')):
+                output.write(f'{key}={str(Path(path).is_dir()).lower()}\n')
+        PY_PATHS
     - name: Retain resource measurements, limits, raw traffic and failed inputs
-      if: ${{ failure() && hashFiles('artifacts/ci/**') != '' }}
+      if: ${{ failure() && steps.evidence_paths.outputs.raw == 'true' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: workflows-resources-${{ matrix.suite }}-${{ github.sha }}
@@ -389,14 +468,27 @@ jobs:
         if-no-files-found: error
         retention-days: 30
         compression-level: 6
-    - if: ${{ always() && hashFiles('artifacts/receipt/**') != '' }}
+    - if: ${{ always() && steps.pack_receipt.outcome == 'success' }}
+      id: upload_receipt
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: native-receipt-resources-${{ matrix.suite }}-${{ github.run_id }}-${{ github.run_attempt }}
-        path: artifacts/receipt/
+        path: artifacts/transport/lane.zip
         include-hidden-files: true
         retention-days: 30
         if-no-files-found: error
+        compression-level: 0
+    - name: Retain raw moved payload if transport or upload fails
+      if: ${{ always() && steps.evidence_paths.outputs.moved == 'true' && (steps.pack_receipt.outcome != 'success' || steps.upload_receipt.outcome != 'success') }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: raw-native-receipt-resources-${{ matrix.suite }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: |-
+          artifacts/receipt/
+          artifacts/transport-metrics.json
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 30
         compression-level: 6
     if: needs.selection.outputs.mode == 'full'
   mutations:
@@ -452,8 +544,23 @@ jobs:
       shell: bash
       run: python tests/ci/control.py receipt --plan artifacts/native-plan.json --lane "mutations-${{ matrix.group }}" --evidence artifacts/ci --move-payload --output
         artifacts/receipt/mutations-${{ matrix.group }}.json
+    - name: Pack self-contained original lane bytes
+      id: pack_receipt
+      run: python tests/ci/transport.py pack --receipt artifacts/receipt/mutations-${{ matrix.group }}.json --output artifacts/transport/lane.zip --report artifacts/transport-metrics.json
+    - name: Locate retained evidence without hashing its contents
+      id: evidence_paths
+      if: always()
+      shell: bash
+      run: |
+        python - <<'PY_PATHS'
+        import os
+        from pathlib import Path
+        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+            for key, path in (('raw', 'artifacts/ci'), ('moved', 'artifacts/receipt')):
+                output.write(f'{key}={str(Path(path).is_dir()).lower()}\n')
+        PY_PATHS
     - name: Retain mutation diffs, binaries, baseline and mutant evidence
-      if: ${{ failure() && hashFiles('artifacts/ci/**') != '' }}
+      if: ${{ failure() && steps.evidence_paths.outputs.raw == 'true' }}
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: workflows-mutations-${{ matrix.group }}-${{ github.sha }}
@@ -462,14 +569,27 @@ jobs:
         if-no-files-found: error
         retention-days: 30
         compression-level: 6
-    - if: ${{ always() && hashFiles('artifacts/receipt/**') != '' }}
+    - if: ${{ always() && steps.pack_receipt.outcome == 'success' }}
+      id: upload_receipt
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: native-receipt-mutations-${{ matrix.group }}-${{ github.run_id }}-${{ github.run_attempt }}
-        path: artifacts/receipt/
+        path: artifacts/transport/lane.zip
         include-hidden-files: true
         retention-days: 30
         if-no-files-found: error
+        compression-level: 0
+    - name: Retain raw moved payload if transport or upload fails
+      if: ${{ always() && steps.evidence_paths.outputs.moved == 'true' && (steps.pack_receipt.outcome != 'success' || steps.upload_receipt.outcome != 'success') }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: raw-native-receipt-mutations-${{ matrix.group }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: |-
+          artifacts/receipt/
+          artifacts/transport-metrics.json
+        include-hidden-files: true
+        if-no-files-found: error
+        retention-days: 30
         compression-level: 6
     needs:
     - selection
@@ -498,7 +618,9 @@ jobs:
     - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
       with:
         pattern: native-receipt-*-${{ github.run_id }}-${{ github.run_attempt }}
-        path: artifacts/receipts
+        path: artifacts/receipt-transports
+    - name: Restore independent original receipt files before acceptance
+      run: python tests/ci/transport.py hydrate-set --inputs artifacts/receipt-transports --output artifacts/receipts --report artifacts/hydration-metrics.json
     - name: Require current plan, every lane and successful dependencies
       env:
         RESULTS: ${{ toJSON(needs) }}
@@ -514,6 +636,7 @@ jobs:
         name: native-gate-${{ github.run_id }}-${{ github.run_attempt }}
         path: |-
           artifacts/gate.json
+          artifacts/hydration-metrics.json
           artifacts/downloaded-material-controls/controls/
           artifacts/downloaded-material-controls/results.json
           artifacts/downloaded-material-controls/metrics.json
@@ -623,7 +746,7 @@ jobs:
         name: ordinary-linux-amd64-${{ github.run_id }}-${{ github.run_attempt }}
         path: artifacts/ci/build/
         if-no-files-found: error
-        compression-level: 0
+        compression-level: 6
     - name: Refuse substituted ordinary producers
       run: python tests/ci/import_e2e.py --build artifacts/ci/build --version "${{ needs.prepare.outputs.version }}" --output artifacts/ci/import-controls
     - if: failure()

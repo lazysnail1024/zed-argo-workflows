@@ -67,7 +67,7 @@ def clean_source(commit):
 def identity_matches(identity, version, commit):
     expected = {"product": "argo-workflows", "serverVersion": version,
                 "adapterContractVersion": 1, "analysisReady": True,
-                "configSchemaVersions": [1], "reportSchemaVersions": [1],
+                "configSchemaVersions": [1, 2], "reportSchemaVersions": [1],
                 "sourceCommit": commit, "dirty": False, "buildMode": "release"}
     if not isinstance(identity, dict) or any(identity.get(key) != value for key, value in expected.items()):
         raise ValueError("Native identity must match the clean pinned release and source commit")

@@ -35,6 +35,7 @@ type Diagnostic struct {
 	Message      string `json:"message"`
 	TargetID     string `json:"targetId"`
 	PositionKind string `json:"positionKind"`
+	ruleIDs      []string
 }
 type Result struct {
 	Diagnostics  []Diagnostic

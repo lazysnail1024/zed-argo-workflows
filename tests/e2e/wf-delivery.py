@@ -64,7 +64,7 @@ def lsp_case(name):
     def rename(p,t):return request('textDocument/rename',{'textDocument':{'uri':p.as_uri()},'position':m.pos(t,'name: main',offset=6),'newName':'renamed'})
     def actions(p,t):
         start=m.pos(t,'entrypoint: main',offset=12)
-        return request('textDocument/codeAction',{'textDocument':{'uri':p.as_uri()},'range':{'start':start,'end':start}})
+        return request('textDocument/codeAction',{'textDocument':{'uri':p.as_uri()},'range':{'start':start,'end':start},'context':{'only':['quickfix']}})
     try:
         client=m.LSP(dest,work);timer=threading.Timer(45,lambda:client.p.kill() if client.p.poll() is None else None);timer.start()
         checks['stablePublication']=client.open(path,text)==[]
@@ -76,7 +76,7 @@ def lsp_case(name):
             start=m.pos(original,'name: stable')
             deadline=time.monotonic()+5;offered=[]
             while not offered and time.monotonic()<deadline:
-                offered=request('textDocument/codeAction',{'textDocument':{'uri':cfg.as_uri()},'range':{'start':start,'end':start}}).get('result',[])
+                offered=request('textDocument/codeAction',{'textDocument':{'uri':cfg.as_uri()},'range':{'start':start,'end':start},'context':{'only':['quickfix']}}).get('result',[])
                 if not offered:time.sleep(.02)
             checks['independentScopePin']=len(offered)==1
             if offered:
@@ -87,16 +87,43 @@ def lsp_case(name):
             response=rename(peer,VALID);checks['olderTargetRename']='result' in response and m.apply(VALID,response['result'],peer.as_uri(),1)==VALID.replace('entrypoint: main','entrypoint: renamed').replace('name: main','name: renamed')
             peer_typo=VALID.replace('entrypoint:', 'entrypoin:');client.change(peer,peer_typo,2)
             peer_start=m.pos(peer_typo,'entrypoin')
-            checks['olderTargetActions']=len(request('textDocument/codeAction',{'textDocument':{'uri':peer.as_uri()},'range':{'start':peer_start,'end':peer_start}}).get('result',[]))==1
+            checks['olderTargetActions']=len(request('textDocument/codeAction',{'textDocument':{'uri':peer.as_uri()},'range':{'start':peer_start,'end':peer_start},'context':{'only':['quickfix']}}).get('result',[]))==1
             # Known typo yields one exact edit; retain action across a target switch.
             typo=text.replace('entrypoint:', 'entrypoin:');client.change(path,typo,2)
             start=m.pos(typo,'entrypoin')
-            offered=request('textDocument/codeAction',{'textDocument':{'uri':path.as_uri()},'range':{'start':start,'end':start}}).get('result',[])
+            offered=request('textDocument/codeAction',{'textDocument':{'uri':path.as_uri()},'range':{'start':start,'end':start},'context':{'only':['quickfix']}}).get('result',[])
             checks['stableAction']=len(offered)==1
             if offered:
                 resolved=request('codeAction/resolve',offered[0]);checks['actionBytes']='result' in resolved and m.apply(typo,resolved['result']['edit'],path.as_uri(),2)==text
-            cfg=work/'.argo-workflows-ls.yaml';client.send('textDocument/didOpen',{'textDocument':{'uri':cfg.as_uri(),'version':1,'languageId':'yaml','text':cfg.read_text().replace('targetVersion: "3.6.0"','targetVersion: "3.5.0"')}})
-            if offered:checks['staleAction']=request('codeAction/resolve',offered[0]).get('error',{}).get('code')==-32801
+            cfg=work/'.argo-workflows-ls.yaml';original_config=cfg.read_bytes()
+            client.send('textDocument/didOpen',{'textDocument':{'uri':cfg.as_uri(),'version':1,'languageId':'yaml','text':original_config.decode().replace('targetVersion: "3.6.0"','targetVersion: "3.5.0"')}})
+            # Configuration admission and background header refresh are separate.
+            # Wait for the current target, then prove a fresh action can deliver
+            # an edit. Otherwise the final configuration check can independently
+            # reject the old action and conceal deletion of its fingerprint guard.
+            deadline=time.monotonic()+5;status={}
+            while time.monotonic()<deadline:
+                status=request('argo-workflows/explainAnalysis',{'textDocument':{'uri':path.as_uri()}})
+                current=status.get('result',{})
+                if current.get('targetVersion')=='3.5.0' and current.get('scope')=='stable' and current.get('completeness',{}).get('workspace') is True:break
+                if 'error' in status and status['error'].get('code') not in (-32801,-32803):break
+                time.sleep(.02)
+            current=status.get('result',{})
+            checks['currentTargetReady']=current.get('targetVersion')=='3.5.0' and current.get('scope')=='stable' and current.get('completeness',{}).get('workspace') is True
+            fresh=request('textDocument/codeAction',{'textDocument':{'uri':path.as_uri()},'range':{'start':start,'end':start},'context':{'only':['quickfix']}}).get('result',[])
+            checks['freshAction']=len(fresh)==1 and len(offered)==1 and fresh[0].get('data',{}).get('token')!=offered[0].get('data',{}).get('token')
+            fresh_result=request('codeAction/resolve',fresh[0]) if len(fresh)==1 else {}
+            checks['freshActionBytes']='result' in fresh_result and m.apply(typo,fresh_result['result']['edit'],path.as_uri(),2)==text
+            stale=request('codeAction/resolve',offered[0]) if len(offered)==1 else {}
+            error=stale.get('error',{})
+            checks['staleAction']='result' not in stale and error.get('code')==-32801 and error.get('data',{}).get('reasonCode')=='STALE_INPUT' and error.get('message')=='code action input changed'
+            # A killed mutant must finish the semantic operation: only the exact
+            # stale refusal or an applicable stale edit is an admissible outcome.
+            checks['staleOutcomeComplete']=checks['staleAction'] or ('error' not in stale and 'result' in stale and m.apply(typo,stale['result']['edit'],path.as_uri(),2)==text)
+            if not checks['staleOutcomeComplete']:raise ValueError('Old action produced neither its own stale refusal nor an applicable edit: '+repr(stale))
+            corrected=m.apply(typo,fresh_result['result']['edit'],path.as_uri(),2) if checks['freshActionBytes'] else typo
+            checks['freshApplication']=corrected==text and client.change(path,corrected,3)==[]
+            checks['configurationBytes']=cfg.read_bytes()==original_config
         else:
             client.send('workspace/didChangeConfiguration',{'settings':{'targetVersion':'3.5.0'}})
             checks['settingsPublication']=client.diagnostics(path.as_uri(),1)==[]

@@ -79,7 +79,13 @@ func (c *catalog) refreshHeader(root *catalogRoot) {
 	root.checked = time.Now()
 	name, override, overlay, epoch := root.header.Root, root.override, root.overlay, root.epoch
 	c.mu.Unlock()
-	header, err := workspace.Describe(c.ctx, name, override, overlay)
+	trace := c.tracer.Begin("header", "", nil)
+	trace.Start()
+	defer func() {
+		trace.Done()
+		trace.Finish("finished")
+	}()
+	header, err := workspace.Describe(trace.Context(c.ctx), name, override, overlay)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.roots[name] != root || root.epoch != epoch {

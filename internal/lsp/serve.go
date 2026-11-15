@@ -13,12 +13,14 @@ import (
 
 	"github.com/lazysnail1024/zed-argo-workflows/internal/analysis"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 )
 
 type queuedRequest struct {
 	message message
 	epoch   uint64
 	input   requestInput
+	trace   *worktrace.Span
 }
 type workerResult struct {
 	output, log []byte
@@ -34,6 +36,7 @@ type workerResult struct {
 	facts       *analysis.Facts
 	local       bool
 	lane        int
+	trace       *worktrace.Span
 }
 
 // Serve owns mutable state and all transport writes. One local query, one heavy
@@ -47,12 +50,13 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 		debug.SetMemoryLimit(288 * 1024 * 1024)
 		defer debug.SetMemoryLimit(previousLimit)
 	}
-	s := session{out: out, log: log, buffers: map[string]buffer{}, actions: map[string]pendingAction{}, pending: map[string]bool{}}
+	log = worktrace.Writer(log)
+	s := session{out: out, log: log, tracer: worktrace.New(log), buffers: map[string]buffer{}, actions: map[string]pendingAction{}, pending: map[string]bool{}}
 	if len(render) > 0 {
 		s.render = render[0]
 	}
 	var err error
-	s.catalog, err = newCatalog()
+	s.catalog, err = newCatalog(s.tracer)
 	if err != nil {
 		fmt.Fprintln(log, "LSP catalog:", err)
 		return 2
@@ -96,6 +100,7 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 		clone.factBoundary = ""
 		clone.factMixed = false
 		clone.proofs = nil
+		clone.editConfiguration = nil
 
 		clone.queryKey = ""
 		clone.queryResults = map[string]json.RawMessage{}
@@ -120,9 +125,15 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 		for i := range lanes {
 			lane := &lanes[i]
 			if lane.running && (all || !s.requestCurrent(*lane.active)) {
+				lane.active.trace.Cancel()
 				lane.cancel()
 				if !lane.canceled {
 					_ = s.failure(lane.active.message.ID, code, reason)
+					outcome := "cancelled"
+					if code == -32801 {
+						outcome = "stale"
+					}
+					lane.active.trace.Reply(outcome)
 					lane.canceled = true
 				}
 			}
@@ -147,6 +158,13 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 			duration = 30 * time.Second
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), duration)
+		var trace *worktrace.Span
+		if request == nil {
+			trace = s.tracer.Begin("publication", "", nil)
+		} else {
+			trace = request.trace
+		}
+		ctx = trace.Context(ctx)
 		ctx = analysis.WithInvocation(workspace.WithSnapshotBudget(ctx, s.catalog.documents.OpenBytes()))
 		state := snapshot(ctx)
 		background := request == nil
@@ -161,6 +179,7 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 			lane.cancel, lane.active = cancel, request
 		}
 		go func() {
+			trace.Start()
 			var output, logs bytes.Buffer
 			state.out = &output
 			state.log = &logs
@@ -233,7 +252,8 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 			// The owner accepts detached caches and actions only. Do not carry
 			// worker parsing contexts or borrowed input through the result queue.
 			state.ctx, state.factInput, state.workspaces, state.buffers = nil, nil, nil, nil
-			send(workerResult{output: append([]byte(nil), output.Bytes()...), log: logs.Bytes(), state: state, facts: facts, err: err, canceled: ctx.Err() != nil, epoch: state.epoch, background: background, final: true, proofs: state.proofs, lane: laneID})
+			trace.Done()
+			send(workerResult{output: append([]byte(nil), output.Bytes()...), log: logs.Bytes(), state: state, facts: facts, err: err, canceled: ctx.Err() != nil, epoch: state.epoch, background: background, final: true, proofs: state.proofs, lane: laneID, trace: trace})
 		}()
 	}
 	for {
@@ -245,6 +265,8 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 					lane.queue = lane.queue[1:]
 					if !s.requestCurrent(q) {
 						_ = s.failure(q.message.ID, -32801, "input changed before request execution")
+						q.trace.Reply("stale")
+						q.trace.Finish("stale")
 						continue
 					}
 					launch(&q, nil)
@@ -279,14 +301,19 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 					for i := range lanes {
 						lane := &lanes[i]
 						if lane.active != nil && bytes.Equal(lane.active.message.ID, p.ID) && !lane.canceled {
+							lane.active.trace.Cancel()
 							lane.cancel()
 							_ = s.failure(lane.active.message.ID, -32800, "request cancelled")
+							lane.active.trace.Reply("cancelled")
 							lane.canceled = true
 						}
 						kept := lane.queue[:0]
 						for _, q := range lane.queue {
 							if bytes.Equal(q.message.ID, p.ID) {
+								q.trace.Cancel()
 								_ = s.failure(q.message.ID, -32800, "request cancelled")
+								q.trace.Reply("cancelled")
+								q.trace.Finish("cancelled")
 							} else {
 								kept = append(kept, q)
 							}
@@ -302,9 +329,15 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 			if len(m.ID) > 0 && m.Method != "initialize" && m.Method != "shutdown" {
 				lane := &lanes[laneFor(m.Method)]
 				if s.shutdown {
+					trace := s.tracer.Begin("request", m.Method, m.ID)
 					_ = s.failure(m.ID, -32600, "server is shutting down")
+					trace.Reply("refused")
+					trace.Finish("refused")
 				} else if len(lane.queue) >= 8 {
+					trace := s.tracer.Begin("request", m.Method, m.ID)
 					_ = s.failure(m.ID, -32803, "request queue is full")
+					trace.Reply("refused")
+					trace.Finish("refused")
 				} else {
 					lane.queue = append(lane.queue, s.queueRequest(m))
 				}
@@ -314,14 +347,26 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 				abort(-32800, "server is shutting down", true)
 				for i := range lanes {
 					for _, q := range lanes[i].queue {
+						q.trace.Cancel()
 						_ = s.failure(q.message.ID, -32800, "server is shutting down")
+						q.trace.Reply("cancelled")
+						q.trace.Finish("cancelled")
 					}
 					lanes[i].queue = nil
 				}
 				s.pending = map[string]bool{}
 			}
 			epoch := s.epoch
+			trace := s.tracer.Begin("input", m.Method, m.ID)
+			trace.Start()
+			s.ctx = trace.Context(context.Background())
 			done, code, err := s.accept(m)
+			s.ctx = nil
+			trace.Done()
+			if len(m.ID) > 0 {
+				trace.Reply("delivered")
+			}
+			trace.Finish("accepted")
 			if err != nil {
 				fmt.Fprintln(log, "LSP:", err)
 				return 2
@@ -370,7 +415,22 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 				current = s.requestCurrent(*lane.active)
 			}
 			valid := s.catalog.valid(result.proofs)
+			var editErr error
+			if lane != nil && current && valid && !result.canceled && !lane.canceled && result.err == nil && result.state.editConfiguration != nil {
+				// A disk config change need not have produced a client event or
+				// reached the throttled background metadata refresh. Reacquire its
+				// effective source only for an actual WorkspaceEdit, at delivery.
+				// The worker context has ended; use a bounded owner context while
+				// accounting this read to the same request's actual work.
+				ctx, cancel := context.WithTimeout(result.trace.Context(s.catalog.ctx), 5*time.Second)
+				editErr = s.checkEditConfiguration(ctx, result.state.editConfiguration)
+				cancel()
+				current = s.requestCurrent(*lane.active)
+				valid = editErr == nil && s.catalog.valid(result.proofs)
+			}
+			outcome := "discarded"
 			if current && valid && !result.canceled && (lane == nil || !lane.canceled) {
+				outcome = "delivered"
 				if result.err != nil {
 					fmt.Fprintln(log, "LSP worker:", result.err)
 					return 2
@@ -379,6 +439,7 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 					if _, err := out.Write(result.output); err != nil {
 						return 2
 					}
+					result.trace.Reply("delivered")
 					if editMethod(lane.active.message.Method) {
 						s.actions = result.state.actions
 						s.actionSequence = result.state.actionSequence
@@ -396,10 +457,17 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 				}
 			} else if lane != nil && !lane.canceled {
 				code, reason := -32800, "request timed out or cancelled"
+				outcome = "cancelled"
 				if !current || !valid {
 					code, reason = -32801, "workspace input changed during request"
+					outcome = "stale"
 				}
-				_ = s.failure(lane.active.message.ID, code, reason)
+				if editErr != nil {
+					_ = s.failureError(lane.active.message.ID, -32801, lane.active.message.Method, editErr)
+				} else {
+					_ = s.failure(lane.active.message.ID, code, reason)
+				}
+				result.trace.Reply(outcome)
 			}
 			// No request/session retains a second persistent batch beside the
 			// catalog's aggregate fact store, including rejected worker results.
@@ -421,6 +489,7 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 			if lane != nil {
 				lane.active = nil
 			}
+			result.trace.Finish(outcome)
 			if !s.shutdown && len(s.pending) > 0 && due.IsZero() {
 				due = time.Now().Add(120 * time.Millisecond)
 			}

@@ -48,7 +48,9 @@
         "tests/e2e/wf-resource-rename.py",
         "tests/e2e/wf-catalog-queries.py",
         "tests/e2e/wf-symbol-query-budget.py",
-        "tests/e2e/wf-equivalence.py"
+        "tests/e2e/wf-equivalence.py",
+        "tests/e2e/wf-analysis-status.py",
+        "tests/e2e/wf-compatibility.py"
       ]
     },
     {
@@ -117,7 +119,8 @@
         "tests/e2e/wf-remediation-render.py",
         "tests/e2e/wf-reaudit-query-io.py",
         "tests/e2e/wf-render-discovery.py",
-        "tests/e2e/wf-render-cancel.py"
+        "tests/e2e/wf-render-cancel.py",
+        "tests/e2e/wf-render-profiles.py"
       ]
     },
     {
@@ -450,6 +453,9 @@
       "files": [
         "tests/ci/control.py",
         "tests/ci/control_e2e.py",
+        "tests/ci/transport.py",
+        "tests/ci/transport_e2e.py",
+        "tests/ci/receipt_materialization_e2e.py",
         "tests/ci/build_identity.py",
         "tests/ci/import_e2e.py",
         "tests/ci/runtime_e2e.py",

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/k8s-crd-toolkit/yamlview"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	"strings"
 )
 
@@ -13,7 +14,10 @@ func localDiagnostics(ctx context.Context, snapshot source.Snapshot, sourceRoot 
 	if schemaOnlyKind(kind) {
 		return diagnostics
 	}
-	omittedAvailable := workflowVersionAtLeast(version, 3, 9)
+	worktrace.Add(ctx, worktrace.DomainPasses, 1)
+	worktrace.Add(ctx, worktrace.DomainLocalPasses, 1)
+	worktrace.Add(ctx, worktrace.DomainResources, 1)
+	omittedAvailable := workflowFeature(version, dagOmitted)
 	root := workflowRoot(value, sourceRoot)
 	root.shared = shared
 	spec := workflowMember(root, "spec")
@@ -23,7 +27,7 @@ func localDiagnostics(ctx context.Context, snapshot source.Snapshot, sourceRoot 
 	templates := workflowMember(spec, "templates").Elements()
 	names := map[string]workflowValue{}
 	ambiguousNames := map[string]bool{}
-	emit := func(node workflowValue, code, message string) {
+	emit := func(node workflowValue, code, message string, rules ...string) {
 		start, e1 := snapshot.Position(node.Span().Start)
 		end, e2 := snapshot.Position(node.Span().End)
 		if e1 != nil || e2 != nil {
@@ -33,7 +37,7 @@ func localDiagnostics(ctx context.Context, snapshot source.Snapshot, sourceRoot 
 		if code == "WF_DYNAMIC_REFERENCE" {
 			severity = "Information"
 		}
-		diagnostics = append(diagnostics, Diagnostic{URI: string(snapshot.URI()), Range: Range{Position{start.Line, start.UTF16Column}, Position{end.Line, end.UTF16Column}}, Code: code, Source: "argo-workflows", Severity: severity, Message: message, TargetID: version, PositionKind: node.origin})
+		diagnostics = append(diagnostics, Diagnostic{URI: string(snapshot.URI()), Range: Range{Position{start.Line, start.UTF16Column}, Position{end.Line, end.UTF16Column}}, Code: code, Source: "argo-workflows", Severity: severity, Message: message, TargetID: version, PositionKind: node.origin, ruleIDs: rules})
 	}
 	if workflowMember(spec, "workflowTemplateRef").present && len(templates) > 0 {
 		emit(workflowMember(spec, "templates"), "WF_TEMPLATE_REF_TEMPLATES", "local templates cannot be combined with workflowTemplateRef")
@@ -73,13 +77,13 @@ func localDiagnostics(ctx context.Context, snapshot source.Snapshot, sourceRoot 
 		if ctx.Err() != nil {
 			return diagnostics
 		}
-		message, atFrom := argumentValueError(arg.value, version, kind == "WorkflowTemplate" || kind == "ClusterWorkflowTemplate")
+		message, atFrom, rules := argumentValueDecision(arg.value, version, kind == "WorkflowTemplate" || kind == "ClusterWorkflowTemplate")
 		if message != "" {
 			field := "name"
 			if atFrom {
 				field = "valueFrom"
 			}
-			emit(workflowMember(arg, field), "WF_ARGUMENT_VALUE_INVALID", message)
+			emit(workflowMember(arg, field), "WF_ARGUMENT_VALUE_INVALID", message, rules...)
 		}
 	}
 	duplicateNames(workflowMember(workflowMember(spec, "arguments"), "parameters"))
@@ -94,7 +98,7 @@ func localDiagnostics(ctx context.Context, snapshot source.Snapshot, sourceRoot 
 			}
 		}
 	}
-	checkArgs := func(reference, arguments workflowValue) {
+	checkArgs := func(reference, arguments workflowValue, rules ...string) {
 		name := workflowString(reference)
 		callee, ok := names[name]
 		if !ok || strings.Contains(name, "{{") {
@@ -106,11 +110,11 @@ func localDiagnostics(ctx context.Context, snapshot source.Snapshot, sourceRoot 
 			return
 		}
 		for _, missing := range missingArguments(version, callee.value, arguments.value) {
-			emit(reference, "WF_ARGUMENT_MISSING", "required input "+missing+" was not supplied")
+			emit(reference, "WF_ARGUMENT_MISSING", "required input "+missing.name+" was not supplied", append(append([]string{}, rules...), missing.ruleIDs...)...)
 		}
 	}
 
-	checkReference := func(node workflowValue) {
+	checkReference := func(node workflowValue, rules ...string) {
 		name := workflowString(node)
 		if name == "" {
 			return
@@ -120,7 +124,7 @@ func localDiagnostics(ctx context.Context, snapshot source.Snapshot, sourceRoot 
 			return
 		}
 		if _, ok := names[name]; !ok {
-			emit(node, "WF_LOCAL_TEMPLATE_MISSING", "local template does not exist: "+name)
+			emit(node, "WF_LOCAL_TEMPLATE_MISSING", "local template does not exist: "+name, rules...)
 		}
 	}
 	if workflowMember(spec, "workflowTemplateRef").Kind() == yamlview.Empty {
@@ -131,10 +135,10 @@ func localDiagnostics(ctx context.Context, snapshot source.Snapshot, sourceRoot 
 		checkReference(workflowMember(spec, "onExit"))
 		checkArgs(workflowMember(spec, "onExit"), workflowMember(spec, "arguments"))
 	}
-	if workflowMember(spec, "workflowTemplateRef").present && !workflowVersionAtLeast(version, 4, 6) {
+	if workflowMember(spec, "workflowTemplateRef").present && !workflowFeature(version, externalExit) {
 		// Older validators resolve explicit workflow exits in the caller context.
-		checkReference(workflowMember(spec, "onExit"))
-		checkArgs(workflowMember(spec, "onExit"), workflowMember(spec, "arguments"))
+		checkReference(workflowMember(spec, "onExit"), "external-exit")
+		checkArgs(workflowMember(spec, "onExit"), workflowMember(spec, "arguments"), "external-exit")
 	}
 	checkHooks := func(node workflowValue) {
 		for _, hook := range workflowMember(node, "hooks").Members() {
@@ -243,7 +247,7 @@ func localDiagnostics(ctx context.Context, snapshot source.Snapshot, sourceRoot 
 								emit(depends, "WF_DEPENDENCY_MISSING", "DAG task does not exist: "+ref)
 							}
 							if occurrence.result == "Omitted" && !omittedAvailable && !omittedReported {
-								emit(depends, "WF_DEPENDS_SYNTAX", `task result "Omitted" is not available before 3.3.9`)
+								emit(depends, "WF_DEPENDS_SYNTAX", `task result "Omitted" is not available before 3.3.9`, "dag-omitted")
 								omittedReported = true
 							}
 							// Ambiguous producers cannot justify a loop conclusion. Every

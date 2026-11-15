@@ -10,6 +10,7 @@ import (
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/helmsource"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	"io"
 	"os"
 	"path"
@@ -25,12 +26,13 @@ type Scope struct {
 }
 type Config struct {
 	targetSource     string
-	SchemaVersion    int      `json:"schemaVersion"`
-	TargetVersion    string   `json:"targetVersion"`
-	ReferencePolicy  string   `json:"referencePolicy"`
-	DefaultNamespace string   `json:"defaultNamespace"`
-	Exclude          []string `json:"exclude"`
-	Scopes           []Scope  `json:"scopes"`
+	SchemaVersion    int                      `json:"schemaVersion"`
+	TargetVersion    string                   `json:"targetVersion"`
+	ReferencePolicy  string                   `json:"referencePolicy"`
+	DefaultNamespace string                   `json:"defaultNamespace"`
+	Exclude          []string                 `json:"exclude"`
+	Scopes           []Scope                  `json:"scopes"`
+	RenderProfiles   map[string]RenderProfile `json:"renderProfiles,omitempty"`
 }
 type Target struct {
 	ID               string  `json:"id"`
@@ -113,7 +115,7 @@ func matches(patterns []string, name string) bool {
 	}
 	return false
 }
-func loadConfig(root string, overlay *string) (Config, []byte, error) {
+func loadConfig(ctx context.Context, root string, overlay *string) (Config, []byte, error) {
 	c := Config{SchemaVersion: 1, TargetVersion: compat.DefaultVersion, ReferencePolicy: "open", targetSource: "default"}
 	var raw []byte
 	var err error
@@ -121,20 +123,33 @@ func loadConfig(root string, overlay *string) (Config, []byte, error) {
 		raw = []byte(*overlay)
 	} else {
 		var f *os.File
+		worktrace.Add(ctx, worktrace.ReadAttempts, 1)
 		f, err = openConfig(filepath.Join(root, ".argo-workflows-ls.yaml"))
+		if err != nil {
+			worktrace.Add(ctx, worktrace.ReadFailures, 1)
+		}
 		if err == nil {
 			defer f.Close()
 			info, statErr := f.Stat()
 			if statErr != nil {
+				worktrace.Add(ctx, worktrace.ReadFailures, 1)
 				return c, nil, statErr
 			}
 			if !info.Mode().IsRegular() {
+				worktrace.Add(ctx, worktrace.ReadFailures, 1)
 				return c, nil, fmt.Errorf("configuration must be a regular file")
 			}
 			if info.Size() > 1024*1024 {
+				worktrace.Add(ctx, worktrace.ReadFailures, 1)
 				return c, nil, fmt.Errorf("configuration exceeds 1 MiB")
 			}
 			raw, err = io.ReadAll(io.LimitReader(f, 1024*1024+1))
+			worktrace.Add(ctx, worktrace.ReadBytes, int64(len(raw)))
+			if err == nil {
+				worktrace.Add(ctx, worktrace.ReadFiles, 1)
+			} else {
+				worktrace.Add(ctx, worktrace.ReadFailures, 1)
+			}
 		}
 	}
 	if os.IsNotExist(err) {
@@ -144,24 +159,41 @@ func loadConfig(root string, overlay *string) (Config, []byte, error) {
 		return c, nil, err
 	}
 	if len(raw) > 1024*1024 {
+		if overlay == nil {
+			worktrace.Add(ctx, worktrace.ReadFailures, 1)
+		}
 		return c, nil, fmt.Errorf("configuration exceeds 1 MiB")
 	}
+	worktrace.Add(ctx, worktrace.ConfigDecodes, 1)
 	if err = yaml.UnmarshalStrict(raw, &c); err != nil {
 		return c, nil, err
 	}
 	// Presence matters: an explicit pin equal to the default still comes from
 	// root configuration, while a configuration containing only policy does not.
 	var selection struct {
-		TargetVersion *string `json:"targetVersion"`
+		TargetVersion  *string         `json:"targetVersion"`
+		RenderProfiles json.RawMessage `json:"renderProfiles"`
 	}
+	worktrace.Add(ctx, worktrace.ConfigDecodes, 1)
 	if err = yaml.Unmarshal(raw, &selection); err != nil {
 		return c, nil, err
 	}
 	if selection.TargetVersion != nil {
 		c.targetSource = "root"
 	}
-	if c.SchemaVersion != 1 {
+	if c.SchemaVersion != 1 && c.SchemaVersion != 2 {
 		return c, nil, fmt.Errorf("unsupported configuration schemaVersion")
+	}
+	if c.SchemaVersion == 1 && len(selection.RenderProfiles) != 0 {
+		return c, nil, fmt.Errorf("renderProfiles requires configuration schemaVersion 2")
+	}
+	if string(selection.RenderProfiles) == "null" {
+		return c, nil, fmt.Errorf("renderProfiles must be an object")
+	}
+	for name, profile := range c.RenderProfiles {
+		if err := validateRenderProfile(name, profile); err != nil {
+			return c, nil, err
+		}
 	}
 	if c.ReferencePolicy != "open" && c.ReferencePolicy != "closed" {
 		return c, nil, fmt.Errorf("invalid referencePolicy")

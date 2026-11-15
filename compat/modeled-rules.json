@@ -1,0 +1,1937 @@
+{
+  "schemaVersion": 1,
+  "product": "argo-workflows",
+  "purpose": "Immutable upstream provenance for the product-local modeled version-sensitive static rules.",
+  "coverage": {
+    "kind": "boundary-samples",
+    "catalogVersionCount": 146,
+    "catalogPinSetSHA256": "be581b85d0517914fbc7c878b827dcd79f85b5dbf587295140675885f351b400",
+    "catalogPinHashEncoding": "UTF-8 compact JSON array of [version, upstreamCommit] in catalog order, without trailing newline.",
+    "allCatalogRuntimeSourcesAudited": false,
+    "upstreamRuntimeExecutionProved": false,
+    "statement": "Source comparisons establish sampled branch boundaries and caller conditions. They are not a complete runtime source audit of every catalog release, controller simulation, or deployment compatibility proof."
+  },
+  "hashContract": {
+    "sourceSHA256": "SHA-256 of exact upstream file bytes, also verified using the Git blob SHA-1 returned by GitHub.",
+    "functionAndCallerSHA256": "SHA-256 of exact UTF-8 source bytes [go/ast.FuncDecl.Pos(), go/ast.FuncDecl.End()), including signature/body, excluding preceding comments and trailing newline.",
+    "lineNumbers": "One-based locations of the same parsed function declaration in the exact pinned file."
+  },
+  "exclusions": [
+    "controller execution and live cluster state",
+    "admission webhook behavior beyond the embedded schema",
+    "arbitrary template/expression execution",
+    "dynamic reference resolution",
+    "unavailable external resources or unresolved caller context",
+    "unmodeled upstream validation predicates",
+    "historical behavior outside the pinned catalog",
+    "local step, DAG task and lifecycle-hook argument-form validity beyond modeled callee input supply checks"
+  ],
+  "sources": [
+    {
+      "id": "wf-ancestry-3.3.8",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.3.8",
+      "commit": "621b0d1a8e09634666ebe403ee7b8fc29db1dc4e",
+      "upstreamPath": "workflow/common/ancestry.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/621b0d1a8e09634666ebe403ee7b8fc29db1dc4e/workflow/common/ancestry.go",
+      "gitBlobSHA1": "fb241f134b6d965c7d9c273a286f8108b0af9b4c",
+      "sha256": "93b0c26708ed8866983f6b6a000a36f90c7839d11a05af380042c58e965ceb6f",
+      "bytes": 5810
+    },
+    {
+      "id": "wf-ancestry-3.3.9",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.3.9",
+      "commit": "5db53aa0ca54e51ca69053e1d3272e37064559d7",
+      "upstreamPath": "workflow/common/ancestry.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/5db53aa0ca54e51ca69053e1d3272e37064559d7/workflow/common/ancestry.go",
+      "gitBlobSHA1": "e91f7aac006cdd3705b267cc551808d6a6410365",
+      "sha256": "ee0dc4cd79843c024fe42754d8b0129c732ec847515afeec2cab9a3ea495d1de",
+      "bytes": 5876
+    },
+    {
+      "id": "wf-common-3.7.16",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.7.16",
+      "commit": "26f99ff6683c4cedb1de941e01644f42cf97fb01",
+      "upstreamPath": "workflow/common/common.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/26f99ff6683c4cedb1de941e01644f42cf97fb01/workflow/common/common.go",
+      "gitBlobSHA1": "382859d5b24449e45450fd92376831c12bdd53ea",
+      "sha256": "a639c41c25490b48ec817badf0e3b9a32d07cf43605d4296c9bdb5960973ed8b",
+      "bytes": 19367
+    },
+    {
+      "id": "wf-common-util-3.2.4",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.2.4",
+      "commit": "8771ca279c329753e420dbdd986a9c914876b151",
+      "upstreamPath": "workflow/common/util.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/8771ca279c329753e420dbdd986a9c914876b151/workflow/common/util.go",
+      "gitBlobSHA1": "f0fe15cac3b4861f56c11b0a3c51a5634498f2ff",
+      "sha256": "b2c85bfbeb8e4e80567915609069987a813c689f130e48f149e3218549945052",
+      "bytes": 12104
+    },
+    {
+      "id": "wf-common-util-3.2.5",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.2.5",
+      "commit": "fc4c3d51e93858c2119124bbb3cb2ba1c35debcb",
+      "upstreamPath": "workflow/common/util.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/fc4c3d51e93858c2119124bbb3cb2ba1c35debcb/workflow/common/util.go",
+      "gitBlobSHA1": "12bc14c74d1af9d33a0b086ed16ef1c0987a8dfc",
+      "sha256": "6402022e1b618ba4a6627fa22cd76de5dbe4f434da523391da79b6d03883828c",
+      "bytes": 12165
+    },
+    {
+      "id": "wf-common-util-3.4.10",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.4.10",
+      "commit": "bd6cd2555d1bb0e57a34ce74b0add36cb7fb6c76",
+      "upstreamPath": "workflow/common/util.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/bd6cd2555d1bb0e57a34ce74b0add36cb7fb6c76/workflow/common/util.go",
+      "gitBlobSHA1": "b4fdc002e00739bcd6709ed580fa0acc7fd919cc",
+      "sha256": "f8e3afe787027801f6a662850069250fe3d4a5e0407600fb3c1721b2dd3c40d6",
+      "bytes": 11408
+    },
+    {
+      "id": "wf-common-util-3.4.9",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.4.9",
+      "commit": "b76329f3a2dedf4c76a9cac5ed9603ada289c8d0",
+      "upstreamPath": "workflow/common/util.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/b76329f3a2dedf4c76a9cac5ed9603ada289c8d0/workflow/common/util.go",
+      "gitBlobSHA1": "f9ee45beadcfcd1c14734b5ea774a17c8c71ae7f",
+      "sha256": "0f1897afe1412491c981d781e004cc4b246637853c748cf890487480bb00a786",
+      "bytes": 10907
+    },
+    {
+      "id": "wf-common-util-3.7.15",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.7.15",
+      "commit": "358cc3968c8f06f1be0967e41df191088db0b662",
+      "upstreamPath": "workflow/common/util.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/358cc3968c8f06f1be0967e41df191088db0b662/workflow/common/util.go",
+      "gitBlobSHA1": "bdfe9062aeff0985c792e576d5a1d4bd5b870940",
+      "sha256": "d594283b9d0b8f7d1e82b6559a1cef9f5e150612a6aa4142821854bbe20ecd4e",
+      "bytes": 11247
+    },
+    {
+      "id": "wf-common-util-3.7.16",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.7.16",
+      "commit": "26f99ff6683c4cedb1de941e01644f42cf97fb01",
+      "upstreamPath": "workflow/common/util.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/26f99ff6683c4cedb1de941e01644f42cf97fb01/workflow/common/util.go",
+      "gitBlobSHA1": "d05aaada88f9b186dba7e0d1e2a3d053d086b59a",
+      "sha256": "00b25e0d7151f690f2fd90ae0e36ab72bb6626aff51d7480d729051dff2b482c",
+      "bytes": 12059
+    },
+    {
+      "id": "wf-common-util-4.0.0",
+      "repository": "argoproj/argo-workflows",
+      "version": "4.0.0",
+      "commit": "a8bff4a72130bc1a13d95c6f73ff3fafec880287",
+      "upstreamPath": "workflow/common/util.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/a8bff4a72130bc1a13d95c6f73ff3fafec880287/workflow/common/util.go",
+      "gitBlobSHA1": "9a90e2193860bc9f166f4702ae23769b9988d454",
+      "sha256": "6a4bd9fda9c99685bbb351e1659c1240535de332be5cc94e557dfbcf7968109c",
+      "bytes": 11520
+    },
+    {
+      "id": "wf-common-util-4.0.6",
+      "repository": "argoproj/argo-workflows",
+      "version": "4.0.6",
+      "commit": "277e9cef0ad16d7eaaab253573d0695951a65dbd",
+      "upstreamPath": "workflow/common/util.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/277e9cef0ad16d7eaaab253573d0695951a65dbd/workflow/common/util.go",
+      "gitBlobSHA1": "dad4ca74a9c3352f7cc8c1ef9a761f373fc8915f",
+      "sha256": "d965544e567f7285ea1da9159b0679529ab9a92cc437fcfaf3f95a0e3e793c35",
+      "bytes": 11520
+    },
+    {
+      "id": "wf-common-util-4.0.7",
+      "repository": "argoproj/argo-workflows",
+      "version": "4.0.7",
+      "commit": "9aeb47ce10339f4a14819335c6a00027353ba0df",
+      "upstreamPath": "workflow/common/util.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/9aeb47ce10339f4a14819335c6a00027353ba0df/workflow/common/util.go",
+      "gitBlobSHA1": "cd634cc84b46dbd5faf3b836a04458ae90d67016",
+      "sha256": "bd5f0f80069184d0d5da2ce52b8d3687590fa0f5b9747675fe431949dd49b396",
+      "bytes": 12332
+    },
+    {
+      "id": "wf-common-util-4.1.0",
+      "repository": "argoproj/argo-workflows",
+      "version": "4.1.0",
+      "commit": "e5ed20d5cb54d4708d5aeb29148b3e49922f795c",
+      "upstreamPath": "workflow/common/util.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/e5ed20d5cb54d4708d5aeb29148b3e49922f795c/workflow/common/util.go",
+      "gitBlobSHA1": "46d2fd1e3609438ad6dfba85f18903b3d072ddac",
+      "sha256": "8b01c2736b79defe13771c2bf6a68727c5944e1bb2ccee33afbeace98591f91e",
+      "bytes": 14341
+    },
+    {
+      "id": "wf-validate-3.1.15",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.1.15",
+      "commit": "a0d6756922f7ba89f20b034dd265d0b1e393e70f",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/a0d6756922f7ba89f20b034dd265d0b1e393e70f/workflow/validate/validate.go",
+      "gitBlobSHA1": "6ee445f4f84d935911b60f6242ae96cd79bff612",
+      "sha256": "3395001681168e392169f56c4af329e6efcc3d86357dac63ecb39be872cfad83",
+      "bytes": 54991
+    },
+    {
+      "id": "wf-validate-3.2.0",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.2.0",
+      "commit": "a29495bb5b4aedcbd8fa7bc433c1bccbc374e6d1",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/a29495bb5b4aedcbd8fa7bc433c1bccbc374e6d1/workflow/validate/validate.go",
+      "gitBlobSHA1": "ec08ee760b29e22f306302732d554d12b1cfba55",
+      "sha256": "0468ab86307327e283ee05e1078107afc4c791e1732cf57aff209365044106ec",
+      "bytes": 55777
+    },
+    {
+      "id": "wf-validate-3.2.3",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.2.3",
+      "commit": "e5dc961b7846efe0fe36ab3a0964180eaedd2672",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/e5dc961b7846efe0fe36ab3a0964180eaedd2672/workflow/validate/validate.go",
+      "gitBlobSHA1": "ec08ee760b29e22f306302732d554d12b1cfba55",
+      "sha256": "0468ab86307327e283ee05e1078107afc4c791e1732cf57aff209365044106ec",
+      "bytes": 55777
+    },
+    {
+      "id": "wf-validate-3.2.4",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.2.4",
+      "commit": "8771ca279c329753e420dbdd986a9c914876b151",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/8771ca279c329753e420dbdd986a9c914876b151/workflow/validate/validate.go",
+      "gitBlobSHA1": "0a28be565d9c1e90966fcd01c70794ef49d8bf36",
+      "sha256": "f364a6d16a488ef778ae7141bd4d8fc7e5f54b06b0aeb42b1d723782389e6e04",
+      "bytes": 56202
+    },
+    {
+      "id": "wf-validate-3.2.5",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.2.5",
+      "commit": "fc4c3d51e93858c2119124bbb3cb2ba1c35debcb",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/fc4c3d51e93858c2119124bbb3cb2ba1c35debcb/workflow/validate/validate.go",
+      "gitBlobSHA1": "3c937e6ed265388173338d65b03f018afaa9d559",
+      "sha256": "5f3d34219c7e961eb30f632137f9af458cb3548138914071dd3da416aaa29c37",
+      "bytes": 56654
+    },
+    {
+      "id": "wf-validate-3.3.8",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.3.8",
+      "commit": "621b0d1a8e09634666ebe403ee7b8fc29db1dc4e",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/621b0d1a8e09634666ebe403ee7b8fc29db1dc4e/workflow/validate/validate.go",
+      "gitBlobSHA1": "5f5dc3b395161bd917970485317529235d0d235e",
+      "sha256": "65b87e47e7f8cb1e318a38d9b46ea87b89a2a41d2ea7555cec3b998a7e036682",
+      "bytes": 56551
+    },
+    {
+      "id": "wf-validate-3.3.9",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.3.9",
+      "commit": "5db53aa0ca54e51ca69053e1d3272e37064559d7",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/5db53aa0ca54e51ca69053e1d3272e37064559d7/workflow/validate/validate.go",
+      "gitBlobSHA1": "4d7f7296936e98fde7df9981e64de685e3816b0f",
+      "sha256": "96857d3216e517b50ea9ea9cdd9a6a0a2afe17a0f47b9dd813c032a5e51ac28b",
+      "bytes": 56512
+    },
+    {
+      "id": "wf-validate-3.4.1",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.4.1",
+      "commit": "0546fef0b096d84c9e3362d2b241614e743ebe97",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/0546fef0b096d84c9e3362d2b241614e743ebe97/workflow/validate/validate.go",
+      "gitBlobSHA1": "a36c09542666997a8cdb7fd2129badb44297e8ae",
+      "sha256": "bb545f7bfcae94a53599ec1037919db5d12b87d613550dd9bdcc698e67ee6033",
+      "bytes": 56233
+    },
+    {
+      "id": "wf-validate-3.4.10",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.4.10",
+      "commit": "bd6cd2555d1bb0e57a34ce74b0add36cb7fb6c76",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/bd6cd2555d1bb0e57a34ce74b0add36cb7fb6c76/workflow/validate/validate.go",
+      "gitBlobSHA1": "f5c97a68cbf4371a51edb590eb80fdfa930c7cc1",
+      "sha256": "e7b407f6d87b4a64b14dc5e9205a949fe5fb50d0fbc349c17d48a17430a1b1d2",
+      "bytes": 62206
+    },
+    {
+      "id": "wf-validate-3.4.16",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.4.16",
+      "commit": "910a9aabce5de6568b54350c181a431f8263605a",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/910a9aabce5de6568b54350c181a431f8263605a/workflow/validate/validate.go",
+      "gitBlobSHA1": "84d1520e721c64679e08e11490f63c1694e465de",
+      "sha256": "6e5cc4f6c2681efb2120281f87ca6fb7b8e32ff66c603b8e1aa4e089ebe7bf85",
+      "bytes": 62441
+    },
+    {
+      "id": "wf-validate-3.4.17",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.4.17",
+      "commit": "89cbdb53361cbe59fbe81b887ee82722cce5de54",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/89cbdb53361cbe59fbe81b887ee82722cce5de54/workflow/validate/validate.go",
+      "gitBlobSHA1": "2d96948293a74ae7ca142cd83be3e56a50844f17",
+      "sha256": "d756bd3ca791b1ab2f50f83fd4c903130fc1346e9346bcee8766a616fea7ffef",
+      "bytes": 63161
+    },
+    {
+      "id": "wf-validate-3.4.2",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.4.2",
+      "commit": "c08563baf7bafafe3aeb3284cd3410308603cad4",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/c08563baf7bafafe3aeb3284cd3410308603cad4/workflow/validate/validate.go",
+      "gitBlobSHA1": "f525339970c076b8a3e3fc32dfaba14e4df68746",
+      "sha256": "afbffa4993687c4577dcff3c420f9db34e3ada08b7db7b08d92cd950be6b5b59",
+      "bytes": 57056
+    },
+    {
+      "id": "wf-validate-3.4.5",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.4.5",
+      "commit": "1253f443baa8ad1610d2e62ec26ecdc85fe1b837",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/1253f443baa8ad1610d2e62ec26ecdc85fe1b837/workflow/validate/validate.go",
+      "gitBlobSHA1": "e41c430700950d3f62831fc7473b78b994672dc1",
+      "sha256": "2fa6ddf9bd6a36ecbe2d2ba980601d6c2c40c72c231d0a5a4d444904a3bc55d0",
+      "bytes": 57321
+    },
+    {
+      "id": "wf-validate-3.4.6",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.4.6",
+      "commit": "988706dd131cf98808f09fb7cc03780e2af94c73",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/988706dd131cf98808f09fb7cc03780e2af94c73/workflow/validate/validate.go",
+      "gitBlobSHA1": "5d3e8e51937002edf28e8d59dccbc5b86233f5b5",
+      "sha256": "99c6c17ea05b068e6d3539f6171e94f080cc7e54b729df0fba6b523e17ca5446",
+      "bytes": 58905
+    },
+    {
+      "id": "wf-validate-3.4.9",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.4.9",
+      "commit": "b76329f3a2dedf4c76a9cac5ed9603ada289c8d0",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/b76329f3a2dedf4c76a9cac5ed9603ada289c8d0/workflow/validate/validate.go",
+      "gitBlobSHA1": "f5c97a68cbf4371a51edb590eb80fdfa930c7cc1",
+      "sha256": "e7b407f6d87b4a64b14dc5e9205a949fe5fb50d0fbc349c17d48a17430a1b1d2",
+      "bytes": 62206
+    },
+    {
+      "id": "wf-validate-3.5.4",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.5.4",
+      "commit": "960af331a8c0a3f2e263c8b90f1daf4303816ba8",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/960af331a8c0a3f2e263c8b90f1daf4303816ba8/workflow/validate/validate.go",
+      "gitBlobSHA1": "35acaab2ed9d2ed20d69f612e8a7702dc1612d02",
+      "sha256": "a81cfc8bcb4795648f542061a6f00dfa4374316cc7fcbe153d3113b42f6378fe",
+      "bytes": 62764
+    },
+    {
+      "id": "wf-validate-3.5.5",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.5.5",
+      "commit": "c80b2e91ebd7e7f604e88442f45ec630380effa0",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/c80b2e91ebd7e7f604e88442f45ec630380effa0/workflow/validate/validate.go",
+      "gitBlobSHA1": "3c3d8866f20c53a2e8634c1aac984344473ae978",
+      "sha256": "3d8cc79feed71bc892ee9050e2704ceee6827d5ff3910551c5edf9ea8181025e",
+      "bytes": 63484
+    },
+    {
+      "id": "wf-validate-3.7.15",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.7.15",
+      "commit": "358cc3968c8f06f1be0967e41df191088db0b662",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/358cc3968c8f06f1be0967e41df191088db0b662/workflow/validate/validate.go",
+      "gitBlobSHA1": "4c2af66e0015be20c88774d270008426cbc1a9bc",
+      "sha256": "6a6346875884aca4e0ab492e84a170cbbf82e4a30affc6cf00c380d16e740983",
+      "bytes": 66095
+    },
+    {
+      "id": "wf-validate-3.7.16",
+      "repository": "argoproj/argo-workflows",
+      "version": "3.7.16",
+      "commit": "26f99ff6683c4cedb1de941e01644f42cf97fb01",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/26f99ff6683c4cedb1de941e01644f42cf97fb01/workflow/validate/validate.go",
+      "gitBlobSHA1": "4c2af66e0015be20c88774d270008426cbc1a9bc",
+      "sha256": "6a6346875884aca4e0ab492e84a170cbbf82e4a30affc6cf00c380d16e740983",
+      "bytes": 66095
+    },
+    {
+      "id": "wf-validate-4.0.0",
+      "repository": "argoproj/argo-workflows",
+      "version": "4.0.0",
+      "commit": "a8bff4a72130bc1a13d95c6f73ff3fafec880287",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/a8bff4a72130bc1a13d95c6f73ff3fafec880287/workflow/validate/validate.go",
+      "gitBlobSHA1": "61f4dfb387b4541ffa238cafc6bf3a24cde309aa",
+      "sha256": "b251e6e784911770b5e6bada648b2ded3de0fa92c0b533b99a913b89a598e972",
+      "bytes": 66562
+    },
+    {
+      "id": "wf-validate-4.0.6",
+      "repository": "argoproj/argo-workflows",
+      "version": "4.0.6",
+      "commit": "277e9cef0ad16d7eaaab253573d0695951a65dbd",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/277e9cef0ad16d7eaaab253573d0695951a65dbd/workflow/validate/validate.go",
+      "gitBlobSHA1": "183c1fcbabedfb35d3e864dcee520a0ee108de6d",
+      "sha256": "be78f80fc2d5da5971bab6416e0f248a45a9bf3869781577fa2dee0ef3617c0f",
+      "bytes": 66773
+    },
+    {
+      "id": "wf-validate-4.0.7",
+      "repository": "argoproj/argo-workflows",
+      "version": "4.0.7",
+      "commit": "9aeb47ce10339f4a14819335c6a00027353ba0df",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/9aeb47ce10339f4a14819335c6a00027353ba0df/workflow/validate/validate.go",
+      "gitBlobSHA1": "23cdb8e7caddcce557ff6365f6e4f42d6d321b4a",
+      "sha256": "6bcf9bccfe51087dfaee4791cfcb99cc846ae025c074bc6df9122e0051a937cf",
+      "bytes": 67713
+    },
+    {
+      "id": "wf-validate-4.1.0",
+      "repository": "argoproj/argo-workflows",
+      "version": "4.1.0",
+      "commit": "e5ed20d5cb54d4708d5aeb29148b3e49922f795c",
+      "upstreamPath": "workflow/validate/validate.go",
+      "url": "https://github.com/argoproj/argo-workflows/blob/e5ed20d5cb54d4708d5aeb29148b3e49922f795c/workflow/validate/validate.go",
+      "gitBlobSHA1": "9302def77ded8feab5cf756bed371425f90dd398",
+      "sha256": "f37880e2f9f6274fa91235b6ba010df8adede59d1a14205924a3e226b9a2a1da",
+      "bytes": 72029
+    }
+  ],
+  "rules": [
+    {
+      "id": "argument-value-from",
+      "title": "Argument valueFrom may replace a missing literal value",
+      "modelCondition": "A parameter argument is validated independently of whether a callee consumes it. Before the gate nil value fails; after the gate failure requires both value and valueFrom absent.",
+      "featureEnabledRanges": [
+        {
+          "minInclusive": "3.2.0",
+          "maxExclusive": "4.0.0"
+        },
+        {
+          "minInclusive": "4.0.0",
+          "maxExclusive": "5.0.0"
+        }
+      ],
+      "rangeUniverse": "Only releases present in the pinned catalog; ranges describe the current product model and are not an audit of every release source.",
+      "boundaries": [
+        {
+          "before": "3.1.15",
+          "after": "3.2.0",
+          "kind": "introduction",
+          "change": "validateArgumentsValues permits nonnil ValueFrom when Value is nil"
+        }
+      ],
+      "removalsObservedInSamples": [],
+      "evidence": [
+        {
+          "sourceID": "wf-validate-3.1.15",
+          "functions": [
+            {
+              "function": "validateArgumentsValues",
+              "receiver": "",
+              "sha256": "b5578d1bc19e03b2b2697d7a4e40f41e56e685980ed9c5e2c511ca80a6a655df",
+              "startLine": 699,
+              "endLine": 729,
+              "startByte": 27669,
+              "endByte": 28853
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.1.15",
+              "function": "validateArguments",
+              "receiver": "",
+              "sha256": "3b563b81addda9dc74bf0152a74dec510159696d56a71e2affe3db8172ecdf2e",
+              "startLine": 676,
+              "endLine": 682,
+              "startByte": 26940,
+              "endByte": 27152
+            },
+            {
+              "sourceID": "wf-validate-3.1.15",
+              "function": "ValidateWorkflow",
+              "receiver": "",
+              "sha256": "f02b3e7c070935f061022db78bd0438590053c29e46e28d886fe642072f200c4",
+              "startLine": 107,
+              "endLine": 232,
+              "startByte": 4268,
+              "endByte": 8799
+            },
+            {
+              "sourceID": "wf-validate-3.1.15",
+              "function": "validateSteps",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "417d56af1385cf0e0d4ced607155a9d984c90cf6cdafa58b30049dae15a8c875",
+              "startLine": 731,
+              "endLine": 798,
+              "startByte": 28855,
+              "endByte": 31740
+            },
+            {
+              "sourceID": "wf-validate-3.1.15",
+              "function": "validateDAG",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "7b725efba8785fe5af51738b07aa7535e343510f0dc1d683c1436bdade3ea28d",
+              "startLine": 1135,
+              "endLine": 1277,
+              "startByte": 44265,
+              "endByte": 50030
+            }
+          ],
+          "observation": "Value == nil is rejected."
+        },
+        {
+          "sourceID": "wf-validate-3.2.0",
+          "functions": [
+            {
+              "function": "validateArgumentsValues",
+              "receiver": "",
+              "sha256": "32e5c6beb4e6b586b0902f99b28648aa4ea716fc27b5a87aab54117713154e1a",
+              "startLine": 706,
+              "endLine": 736,
+              "startByte": 28329,
+              "endByte": 29539
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.2.0",
+              "function": "validateArguments",
+              "receiver": "",
+              "sha256": "3b563b81addda9dc74bf0152a74dec510159696d56a71e2affe3db8172ecdf2e",
+              "startLine": 683,
+              "endLine": 689,
+              "startByte": 27600,
+              "endByte": 27812
+            },
+            {
+              "sourceID": "wf-validate-3.2.0",
+              "function": "ValidateWorkflow",
+              "receiver": "",
+              "sha256": "f02b3e7c070935f061022db78bd0438590053c29e46e28d886fe642072f200c4",
+              "startLine": 107,
+              "endLine": 232,
+              "startByte": 4268,
+              "endByte": 8799
+            },
+            {
+              "sourceID": "wf-validate-3.2.0",
+              "function": "validateSteps",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "8f035d785764a0e8dd2e8096fe792997961ffbb4d75f30c2878b9dadfba3bb24",
+              "startLine": 738,
+              "endLine": 805,
+              "startByte": 29541,
+              "endByte": 32444
+            },
+            {
+              "sourceID": "wf-validate-3.2.0",
+              "function": "validateDAG",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "73947e039d1655cff8ce5db29fd647113d0db80773e60db49dd81cf07ed2e2af",
+              "startLine": 1142,
+              "endLine": 1284,
+              "startByte": 45015,
+              "endByte": 50816
+            }
+          ],
+          "observation": "ValueFrom == nil && Value == nil is rejected."
+        }
+      ],
+      "localImplementation": [
+        "internal/analysis/arguments.go:argumentValueDecision",
+        "internal/analysis/local.go:localDiagnostics",
+        "internal/analysis/external.go:externalPrepared",
+        "internal/analysis/version_rules.go:versionFeatures"
+      ],
+      "behaviorScenarioIDs": [
+        "wf-compatibility/argument-value-from"
+      ],
+      "limitations": [
+        "This predicate does not validate every ValueFrom variant or execute a value source."
+      ],
+      "productScope": "The product applies argumentValueDecision to top-level resource parameter arguments and inherited top-level holder arguments. Upstream caller hashes also document step/DAG contexts, but this product does not currently model supplied step/DAG/lifecycle-hook argument-form validity; callee input supply is modeled separately by missingArguments."
+    },
+    {
+      "id": "template-empty-arguments",
+      "title": "Independent template validation allows empty top-level arguments",
+      "modelCondition": "ValidateWorkflow sets allowEmptyValues for lint or WorkflowTemplateValidation && !Submit. WorkflowTemplate and ClusterWorkflowTemplate wrappers set the template flag. Step and DAG argument calls still pass false.",
+      "featureEnabledRanges": [
+        {
+          "minInclusive": "3.2.4",
+          "maxExclusive": "4.0.0"
+        },
+        {
+          "minInclusive": "4.0.0",
+          "maxExclusive": "5.0.0"
+        }
+      ],
+      "rangeUniverse": "Only releases present in the pinned catalog; ranges describe the current product model and are not an audit of every release source.",
+      "boundaries": [
+        {
+          "before": "3.2.3",
+          "after": "3.2.4",
+          "kind": "introduction",
+          "change": "Introduce allowEmptyValues for independent template validation"
+        }
+      ],
+      "removalsObservedInSamples": [],
+      "evidence": [
+        {
+          "sourceID": "wf-validate-3.2.3",
+          "functions": [
+            {
+              "function": "validateArgumentsValues",
+              "receiver": "",
+              "sha256": "32e5c6beb4e6b586b0902f99b28648aa4ea716fc27b5a87aab54117713154e1a",
+              "startLine": 706,
+              "endLine": 736,
+              "startByte": 28329,
+              "endByte": 29539
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.2.3",
+              "function": "ValidateWorkflow",
+              "receiver": "",
+              "sha256": "f02b3e7c070935f061022db78bd0438590053c29e46e28d886fe642072f200c4",
+              "startLine": 107,
+              "endLine": 232,
+              "startByte": 4268,
+              "endByte": 8799
+            },
+            {
+              "sourceID": "wf-validate-3.2.3",
+              "function": "ValidateWorkflowTemplate",
+              "receiver": "",
+              "sha256": "f8a22f62f92970f4d273c87ed73b68a383f7743e1c6d0278651cc51cd04c1a09",
+              "startLine": 242,
+              "endLine": 255,
+              "startByte": 9148,
+              "endByte": 9892
+            },
+            {
+              "sourceID": "wf-validate-3.2.3",
+              "function": "ValidateClusterWorkflowTemplate",
+              "receiver": "",
+              "sha256": "20fbc387610be6a2685de6532535eb845f9e65133677657178dac8db6258df66",
+              "startLine": 258,
+              "endLine": 271,
+              "startByte": 10001,
+              "endByte": 10774
+            },
+            {
+              "sourceID": "wf-validate-3.2.3",
+              "function": "validateSteps",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "8f035d785764a0e8dd2e8096fe792997961ffbb4d75f30c2878b9dadfba3bb24",
+              "startLine": 738,
+              "endLine": 805,
+              "startByte": 29541,
+              "endByte": 32444
+            },
+            {
+              "sourceID": "wf-validate-3.2.3",
+              "function": "validateDAG",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "73947e039d1655cff8ce5db29fd647113d0db80773e60db49dd81cf07ed2e2af",
+              "startLine": 1142,
+              "endLine": 1284,
+              "startByte": 45015,
+              "endByte": 50816
+            }
+          ],
+          "observation": "No allowEmptyValues argument; template validation does not get the later empty-value allowance."
+        },
+        {
+          "sourceID": "wf-validate-3.2.4",
+          "functions": [
+            {
+              "function": "validateArgumentsValues",
+              "receiver": "",
+              "sha256": "9ea40c3229be9b7621e1d23ba06c745969d5167e71ca46d9395d6b01ff15528a",
+              "startLine": 714,
+              "endLine": 746,
+              "startByte": 28685,
+              "endByte": 29950
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.2.4",
+              "function": "ValidateWorkflow",
+              "receiver": "",
+              "sha256": "e536952b60e49863e6da7d3e93a032dab5e7014aee58209cc5ba0d79d94b7b6e",
+              "startLine": 112,
+              "endLine": 236,
+              "startByte": 4457,
+              "endByte": 9068
+            },
+            {
+              "sourceID": "wf-validate-3.2.4",
+              "function": "ValidateWorkflowTemplate",
+              "receiver": "",
+              "sha256": "223eddd196728e7ec12ec688d2d1f6fc47cdf79d9c64540315d255e00d322355",
+              "startLine": 246,
+              "endLine": 261,
+              "startByte": 9417,
+              "endByte": 10184
+            },
+            {
+              "sourceID": "wf-validate-3.2.4",
+              "function": "ValidateClusterWorkflowTemplate",
+              "receiver": "",
+              "sha256": "30a0eff600f2dda4a6164900d5f57ebb812fdd19a8fc734402b69333f766a08b",
+              "startLine": 264,
+              "endLine": 279,
+              "startByte": 10293,
+              "endByte": 11089
+            },
+            {
+              "sourceID": "wf-validate-3.2.4",
+              "function": "validateSteps",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "fb228fb7187b43e30ae82f6d2ad5fe8cf4f93c148d9d944206489dcc3cc9c026",
+              "startLine": 748,
+              "endLine": 815,
+              "startByte": 29952,
+              "endByte": 32862
+            },
+            {
+              "sourceID": "wf-validate-3.2.4",
+              "function": "validateDAG",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "df7fb2066b9d94c5f1b53d866f9fc4999a7f9ab6f1494452abfc84e5364ae8f5",
+              "startLine": 1152,
+              "endLine": 1294,
+              "startByte": 45433,
+              "endByte": 51241
+            }
+          ],
+          "observation": "Top-level template non-submit validation allows empty values; steps/tasks remain strict."
+        }
+      ],
+      "localImplementation": [
+        "internal/analysis/arguments.go:argumentValueDecision",
+        "internal/analysis/local.go:localDiagnostics",
+        "internal/analysis/version_rules.go:versionFeatures"
+      ],
+      "behaviorScenarioIDs": [
+        "wf-compatibility/template-empty-arguments"
+      ],
+      "limitations": [
+        "The product models independent resource validation, not all upstream lint/submit entry points.",
+        "The later argument-value-from-restriction remains active even when allowEmptyValues is true."
+      ],
+      "productScope": "The product applies argumentValueDecision to top-level resource parameter arguments and inherited top-level holder arguments. Upstream caller hashes also document step/DAG contexts, but this product does not currently model supplied step/DAG/lifecycle-hook argument-form validity; callee input supply is modeled separately by missingArguments."
+    },
+    {
+      "id": "argument-configmap",
+      "title": "A ConfigMap-backed argument can satisfy a template input",
+      "modelCondition": "ProcessArgs applies input defaults then reads the matching argument; when the argument has no literal Value it can copy ValueFrom. ConfigMapKeyRef permits validation without a live informer/store; runtime lookup is outside the product model.",
+      "featureEnabledRanges": [
+        {
+          "minInclusive": "3.2.5",
+          "maxExclusive": "4.0.0"
+        },
+        {
+          "minInclusive": "4.0.0",
+          "maxExclusive": "5.0.0"
+        }
+      ],
+      "rangeUniverse": "Only releases present in the pinned catalog; ranges describe the current product model and are not an audit of every release source.",
+      "boundaries": [
+        {
+          "before": "3.2.4",
+          "after": "3.2.5",
+          "kind": "introduction",
+          "change": "Copy argument ValueFrom when no literal argument value is present"
+        }
+      ],
+      "removalsObservedInSamples": [],
+      "evidence": [
+        {
+          "sourceID": "wf-common-util-3.2.4",
+          "functions": [
+            {
+              "function": "ProcessArgs",
+              "receiver": "",
+              "sha256": "23e8aac32bf5c1f26e37ccc8a99b639813844c7b2e6f89b12cddf525501ec9b2",
+              "startLine": 120,
+              "endLine": 179,
+              "startByte": 3792,
+              "endByte": 6187
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.2.4",
+              "function": "validateTemplate",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "13484d1d84a7f867b7b05b35eddad1998db9766298f878c837a9e6c785a520bd",
+              "startLine": 314,
+              "endLine": 420,
+              "startByte": 12656,
+              "endByte": 16294
+            }
+          ],
+          "observation": "Only nonnil argument.Value overwrites the input; argument.ValueFrom is not copied."
+        },
+        {
+          "sourceID": "wf-common-util-3.2.5",
+          "functions": [
+            {
+              "function": "ProcessArgs",
+              "receiver": "",
+              "sha256": "e30757c0bf82c17f2bf8b47741d97e42ebe78891fb15cec73841ed8a45ecaa9c",
+              "startLine": 120,
+              "endLine": 183,
+              "startByte": 3792,
+              "endByte": 6248
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.2.5",
+              "function": "validateTemplate",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "3cc2b1531ecf584586194b58b983baf837547cfae05c8ff72d5c6919b60300f6",
+              "startLine": 322,
+              "endLine": 432,
+              "startByte": 12956,
+              "endByte": 16684
+            }
+          ],
+          "observation": "Argument.ValueFrom is copied in the no-literal-value branch and ConfigMapKeyRef follows the existing validation path."
+        }
+      ],
+      "localImplementation": [
+        "internal/analysis/arguments.go:missingArguments",
+        "internal/analysis/local.go:localDiagnostics",
+        "internal/analysis/external.go:externalPrepared",
+        "internal/analysis/version_rules.go:versionFeatures"
+      ],
+      "behaviorScenarioIDs": [
+        "wf-compatibility/argument-configmap"
+      ],
+      "limitations": [
+        "No live ConfigMap existence, namespace, key contents or RBAC proof."
+      ]
+    },
+    {
+      "id": "dag-omitted",
+      "title": "DAG depends may name the Omitted task result",
+      "modelCondition": "ValidateTaskResults parses task.Result tokens from depends and permits only named result constants; validateDAG calls it for each task.",
+      "featureEnabledRanges": [
+        {
+          "minInclusive": "3.3.9",
+          "maxExclusive": "4.0.0"
+        },
+        {
+          "minInclusive": "4.0.0",
+          "maxExclusive": "5.0.0"
+        }
+      ],
+      "rangeUniverse": "Only releases present in the pinned catalog; ranges describe the current product model and are not an audit of every release source.",
+      "boundaries": [
+        {
+          "before": "3.3.8",
+          "after": "3.3.9",
+          "kind": "introduction",
+          "change": "Add TaskResultOmitted to the accepted result switch"
+        }
+      ],
+      "removalsObservedInSamples": [],
+      "evidence": [
+        {
+          "sourceID": "wf-ancestry-3.3.8",
+          "functions": [
+            {
+              "function": "ValidateTaskResults",
+              "receiver": "",
+              "sha256": "4481f902a99d0ba4af9f9d19431a1f58ba9085db6ef5f47fa34c0a3589934cfa",
+              "startLine": 88,
+              "endLine": 106,
+              "startByte": 2672,
+              "endByte": 3380
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.3.8",
+              "function": "validateDAG",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "2a037fe6995388c472581725595c5037521eb2a0ad2846a3d90211aa0f2a5882",
+              "startLine": 1158,
+              "endLine": 1309,
+              "startByte": 45366,
+              "endByte": 51465
+            }
+          ],
+          "observation": "Omitted is absent from accepted TaskResult constants and switch."
+        },
+        {
+          "sourceID": "wf-ancestry-3.3.9",
+          "functions": [
+            {
+              "function": "ValidateTaskResults",
+              "receiver": "",
+              "sha256": "1ecc47978f4130adcf15929add1877385a92ac56b09328e16cc9155cc017d9f2",
+              "startLine": 89,
+              "endLine": 107,
+              "startByte": 2719,
+              "endByte": 3446
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.3.9",
+              "function": "validateDAG",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "2a037fe6995388c472581725595c5037521eb2a0ad2846a3d90211aa0f2a5882",
+              "startLine": 1158,
+              "endLine": 1309,
+              "startByte": 45327,
+              "endByte": 51426
+            }
+          ],
+          "observation": "Omitted is present in the accepted TaskResult switch."
+        }
+      ],
+      "localImplementation": [
+        "internal/analysis/local.go:localDiagnostics",
+        "internal/analysis/version_rules.go:versionFeatures"
+      ],
+      "behaviorScenarioIDs": [
+        "wf-compatibility/dag-omitted"
+      ],
+      "limitations": [
+        "Static task-result spelling is checked; task execution and actual omitted state are not simulated."
+      ]
+    },
+    {
+      "id": "workflow-parameters-json",
+      "title": "Workflow parameter JSON aggregate and independent template allowance",
+      "modelCondition": "ValidateWorkflow adds workflow.parameters.json only when merged workflow arguments contain at least one parameter. resolveAllVariables additionally permits workflow.parameters-prefixed references during independent template validation from the same boundary.",
+      "featureEnabledRanges": [
+        {
+          "minInclusive": "3.4.2",
+          "maxExclusive": "4.0.0"
+        },
+        {
+          "minInclusive": "4.0.0",
+          "maxExclusive": "5.0.0"
+        }
+      ],
+      "rangeUniverse": "Only releases present in the pinned catalog; ranges describe the current product model and are not an audit of every release source.",
+      "boundaries": [
+        {
+          "before": "3.4.1",
+          "after": "3.4.2",
+          "kind": "introduction",
+          "change": "Add JSON aggregate global and propagate independent-template allowance"
+        }
+      ],
+      "removalsObservedInSamples": [],
+      "evidence": [
+        {
+          "sourceID": "wf-validate-3.4.1",
+          "functions": [
+            {
+              "function": "ValidateWorkflow",
+              "receiver": "",
+              "sha256": "9200d2c8aecd47e59f2f884b83cb34312d05afc30915ff1813b39e7861e1aa5a",
+              "startLine": 109,
+              "endLine": 246,
+              "startByte": 4177,
+              "endByte": 9661
+            },
+            {
+              "function": "resolveAllVariables",
+              "receiver": "",
+              "sha256": "50e3dd39699413fdf8ba9cf9d2c7c8e6542cc9aba25b3c057d7c35aad4f62355",
+              "startLine": 583,
+              "endLine": 616,
+              "startByte": 22509,
+              "endByte": 24322
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.4.1",
+              "function": "validateTemplate",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "4674203344cf37645b85bde6fe5118eed4bf54d46160d0cad93ab060fd4e3edc",
+              "startLine": 344,
+              "endLine": 453,
+              "startByte": 13768,
+              "endByte": 17602
+            },
+            {
+              "sourceID": "wf-validate-3.4.1",
+              "function": "validateLeaf",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "73b3d2f13ff3342ec914a3bfc572c22ea3f03e55f4cdfa8b9f2619bcd43a9563",
+              "startLine": 635,
+              "endLine": 731,
+              "startByte": 24867,
+              "endByte": 29547
+            },
+            {
+              "sourceID": "wf-validate-3.4.1",
+              "function": "validateSteps",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "fb228fb7187b43e30ae82f6d2ad5fe8cf4f93c148d9d944206489dcc3cc9c026",
+              "startLine": 790,
+              "endLine": 857,
+              "startByte": 31586,
+              "endByte": 34496
+            },
+            {
+              "sourceID": "wf-validate-3.4.1",
+              "function": "validateDAG",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "2a037fe6995388c472581725595c5037521eb2a0ad2846a3d90211aa0f2a5882",
+              "startLine": 1154,
+              "endLine": 1305,
+              "startByte": 45048,
+              "endByte": 51147
+            },
+            {
+              "sourceID": "wf-validate-3.4.1",
+              "function": "validateOutputs",
+              "receiver": "",
+              "sha256": "a41af035f847f8d78b9504bf06c751f8bfe5697652a33c2b6389ab06aa619b1c",
+              "startLine": 959,
+              "endLine": 1030,
+              "startByte": 38058,
+              "endByte": 41134
+            }
+          ],
+          "observation": "No JSON aggregate global and no independent-template parameter-prefix allowance."
+        },
+        {
+          "sourceID": "wf-validate-3.4.2",
+          "functions": [
+            {
+              "function": "ValidateWorkflow",
+              "receiver": "",
+              "sha256": "ddcacd4460d7498e87045542898050a12907d11d091bced8466e8115234aa71a",
+              "startLine": 109,
+              "endLine": 249,
+              "startByte": 4177,
+              "endByte": 10055
+            },
+            {
+              "function": "resolveAllVariables",
+              "receiver": "",
+              "sha256": "78a03326dce552b6d99110465bfec3e5200c4d5b266b277b3706c5c5d1faf52d",
+              "startLine": 586,
+              "endLine": 621,
+              "startByte": 23109,
+              "endByte": 25177
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.4.2",
+              "function": "validateTemplate",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "5700a2bfc2e6f72a748d313b18dd7184b7d7ca59ed998cdc1db0c6758bdc1833",
+              "startLine": 347,
+              "endLine": 456,
+              "startByte": 14162,
+              "endByte": 18141
+            },
+            {
+              "sourceID": "wf-validate-3.4.2",
+              "function": "validateLeaf",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "f892446c2e40ef7cae674ab7e2601a0dd7bf6a1317df4264659c38f2d1a119e5",
+              "startLine": 640,
+              "endLine": 736,
+              "startByte": 25722,
+              "endByte": 30463
+            },
+            {
+              "sourceID": "wf-validate-3.4.2",
+              "function": "validateSteps",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "a7108c37697ec0de790224ced9a3954544e9d65dcc7c6235b233cc3a4a9178ab",
+              "startLine": 798,
+              "endLine": 861,
+              "startByte": 32628,
+              "endByte": 35424
+            },
+            {
+              "sourceID": "wf-validate-3.4.2",
+              "function": "validateDAG",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "90a03ee415672db4e37978da9fcdd49206c99cce1e0a283492e8a00cc53cce42",
+              "startLine": 1154,
+              "endLine": 1302,
+              "startByte": 45946,
+              "endByte": 51970
+            },
+            {
+              "sourceID": "wf-validate-3.4.2",
+              "function": "validateOutputs",
+              "receiver": "",
+              "sha256": "139b5964b3468fe2dc05ab3f67ccf1f6b72d65ce2ce871885e2a7f94c8089d7a",
+              "startLine": 963,
+              "endLine": 1034,
+              "startByte": 38986,
+              "endByte": 42123
+            }
+          ],
+          "observation": "GlobalVarWorkflowParametersJSON is added for nonempty parameter list; template-validation flag reaches variable validation."
+        }
+      ],
+      "localImplementation": [
+        "internal/analysis/references.go:referenceDiagnostics",
+        "internal/analysis/inherited_parameters.go",
+        "internal/analysis/version_rules.go:versionFeatures"
+      ],
+      "behaviorScenarioIDs": [
+        "wf-compatibility/workflow-parameters-json"
+      ],
+      "limitations": [
+        "The aggregate presence condition matters; the feature is not available unconditionally in a Workflow with zero parameters.",
+        "Independent template allowance is not proof that a caller supplies every parameter."
+      ]
+    },
+    {
+      "id": "external-exit",
+      "title": "WorkflowTemplateRef controls exit resolution and holder-template validation coverage",
+      "modelCondition": "ValidateWorkflow selects an external TemplateRef for explicit caller onExit when WorkflowTemplateRef is present, or inherits the holder onExit when caller onExit is absent. Without WorkflowTemplateRef an explicit exit remains local. At the same boundary ValidateWorkflow also validates every template in the referenced holder; older versions validate only the entrypoint-reachable holder templates through existing calls. The product applies that traversal difference to inherited workflow-parameter checks.",
+      "featureEnabledRanges": [
+        {
+          "minInclusive": "3.4.6",
+          "maxExclusive": "4.0.0"
+        },
+        {
+          "minInclusive": "4.0.0",
+          "maxExclusive": "5.0.0"
+        }
+      ],
+      "rangeUniverse": "Only releases present in the pinned catalog; ranges describe the current product model and are not an audit of every release source.",
+      "boundaries": [
+        {
+          "before": "3.4.5",
+          "after": "3.4.6",
+          "kind": "introduction",
+          "change": "Resolve explicit/inherited workflow exits in the referred template holder and validate every referenced-holder template"
+        }
+      ],
+      "removalsObservedInSamples": [],
+      "evidence": [
+        {
+          "sourceID": "wf-validate-3.4.5",
+          "functions": [
+            {
+              "function": "ValidateWorkflow",
+              "receiver": "",
+              "sha256": "ddcacd4460d7498e87045542898050a12907d11d091bced8466e8115234aa71a",
+              "startLine": 111,
+              "endLine": 251,
+              "startByte": 4391,
+              "endByte": 10269
+            },
+            {
+              "function": "validateTemplateHolder",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "f95723881c38daa8461df64befad3f88500b66ef11aa4b359d3a1acab8880494",
+              "startLine": 461,
+              "endLine": 507,
+              "startByte": 18447,
+              "endByte": 20350
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.4.5",
+              "function": "ValidateWorkflowTemplate",
+              "receiver": "",
+              "sha256": "a908bd670a7e36536d0c522c71066cdfdca88f822e732e41d220ee21978b5e99",
+              "startLine": 272,
+              "endLine": 287,
+              "startByte": 10920,
+              "endByte": 11649
+            },
+            {
+              "sourceID": "wf-validate-3.4.5",
+              "function": "ValidateClusterWorkflowTemplate",
+              "receiver": "",
+              "sha256": "7112a3e26eeb73c6acf9ce53efc7233fe90c26a63e4c00956f5a1225b2ca591d",
+              "startLine": 290,
+              "endLine": 305,
+              "startByte": 11758,
+              "endByte": 12516
+            },
+            {
+              "sourceID": "wf-validate-3.4.5",
+              "function": "ValidateCronWorkflow",
+              "receiver": "",
+              "sha256": "e3c1d2164f2ae079d7332be2b69701b2ed0d7d36612c4c50a83d53335636e842",
+              "startLine": 308,
+              "endLine": 338,
+              "startByte": 12567,
+              "endByte": 14078
+            }
+          ],
+          "observation": "Only explicit caller onExit is validated as a local Template holder. The final all-templates loop visits only wf.Spec.Templates; referenced-holder globals are visited through the entrypoint call graph."
+        },
+        {
+          "sourceID": "wf-validate-3.4.6",
+          "functions": [
+            {
+              "function": "ValidateWorkflow",
+              "receiver": "",
+              "sha256": "fba36ce646bbabe5b9d44ccf2498e52a0629fdd70e530d54cf746a2726c635cd",
+              "startLine": 111,
+              "endLine": 279,
+              "startByte": 4391,
+              "endByte": 11853
+            },
+            {
+              "function": "validateTemplateHolder",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "f95723881c38daa8461df64befad3f88500b66ef11aa4b359d3a1acab8880494",
+              "startLine": 489,
+              "endLine": 535,
+              "startByte": 20031,
+              "endByte": 21934
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.4.6",
+              "function": "ValidateWorkflowTemplate",
+              "receiver": "",
+              "sha256": "a908bd670a7e36536d0c522c71066cdfdca88f822e732e41d220ee21978b5e99",
+              "startLine": 300,
+              "endLine": 315,
+              "startByte": 12504,
+              "endByte": 13233
+            },
+            {
+              "sourceID": "wf-validate-3.4.6",
+              "function": "ValidateClusterWorkflowTemplate",
+              "receiver": "",
+              "sha256": "7112a3e26eeb73c6acf9ce53efc7233fe90c26a63e4c00956f5a1225b2ca591d",
+              "startLine": 318,
+              "endLine": 333,
+              "startByte": 13342,
+              "endByte": 14100
+            },
+            {
+              "sourceID": "wf-validate-3.4.6",
+              "function": "ValidateCronWorkflow",
+              "receiver": "",
+              "sha256": "e3c1d2164f2ae079d7332be2b69701b2ed0d7d36612c4c50a83d53335636e842",
+              "startLine": 336,
+              "endLine": 366,
+              "startByte": 14151,
+              "endByte": 15662
+            }
+          ],
+          "observation": "WorkflowTemplateRef selects TemplateRef for caller or inherited onExit. The hasWorkflowTemplateRef branch also iterates every wfSpecHolder.GetWorkflowSpec().Templates with FakeArguments before returning."
+        }
+      ],
+      "localImplementation": [
+        "internal/analysis/local.go:localDiagnostics",
+        "internal/analysis/external.go:externalPrepared",
+        "internal/analysis/external_exit.go",
+        "internal/analysis/inherited_parameters.go",
+        "internal/analysis/version_rules.go:versionFeatures"
+      ],
+      "behaviorScenarioIDs": [
+        "wf-compatibility/external-exit"
+      ],
+      "limitations": [
+        "Requires resolved same-target external holder facts; missing or dynamic external context remains unknown.",
+        "No external resource/controller execution proof.",
+        "The external-exit feature groups two upstream changes at the same sampled boundary; a causal exclusion uses this ID only when the exit branch or expanded holder traversal actually affects the result."
+      ]
+    },
+    {
+      "id": "argument-overwrites-default",
+      "title": "A supplied no-value argument clears the input fallback",
+      "modelCondition": "ProcessArgs applies defaults first. overwriteWithArguments copies a literal argument and clears ValueFrom, or copies argument.ValueFrom and clears input.Value when the supplied argument has no literal value.",
+      "featureEnabledRanges": [
+        {
+          "minInclusive": "3.4.10",
+          "maxExclusive": "4.0.0"
+        },
+        {
+          "minInclusive": "4.0.0",
+          "maxExclusive": "5.0.0"
+        }
+      ],
+      "rangeUniverse": "Only releases present in the pinned catalog; ranges describe the current product model and are not an audit of every release source.",
+      "boundaries": [
+        {
+          "before": "3.4.9",
+          "after": "3.4.10",
+          "kind": "introduction",
+          "change": "Clear prior input.Value when a supplied argument selects ValueFrom"
+        }
+      ],
+      "removalsObservedInSamples": [],
+      "evidence": [
+        {
+          "sourceID": "wf-common-util-3.4.9",
+          "functions": [
+            {
+              "function": "ProcessArgs",
+              "receiver": "",
+              "sha256": "ef095550398d6cade39dbaebeb0e2e4d8992b215f855648ca1ccda2cf9a4fbe7",
+              "startLine": 120,
+              "endLine": 199,
+              "startByte": 3741,
+              "endByte": 6893
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.4.9",
+              "function": "validateTemplate",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "1c759170cf7f1b4a995cc843611d4b48c4486a5d2d833ac4209ea03867d49170",
+              "startLine": 409,
+              "endLine": 519,
+              "startByte": 17118,
+              "endByte": 21107
+            }
+          ],
+          "observation": "Old inline overwrite retains an already-applied default when argument.Value is nil."
+        },
+        {
+          "sourceID": "wf-common-util-3.4.10",
+          "functions": [
+            {
+              "function": "overwriteWithArguments",
+              "receiver": "",
+              "sha256": "c071bdc0c66b6244f080bacc1f8f11e29de4294779ec5e7b8a484eca5ffeaf16",
+              "startLine": 120,
+              "endLine": 130,
+              "startByte": 3553,
+              "endByte": 3814
+            },
+            {
+              "function": "ProcessArgs",
+              "receiver": "",
+              "sha256": "2ad2b8b977c8542dfe25ae7196a787cfe78aa89a9d106d10ae4c1efd6caa98ca",
+              "startLine": 172,
+              "endLine": 219,
+              "startByte": 5622,
+              "endByte": 7394
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.4.10",
+              "function": "validateTemplate",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "1c759170cf7f1b4a995cc843611d4b48c4486a5d2d833ac4209ea03867d49170",
+              "startLine": 409,
+              "endLine": 519,
+              "startByte": 17118,
+              "endByte": 21107
+            }
+          ],
+          "observation": "New helper clears inParam.Value in the supplied argument no-value branch."
+        }
+      ],
+      "localImplementation": [
+        "internal/analysis/arguments.go:missingArguments",
+        "internal/analysis/version_rules.go:versionFeatures"
+      ],
+      "behaviorScenarioIDs": [
+        "wf-compatibility/argument-overwrites-default"
+      ],
+      "limitations": [
+        "Only already-modeled literal/default/ValueFrom argument selection is covered; not arbitrary runtime expression evaluation."
+      ]
+    },
+    {
+      "id": "argument-value-from-restriction",
+      "title": "Argument ValueFrom restricts allowed sources",
+      "modelCondition": "For every nonnil argument ValueFrom, require ConfigMapKeyRef, nonempty Event or Supplied; independently reject nonempty Path, JSONPath, Parameter or Expression. This guard is outside the allowEmptyValues condition.",
+      "featureEnabledRanges": [
+        {
+          "minInclusive": "3.4.17",
+          "maxExclusive": "3.5.0"
+        },
+        {
+          "minInclusive": "3.5.5",
+          "maxExclusive": "4.0.0"
+        },
+        {
+          "minInclusive": "4.0.0",
+          "maxExclusive": "5.0.0"
+        }
+      ],
+      "rangeUniverse": "Only releases present in the pinned catalog; ranges describe the current product model and are not an audit of every release source.",
+      "boundaries": [
+        {
+          "before": "3.4.16",
+          "after": "3.4.17",
+          "kind": "backport-boundary",
+          "change": "Add the argument-specific source-form restriction on the 3.4 maintenance line"
+        },
+        {
+          "before": "3.5.4",
+          "after": "3.5.5",
+          "kind": "introduction",
+          "change": "Add the same argument-specific source-form restriction on the 3.5 line"
+        }
+      ],
+      "removalsObservedInSamples": [],
+      "evidence": [
+        {
+          "sourceID": "wf-validate-3.4.16",
+          "functions": [
+            {
+              "function": "validateArgumentsValues",
+              "receiver": "",
+              "sha256": "c9ca6ed667f714d4aa7aeae9527d857881c85819bebbd28cdd510043a8602c69",
+              "startLine": 854,
+              "endLine": 892,
+              "startByte": 36237,
+              "endByte": 37676
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.4.16",
+              "function": "validateArguments",
+              "receiver": "",
+              "sha256": "f0b5d5abe1b695a3ed92b419fa4b4669987d750cd496e96bf0265655d0ccc218",
+              "startLine": 831,
+              "endLine": 837,
+              "startByte": 35467,
+              "endByte": 35720
+            },
+            {
+              "sourceID": "wf-validate-3.4.16",
+              "function": "ValidateWorkflow",
+              "receiver": "",
+              "sha256": "a4f6c82eeef9ae867d4caef7f488d0fc0371417d0b0e6b9abcb916721b3b10c2",
+              "startLine": 139,
+              "endLine": 311,
+              "startByte": 5471,
+              "endByte": 13011
+            },
+            {
+              "sourceID": "wf-validate-3.4.16",
+              "function": "validateSteps",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "b0687f6be2cef63f59ccb5f689dc3a584171ff3fe6d48b2f641bf1dd9b08322f",
+              "startLine": 894,
+              "endLine": 972,
+              "startByte": 37678,
+              "endByte": 40809
+            },
+            {
+              "sourceID": "wf-validate-3.4.16",
+              "function": "validateDAG",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "90a03ee415672db4e37978da9fcdd49206c99cce1e0a283492e8a00cc53cce42",
+              "startLine": 1265,
+              "endLine": 1413,
+              "startByte": 51331,
+              "endByte": 57355
+            }
+          ],
+          "observation": "No argument-specific ValueFrom allowed/forbidden form guard."
+        },
+        {
+          "sourceID": "wf-validate-3.4.17",
+          "functions": [
+            {
+              "function": "validateArgumentsValues",
+              "receiver": "",
+              "sha256": "9411a912ce3c7013b3003e2675e5483413e7fa95325c245a96a93d30af1b9dc0",
+              "startLine": 854,
+              "endLine": 905,
+              "startByte": 36237,
+              "endByte": 38499
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.4.17",
+              "function": "validateArguments",
+              "receiver": "",
+              "sha256": "f0b5d5abe1b695a3ed92b419fa4b4669987d750cd496e96bf0265655d0ccc218",
+              "startLine": 831,
+              "endLine": 837,
+              "startByte": 35467,
+              "endByte": 35720
+            },
+            {
+              "sourceID": "wf-validate-3.4.17",
+              "function": "ValidateWorkflow",
+              "receiver": "",
+              "sha256": "a4f6c82eeef9ae867d4caef7f488d0fc0371417d0b0e6b9abcb916721b3b10c2",
+              "startLine": 139,
+              "endLine": 311,
+              "startByte": 5471,
+              "endByte": 13011
+            },
+            {
+              "sourceID": "wf-validate-3.4.17",
+              "function": "validateSteps",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "b0687f6be2cef63f59ccb5f689dc3a584171ff3fe6d48b2f641bf1dd9b08322f",
+              "startLine": 907,
+              "endLine": 985,
+              "startByte": 38501,
+              "endByte": 41632
+            },
+            {
+              "sourceID": "wf-validate-3.4.17",
+              "function": "validateDAG",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "90a03ee415672db4e37978da9fcdd49206c99cce1e0a283492e8a00cc53cce42",
+              "startLine": 1278,
+              "endLine": 1426,
+              "startByte": 52154,
+              "endByte": 58178
+            }
+          ],
+          "observation": "Both allowed-source and forbidden-nonempty-field guards are present."
+        },
+        {
+          "sourceID": "wf-validate-3.5.4",
+          "functions": [
+            {
+              "function": "validateArgumentsValues",
+              "receiver": "",
+              "sha256": "c9ca6ed667f714d4aa7aeae9527d857881c85819bebbd28cdd510043a8602c69",
+              "startLine": 857,
+              "endLine": 895,
+              "startByte": 36506,
+              "endByte": 37945
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.5.4",
+              "function": "validateArguments",
+              "receiver": "",
+              "sha256": "f0b5d5abe1b695a3ed92b419fa4b4669987d750cd496e96bf0265655d0ccc218",
+              "startLine": 834,
+              "endLine": 840,
+              "startByte": 35736,
+              "endByte": 35989
+            },
+            {
+              "sourceID": "wf-validate-3.5.4",
+              "function": "ValidateWorkflow",
+              "receiver": "",
+              "sha256": "a4f6c82eeef9ae867d4caef7f488d0fc0371417d0b0e6b9abcb916721b3b10c2",
+              "startLine": 140,
+              "endLine": 312,
+              "startByte": 5566,
+              "endByte": 13106
+            },
+            {
+              "sourceID": "wf-validate-3.5.4",
+              "function": "validateSteps",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "b0687f6be2cef63f59ccb5f689dc3a584171ff3fe6d48b2f641bf1dd9b08322f",
+              "startLine": 897,
+              "endLine": 975,
+              "startByte": 37947,
+              "endByte": 41078
+            },
+            {
+              "sourceID": "wf-validate-3.5.4",
+              "function": "validateDAG",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "90a03ee415672db4e37978da9fcdd49206c99cce1e0a283492e8a00cc53cce42",
+              "startLine": 1269,
+              "endLine": 1417,
+              "startByte": 51654,
+              "endByte": 57678
+            }
+          ],
+          "observation": "No argument-specific ValueFrom allowed/forbidden form guard."
+        },
+        {
+          "sourceID": "wf-validate-3.5.5",
+          "functions": [
+            {
+              "function": "validateArgumentsValues",
+              "receiver": "",
+              "sha256": "9411a912ce3c7013b3003e2675e5483413e7fa95325c245a96a93d30af1b9dc0",
+              "startLine": 857,
+              "endLine": 908,
+              "startByte": 36506,
+              "endByte": 38768
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.5.5",
+              "function": "validateArguments",
+              "receiver": "",
+              "sha256": "f0b5d5abe1b695a3ed92b419fa4b4669987d750cd496e96bf0265655d0ccc218",
+              "startLine": 834,
+              "endLine": 840,
+              "startByte": 35736,
+              "endByte": 35989
+            },
+            {
+              "sourceID": "wf-validate-3.5.5",
+              "function": "ValidateWorkflow",
+              "receiver": "",
+              "sha256": "a4f6c82eeef9ae867d4caef7f488d0fc0371417d0b0e6b9abcb916721b3b10c2",
+              "startLine": 140,
+              "endLine": 312,
+              "startByte": 5566,
+              "endByte": 13106
+            },
+            {
+              "sourceID": "wf-validate-3.5.5",
+              "function": "validateSteps",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "b0687f6be2cef63f59ccb5f689dc3a584171ff3fe6d48b2f641bf1dd9b08322f",
+              "startLine": 910,
+              "endLine": 988,
+              "startByte": 38770,
+              "endByte": 41901
+            },
+            {
+              "sourceID": "wf-validate-3.5.5",
+              "function": "validateDAG",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "90a03ee415672db4e37978da9fcdd49206c99cce1e0a283492e8a00cc53cce42",
+              "startLine": 1282,
+              "endLine": 1430,
+              "startByte": 52477,
+              "endByte": 58501
+            }
+          ],
+          "observation": "Both allowed-source and forbidden-nonempty-field guards are present."
+        }
+      ],
+      "localImplementation": [
+        "internal/analysis/arguments.go:argumentValueDecision",
+        "internal/analysis/local.go:localDiagnostics",
+        "internal/analysis/external.go:externalPrepared",
+        "internal/analysis/version_rules.go:versionFeatures"
+      ],
+      "behaviorScenarioIDs": [
+        "wf-compatibility/argument-value-from-restriction"
+      ],
+      "limitations": [
+        "Output-parameter ValueFrom rules are a different validation context.",
+        "The fetched source does not list JQFilter in this particular argument forbidden-field guard; do not silently extend the predicate.",
+        "Equal CRD schemas across each sampled patch pair do not imply equal semantics."
+      ],
+      "productScope": "The product applies argumentValueDecision to top-level resource parameter arguments and inherited top-level holder arguments. Upstream caller hashes also document step/DAG contexts, but this product does not currently model supplied step/DAG/lifecycle-hook argument-form validity; callee input supply is modeled separately by missingArguments."
+    },
+    {
+      "id": "absent-output-marker",
+      "title": "Absent optional output marker preserves fallback instead of becoming a supplied literal",
+      "modelCondition": "After applying input defaults, ProcessArgs recognizes the exact literal __argo-internal.absent-optional-output__. It skips argument overwrite; if input.Value and input.ValueFrom are both nil, it fails with an absent optional input error.",
+      "featureEnabledRanges": [
+        {
+          "minInclusive": "3.7.16",
+          "maxExclusive": "4.0.0"
+        },
+        {
+          "minInclusive": "4.0.7",
+          "maxExclusive": "4.1.0"
+        },
+        {
+          "minInclusive": "4.1.0",
+          "maxExclusive": "5.0.0"
+        }
+      ],
+      "rangeUniverse": "Only releases present in the pinned catalog; ranges describe the current product model and are not an audit of every release source.",
+      "boundaries": [
+        {
+          "before": "3.7.15",
+          "after": "3.7.16",
+          "kind": "maintenance-line-boundary",
+          "change": "Introduce marker-aware input handling on the 3.7 maintenance line"
+        },
+        {
+          "before": "4.0.6",
+          "after": "4.0.7",
+          "kind": "parallel-backport-boundary",
+          "change": "Introduce marker-aware input handling on the 4.0 maintenance line"
+        }
+      ],
+      "removalsObservedInSamples": [],
+      "evidence": [
+        {
+          "sourceID": "wf-common-util-3.7.15",
+          "functions": [
+            {
+              "function": "ProcessArgs",
+              "receiver": "",
+              "sha256": "2ad2b8b977c8542dfe25ae7196a787cfe78aa89a9d106d10ae4c1efd6caa98ca",
+              "startLine": 160,
+              "endLine": 207,
+              "startByte": 5277,
+              "endByte": 7049
+            },
+            {
+              "function": "overwriteWithArguments",
+              "receiver": "",
+              "sha256": "c071bdc0c66b6244f080bacc1f8f11e29de4294779ec5e7b8a484eca5ffeaf16",
+              "startLine": 103,
+              "endLine": 113,
+              "startByte": 3102,
+              "endByte": 3363
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.7.15",
+              "function": "validateTemplate",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "60b251248772ec40226fe2487af8692d2e02754063760717d739672da1dd5bbe",
+              "startLine": 458,
+              "endLine": 571,
+              "startByte": 19054,
+              "endByte": 23284
+            }
+          ],
+          "observation": "No absent-marker branch; literal argument is passed to overwriteWithArguments."
+        },
+        {
+          "sourceID": "wf-common-util-3.7.16",
+          "functions": [
+            {
+              "function": "ProcessArgs",
+              "receiver": "",
+              "sha256": "9b3a451d94723604170e8fbb3dc074ae72f5afa8b7caf97a125a8078f113eab6",
+              "startLine": 160,
+              "endLine": 218,
+              "startByte": 5277,
+              "endByte": 7842
+            },
+            {
+              "function": "overwriteWithArguments",
+              "receiver": "",
+              "sha256": "c071bdc0c66b6244f080bacc1f8f11e29de4294779ec5e7b8a484eca5ffeaf16",
+              "startLine": 103,
+              "endLine": 113,
+              "startByte": 3102,
+              "endByte": 3363
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-3.7.16",
+              "function": "validateTemplate",
+              "receiver": "(ctx *templateValidationCtx)",
+              "sha256": "60b251248772ec40226fe2487af8692d2e02754063760717d739672da1dd5bbe",
+              "startLine": 458,
+              "endLine": 571,
+              "startByte": 19054,
+              "endByte": 23284
+            }
+          ],
+          "observation": "Marker leaves fallback intact and fails if both input Value and ValueFrom are absent."
+        },
+        {
+          "sourceID": "wf-common-util-4.0.0",
+          "functions": [
+            {
+              "function": "ProcessArgs",
+              "receiver": "",
+              "sha256": "cefeb899e773d7d9d929c52479789a3f64c66b18ac727a105620377061fe6920",
+              "startLine": 162,
+              "endLine": 209,
+              "startByte": 5462,
+              "endByte": 7265
+            },
+            {
+              "function": "overwriteWithArguments",
+              "receiver": "",
+              "sha256": "c071bdc0c66b6244f080bacc1f8f11e29de4294779ec5e7b8a484eca5ffeaf16",
+              "startLine": 104,
+              "endLine": 114,
+              "startByte": 3200,
+              "endByte": 3461
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-4.0.0",
+              "function": "validateTemplate",
+              "receiver": "(tctx *templateValidationCtx)",
+              "sha256": "1ea90abb37bfc29ac678aa1c78b07caee05b2389ea88fc41f1a075913f4179f5",
+              "startLine": 454,
+              "endLine": 566,
+              "startByte": 19137,
+              "endByte": 23418
+            }
+          ],
+          "observation": "No absent-marker branch despite numerically greater major version."
+        },
+        {
+          "sourceID": "wf-common-util-4.0.6",
+          "functions": [
+            {
+              "function": "ProcessArgs",
+              "receiver": "",
+              "sha256": "cefeb899e773d7d9d929c52479789a3f64c66b18ac727a105620377061fe6920",
+              "startLine": 162,
+              "endLine": 209,
+              "startByte": 5462,
+              "endByte": 7265
+            },
+            {
+              "function": "overwriteWithArguments",
+              "receiver": "",
+              "sha256": "c071bdc0c66b6244f080bacc1f8f11e29de4294779ec5e7b8a484eca5ffeaf16",
+              "startLine": 104,
+              "endLine": 114,
+              "startByte": 3200,
+              "endByte": 3461
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-4.0.6",
+              "function": "validateTemplate",
+              "receiver": "(tctx *templateValidationCtx)",
+              "sha256": "1ea90abb37bfc29ac678aa1c78b07caee05b2389ea88fc41f1a075913f4179f5",
+              "startLine": 460,
+              "endLine": 572,
+              "startByte": 19348,
+              "endByte": 23629
+            }
+          ],
+          "observation": "Last sampled pre-boundary 4.0 release lacks marker handling."
+        },
+        {
+          "sourceID": "wf-common-util-4.0.7",
+          "functions": [
+            {
+              "function": "ProcessArgs",
+              "receiver": "",
+              "sha256": "14c8f98f724ad10a52a5a0182add5be4861918f77892b6b824e7af1b99b1b3f2",
+              "startLine": 162,
+              "endLine": 220,
+              "startByte": 5462,
+              "endByte": 8058
+            },
+            {
+              "function": "overwriteWithArguments",
+              "receiver": "",
+              "sha256": "c071bdc0c66b6244f080bacc1f8f11e29de4294779ec5e7b8a484eca5ffeaf16",
+              "startLine": 104,
+              "endLine": 114,
+              "startByte": 3200,
+              "endByte": 3461
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-4.0.7",
+              "function": "validateTemplate",
+              "receiver": "(tctx *templateValidationCtx)",
+              "sha256": "1ea90abb37bfc29ac678aa1c78b07caee05b2389ea88fc41f1a075913f4179f5",
+              "startLine": 460,
+              "endLine": 572,
+              "startByte": 19348,
+              "endByte": 23629
+            }
+          ],
+          "observation": "Adds the same marker-specific fallback/missing-input branch."
+        },
+        {
+          "sourceID": "wf-common-util-4.1.0",
+          "functions": [
+            {
+              "function": "ProcessArgs",
+              "receiver": "",
+              "sha256": "8d5672ec37717afaab60bf22c64ffbb9993fd933799f84fdd4b11855823d778b",
+              "startLine": 200,
+              "endLine": 257,
+              "startByte": 7370,
+              "endByte": 9965
+            },
+            {
+              "function": "overwriteWithArguments",
+              "receiver": "",
+              "sha256": "c071bdc0c66b6244f080bacc1f8f11e29de4294779ec5e7b8a484eca5ffeaf16",
+              "startLine": 143,
+              "endLine": 153,
+              "startByte": 5129,
+              "endByte": 5390
+            }
+          ],
+          "callers": [
+            {
+              "sourceID": "wf-validate-4.1.0",
+              "function": "validateTemplate",
+              "receiver": "(tctx *templateValidationCtx)",
+              "sha256": "00a4492227eec4df6de59568113f0a7bdb32b55e804f60b0a2fef2f6471e116b",
+              "startLine": 489,
+              "endLine": 628,
+              "startByte": 20398,
+              "endByte": 26053
+            }
+          ],
+          "observation": "Marker-specific branch remains present."
+        }
+      ],
+      "localImplementation": [
+        "internal/analysis/arguments.go:missingArguments",
+        "internal/analysis/version_rules.go:versionFeatures"
+      ],
+      "behaviorScenarioIDs": [
+        "wf-compatibility/absent-output-marker"
+      ],
+      "limitations": [
+        "The product models the exact internal literal and input fallback behavior; it does not simulate producer-node optional output execution.",
+        "4.0.0–4.0.6 must not inherit 3.7.16 behavior just because major 4 is numerically greater.",
+        "Automatic mode retains its existing permissive behavior; the 4.0.0–4.0.6 correction is an intentional exact-pin bug fix."
+      ],
+      "constantEvidence": {
+        "sourceID": "wf-common-3.7.16",
+        "name": "AbsentOptionalArgumentValue",
+        "value": "__argo-internal.absent-optional-output__",
+        "line": 290
+      }
+    }
+  ]
+}

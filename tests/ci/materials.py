@@ -11,7 +11,7 @@ def verify(name,destination,root,sha,require):
  expected_inputs={filename:sha(root/source) for filename,source in contract.get('inputs',{}).items()}
  sessions=[destination]
  if 'sessionCases' in contract:
-  cases=json.loads((root/contract['sessionCases']).read_text())['cases'];sessions=[]
+  fixture=json.loads((root/contract['sessionCases']).read_text());cases=fixture['cases'];sessions=[]
   mixed=(root/'tests/fixtures/schema/mixed.yaml').read_text();good=mixed.replace('parallelism: wrong','parallelism: 2');config='schemaVersion: 1\ntargetVersion: "3.6.0"\n'
   import hashlib
   for case in cases:
@@ -20,6 +20,19 @@ def verify(name,destination,root,sha,require):
     for f,text in {'workspace/workflow.yaml':good,'workspace/.argo-workflows-ls.yaml':config,**({'other/workflow.yaml':'\n'+good.replace('name: example','name: other'),'other/.argo-workflows-ls.yaml':config} if case=='root-isolation' else {})}.items():
      expected_inputs[f'{case}/{mode}/{f}']=hashlib.sha256(text.encode()).hexdigest()
     require((folder/'snapshot.json').is_file() and (folder/'events.json').is_file(),name+': missing final state or event history')
+  for case in fixture.get('appliedEditCases',[]):
+   oracle=fixture['appliedEdits'][case]
+   for mode in ('incremental','fresh'):
+    folder=destination/case/mode;sessions.append(folder)
+    expected_inputs[f'{case}/{mode}/workspace/.argo-workflows-ls.yaml']=hashlib.sha256(fixture['editConfig'].encode()).hexdigest()
+    for prefix,texts in [('workspace',oracle['inputs']),('applied',oracle['expected']),
+                         *[('oracle/'+stage,oracle.get(stage,{})) for stage in ('inputs','afterCompletion','expected')]]:
+     for relative,text in texts.items():expected_inputs[f'{case}/{mode}/{prefix}/{relative}']=hashlib.sha256(text.encode()).hexdigest()
+    for required in ('snapshot.json','events.json','oracle-controls.json'):
+     require((folder/required).is_file(),name+': missing applied-edit material '+str(folder/required))
+    controls=json.loads((folder/'oracle-controls.json').read_text())
+    expected_controls=['stale-version','absent-version','outside-uri','other-scope-uri','duplicate-document','overlapping-edits','split-surrogate','column-outside-line','wrong-inserted-bytes']
+    require(controls==[{'name':control,'rejected':True} for control in expected_controls],name+': missing or failed applied-edit oracle control')
  require(manifest.get('inputHashes')==expected_inputs,name+': wrong input path/hash inventory')
  for filename,digest in expected_inputs.items():require((destination/filename).is_file() and sha(destination/filename)==digest,name+': missing or changed input '+filename)
  for folder in sessions:

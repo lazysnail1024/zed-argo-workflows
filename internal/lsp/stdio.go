@@ -15,6 +15,7 @@ import (
 	"github.com/lazysnail1024/zed-argo-workflows/internal/buildinfo"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 	"io"
 	"path/filepath"
@@ -28,6 +29,8 @@ type message struct {
 	ID      json.RawMessage `json:"id"`
 	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params"`
+	Result  json.RawMessage `json:"result"`
+	Error   json.RawMessage `json:"error"`
 }
 type buffer struct {
 	snapshot    source.Snapshot
@@ -35,34 +38,38 @@ type buffer struct {
 	unavailable string
 }
 type session struct {
-	render            RenderCommand
-	showDocument      bool
-	catalog           *catalog
-	focus, method     string
-	callerDefinitions bool
-	proofs            []catalogProof
-	localPublication  bool
-	queryResults      map[string]json.RawMessage
-	queryBytes        int
-	queryKey          string
-	externalFacts     *analysis.ExternalFacts
-	factInput         *workspace.Workspace
-	factBoundary      string
-	factMixed         bool
-	workspaces        map[workspaceKey]workspace.Workspace
-	ctx               context.Context
-	pending           map[string]bool
-	out               io.Writer
-	log               io.Writer
-	roots             []string
-	override          string
-	buffers           map[string]buffer
-	initialized       bool
-	shutdown          bool
-	epoch             uint64
-	versionedEdits    bool
-	actions           map[string]pendingAction
-	actionSequence    uint64
+	tracer               *worktrace.Tracer
+	explainActionAllowed bool
+	explainPosition      *analysis.Position
+	render               RenderCommand
+	showDocument         bool
+	catalog              *catalog
+	focus, method        string
+	callerDefinitions    bool
+	proofs               []catalogProof
+	editConfiguration    *editConfiguration
+	localPublication     bool
+	queryResults         map[string]json.RawMessage
+	queryBytes           int
+	queryKey             string
+	externalFacts        *analysis.ExternalFacts
+	factInput            *workspace.Workspace
+	factBoundary         string
+	factMixed            bool
+	workspaces           map[workspaceKey]workspace.Workspace
+	ctx                  context.Context
+	pending              map[string]bool
+	out                  io.Writer
+	log                  io.Writer
+	roots                []string
+	override             string
+	buffers              map[string]buffer
+	initialized          bool
+	shutdown             bool
+	epoch                uint64
+	versionedEdits       bool
+	actions              map[string]pendingAction
+	actionSequence       uint64
 }
 
 func read(r *bufio.Reader) (message, error) {
@@ -105,7 +112,31 @@ func read(r *bufio.Reader) (message, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return m, err
 	}
-	if m.JSONRPC != "2.0" || m.Method == "" {
+	if m.JSONRPC != "2.0" {
+		return m, fmt.Errorf("invalid JSON-RPC request")
+	}
+	if m.Method == "" {
+		// The server requests window/showDocument. Its host response has no
+		// method and must reach Serve's response branch instead of terminating
+		// the connection. Methodless notifications and mixed envelopes remain
+		// invalid; only this server's string request IDs are accepted here.
+		var fields map[string]json.RawMessage
+		var id string
+		_ = json.Unmarshal(data, &fields)
+		_, hasMethod := fields["method"]
+		if hasMethod || len(m.Params) != 0 || json.Unmarshal(m.ID, &id) != nil || !strings.HasPrefix(id, "argo-workflows-render:") || (len(m.Result) == 0) == (len(m.Error) == 0) {
+			return m, fmt.Errorf("invalid JSON-RPC response")
+		}
+		if len(m.Error) > 0 {
+			var failure struct {
+				Code    *int    `json:"code"`
+				Message *string `json:"message"`
+			}
+			if json.Unmarshal(m.Error, &failure) != nil || failure.Code == nil || failure.Message == nil {
+				return m, fmt.Errorf("invalid JSON-RPC response error")
+			}
+		}
+	} else if len(m.Result) != 0 || len(m.Error) != 0 {
 		return m, fmt.Errorf("invalid JSON-RPC request")
 	}
 	return m, nil
@@ -122,6 +153,11 @@ func (s *session) write(value any) error {
 	return err
 }
 func (s *session) reply(id json.RawMessage, result any) error {
+	if s.method == "textDocument/codeAction" {
+		if actions, ok := result.([]map[string]any); ok {
+			result = s.withExplanationAction(s.focus, actions)
+		}
+	}
 	if s.queryKey != "" && s.context().Err() == nil {
 		raw, err := json.Marshal(result)
 		if err == nil && len(raw) <= 4*1024*1024 {
@@ -138,6 +174,12 @@ func (s *session) reply(id json.RawMessage, result any) error {
 	return s.write(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
 }
 func (s *session) failure(id json.RawMessage, code int, text string) error {
+	if code == -32801 {
+		return s.failureError(id, code, s.method, analysis.Refuse("STALE_INPUT", text))
+	}
+	if code == -32800 {
+		return s.failureError(id, code, s.method, analysis.Refuse("CANCELLED", text))
+	}
 	if len(id) == 0 {
 		return nil
 	}
@@ -313,7 +355,14 @@ func (s *session) queryDocument(uri string) (workspace.Document, error) {
 		return workspace.Document{}, fmt.Errorf("document is outside workspace")
 	}
 	if _, ok := s.buffers[uri]; ok {
-		return s.bufferDocument(uri)
+		document, err := s.bufferDocument(uri)
+		if err == nil && s.catalog != nil {
+			// Buffer/header acquisition remains authoritative. The shared store
+			// restores only exact snapshot/release facts into this invocation;
+			// it supplies neither input proofs nor workspace completeness.
+			s.catalog.facts.Restore(s.context(), workspace.Workspace{Documents: []workspace.Document{document}})
+		}
+		return document, err
 	}
 	document, proof, err := s.catalog.document(s.context(), uri)
 	if err == nil {
@@ -421,10 +470,12 @@ func (s *session) handle(m message) (bool, int, error) {
 		}
 		s.initialized = true
 		capabilities := map[string]any{"workspace": map[string]any{"workspaceFolders": map[string]any{"supported": true, "changeNotifications": true}}, "positionEncoding": "utf-16", "completionProvider": map[string]any{"resolveProvider": false}, "hoverProvider": true, "definitionProvider": true, "referencesProvider": true, "documentSymbolProvider": true, "workspaceSymbolProvider": true, "textDocumentSync": map[string]any{"openClose": true, "change": 2, "save": map[string]any{"includeText": false}}}
+		commands := []string{explainCommand}
 		if s.render != nil {
-			capabilities["executeCommandProvider"] = map[string]any{"commands": []string{"argo-workflows.renderCheck"}}
-			capabilities["codeActionProvider"] = map[string]any{"codeActionKinds": []string{"source", "quickfix"}}
+			commands = append(commands, "argo-workflows.renderCheck")
 		}
+		capabilities["executeCommandProvider"] = map[string]any{"commands": commands}
+		capabilities["codeActionProvider"] = map[string]any{"resolveProvider": true, "codeActionKinds": []string{"source", "quickfix"}}
 		if s.versionedEdits {
 			capabilities["codeActionProvider"] = map[string]any{"resolveProvider": true, "codeActionKinds": []string{"quickfix", "source"}}
 			capabilities["renameProvider"] = map[string]any{"prepareProvider": true}
@@ -448,6 +499,9 @@ func (s *session) handle(m message) (bool, int, error) {
 				return false, 0, s.failure(m.ID, -32602, b.unavailable)
 			}
 		}
+	}
+	if handled, err := s.explanationRequest(m); handled {
+		return false, 0, err
 	}
 	if handled, err := s.renderRequest(m); handled {
 		return false, 0, err

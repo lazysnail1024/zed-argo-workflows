@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,6 +27,7 @@ func CompleteFields(ctx context.Context, snapshot source.Snapshot, version strin
 	if err != nil || field.schema == nil || field.shared {
 		return result, err
 	}
+	worktrace.SchemaQuery(ctx, worktrace.SchemaLookups)
 	query, err := schemaquery.Lookup(ctx, field.schema, field.path, field.value, schemaquery.Limits{})
 	if err != nil {
 		return nil, err
@@ -46,6 +48,7 @@ func CompleteFields(ctx context.Context, snapshot source.Snapshot, version strin
 		sort.Strings(names)
 		for _, name := range names {
 			path := append(append([]string(nil), field.path...), name)
+			worktrace.SchemaQuery(ctx, worktrace.SchemaAllowsKey)
 			allowed, err := schemaquery.AllowsKey(ctx, field.schema, path, field.value, schemaquery.Limits{})
 			if err != nil {
 				return nil, err
@@ -53,6 +56,7 @@ func CompleteFields(ctx context.Context, snapshot source.Snapshot, version strin
 			if !allowed {
 				continue
 			}
+			worktrace.SchemaQuery(ctx, worktrace.SchemaTypes)
 			kind, err := schemaquery.Type(ctx, field.schema, path, field.value, schemaquery.Limits{})
 			if err != nil {
 				return nil, err
@@ -69,6 +73,7 @@ func CompleteFields(ctx context.Context, snapshot source.Snapshot, version strin
 			result = append(result, map[string]any{"label": name, "kind": 10, "detail": detail, "insertTextFormat": 1, "textEdit": map[string]any{"range": queryRange(snapshot, field.span), "newText": replacement}})
 		}
 	} else {
+		worktrace.SchemaQuery(ctx, worktrace.SchemaValues)
 		values, err := schemaquery.Values(ctx, field.schema, field.path, field.value, schemaquery.Limits{})
 		if err != nil {
 			return nil, err
@@ -106,12 +111,14 @@ func HoverField(ctx context.Context, snapshot source.Snapshot, version string, p
 		}
 		path = append(append([]string(nil), path...), field.name)
 	}
+	worktrace.SchemaQuery(ctx, worktrace.SchemaLookups)
 	query, err := schemaquery.Lookup(ctx, field.schema, path, field.value, schemaquery.Limits{})
 	if errors.Is(err, schemaquery.ErrUnsupported) {
 		// A template name has an unconditional positive property declaration even
 		// when its enclosing template has negative implementation-choice rules.
 		// Read only that declaration for documentation; validation stays unchanged.
 		if node := templateNameDocumentation(field.schema, path); node != nil {
+			worktrace.SchemaQuery(ctx, worktrace.SchemaLookups)
 			query, err = schemaquery.Lookup(ctx, node, nil, nil, schemaquery.Limits{})
 			field.schema, path, field.value = node, nil, nil
 		}
@@ -122,6 +129,7 @@ func HoverField(ctx context.Context, snapshot source.Snapshot, version string, p
 	if len(query.Nodes) == 0 {
 		return nil, nil
 	}
+	worktrace.SchemaQuery(ctx, worktrace.SchemaTypes)
 	kind, err := schemaquery.Type(ctx, field.schema, path, field.value, schemaquery.Limits{})
 	if err != nil {
 		return nil, err

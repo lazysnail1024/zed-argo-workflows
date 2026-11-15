@@ -3,6 +3,7 @@ package analysis
 import (
 	"container/list"
 	"context"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	"sync"
 
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
@@ -83,6 +84,7 @@ func (s *FactStore) Restore(ctx context.Context, w workspace.Workspace) {
 	facts := &Facts{boundary: FactBoundary(w), views: map[snapshotIdentity]yamlview.View{}, projections: map[projectionIdentity]projectedDocument{}, costs: map[snapshotIdentity]factBudget{}}
 	s.mu.Lock()
 	for _, document := range w.Documents {
+		worktrace.Add(ctx, worktrace.FactLookups, 1)
 		entry := s.entries[document.Snapshot.URI()]
 		if entry == nil {
 			continue

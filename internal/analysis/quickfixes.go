@@ -3,6 +3,7 @@ package analysis
 import (
 	"context"
 	"encoding/json"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	"sort"
 	"strings"
 
@@ -118,6 +119,7 @@ func ValueFixes(ctx context.Context, w workspace.Workspace, d workspace.Document
 			if err != nil || field.key || field.schema == nil || field.span != node.Span() {
 				continue
 			}
+			worktrace.SchemaQuery(ctx, worktrace.SchemaValues)
 			values, err = schemaquery.Values(ctx, field.schema, field.path, field.value, schemaquery.Limits{})
 			if err != nil {
 				continue

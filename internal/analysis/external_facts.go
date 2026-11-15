@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 )
 
 // ExternalFacts retains completed per-resource reference checks. Keys include
@@ -31,15 +32,18 @@ func CaptureExternalFacts(ctx context.Context) *ExternalFacts {
 	return &ExternalFacts{checks: state.used}
 }
 func externalFact(ctx context.Context, key [32]byte) ([]Diagnostic, bool) {
+	worktrace.Add(ctx, worktrace.ExternalFactLookups, 1)
 	state, _ := ctx.Value(externalFactsKey{}).(*externalFactsState)
 	if state == nil {
 		return nil, false
 	}
 	if found, ok := state.used[key]; ok {
+		worktrace.Add(ctx, worktrace.ExternalFactHits, 1)
 		return found, true
 	}
 	if state.prior != nil {
 		if found, ok := state.prior.checks[key]; ok {
+			worktrace.Add(ctx, worktrace.ExternalFactHits, 1)
 			retainExternalFact(ctx, key, found)
 			return found, true
 		}

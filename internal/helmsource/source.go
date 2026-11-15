@@ -6,6 +6,7 @@ import (
 	"context"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/k8s-crd-toolkit/yamlview"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	"strings"
 )
 
@@ -155,6 +156,7 @@ func Project(ctx context.Context, s source.Snapshot) (source.Snapshot, bool) {
 	if err != nil {
 		return s, false
 	}
+	worktrace.Parse(ctx, worktrace.ParseHelmCalls, len(projected.Text()))
 	view, err := yamlview.Parse(ctx, projected)
 	if err != nil {
 		return s, false

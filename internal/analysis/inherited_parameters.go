@@ -188,9 +188,17 @@ func (p *inheritedParameterQuery) finish(q *externalQuery, bindings []externalBi
 // later validators additionally visit every template in the referenced spec.
 func inheritedValidationTemplates(ctx context.Context, caller, callee resource) []workflowValue {
 	templates := workflowMember(callee.semanticSpec, "templates").Elements()
-	if workflowVersionAtLeast(caller.document.Target.Version, 4, 6) {
+	if workflowFeature(caller.document.Target.Version, externalExit) {
 		return templates
 	}
+	return inheritedEntryTemplates(ctx, caller, callee)
+}
+
+// The pre-expansion traversal remains the same proof used by diagnostics and
+// queries. Explanation attribution can distinguish its reachable templates from
+// additional templates visited only by the external-exit feature gate.
+func inheritedEntryTemplates(ctx context.Context, caller, callee resource) []workflowValue {
+	templates := workflowMember(callee.semanticSpec, "templates").Elements()
 	byName := map[string][]workflowValue{}
 	for _, template := range templates {
 		if ctx.Err() != nil {
@@ -233,7 +241,7 @@ func inheritedValidationTemplates(ctx context.Context, caller, callee resource) 
 
 // Missing globals depend on the calling workflow. Keep this diagnostic at the
 // actual reference, rather than publishing a caller-specific error on shared YAML.
-func inheritedParameterDiagnostics(ctx context.Context, caller, callee resource, emit func(workflowValue, string, string, string)) {
+func inheritedParameterDiagnostics(ctx context.Context, caller, callee resource, emit func(workflowValue, string, string, string, ...string)) {
 	if caller.kind == "WorkflowTemplate" || caller.kind == "ClusterWorkflowTemplate" || workflowMember(callee.semanticSpec, "workflowTemplateRef").present {
 		return
 	}
@@ -246,6 +254,10 @@ func inheritedParameterDiagnostics(ctx context.Context, caller, callee resource,
 	aggregateAvailable := len(callerParameters) > 0 || len(baseParameters) > 0
 	ref := workflowMember(workflowMember(caller.semanticSpec, "workflowTemplateRef"), "name")
 	reported := map[string]bool{}
+	entryReachable := map[source.Span]bool{}
+	for _, template := range inheritedEntryTemplates(ctx, caller, callee) {
+		entryReachable[template.Span()] = true
+	}
 	for _, template := range inheritedValidationTemplates(ctx, caller, callee) {
 		templateName := workflowString(workflowMember(template, "name"))
 		check := func(text string) {
@@ -259,7 +271,7 @@ func inheritedParameterDiagnostics(ctx context.Context, caller, callee resource,
 					continue
 				}
 				plainAggregate := len(parts) == 2
-				if plainAggregate && aggregateAvailable || !plainAggregate && (parts[2] == "json" && workflowVersionAtLeast(caller.document.Target.Version, 4, 2) && aggregateAvailable || known[parts[2]]) {
+				if plainAggregate && aggregateAvailable || !plainAggregate && (parts[2] == "json" && workflowFeature(caller.document.Target.Version, workflowParametersJSON) && aggregateAvailable || known[parts[2]]) {
 					continue
 				}
 				name := "workflow.parameters"
@@ -271,10 +283,17 @@ func inheritedParameterDiagnostics(ctx context.Context, caller, callee resource,
 					continue
 				}
 				reported[key] = true
+				rules := []string{}
+				if !entryReachable[template.Span()] && workflowFeature(caller.document.Target.Version, externalExit) {
+					rules = append(rules, "external-exit")
+				}
+				if !plainAggregate && parts[2] == "json" && aggregateAvailable && !workflowFeature(caller.document.Target.Version, workflowParametersJSON) {
+					rules = append(rules, "workflow-parameters-json")
+				}
 				if plainAggregate {
-					emit(ref, "WF_REFERENCE_SCOPE", "Error", fmt.Sprintf("workflow parameters aggregate is not available for template %s in workflowTemplateRef %s", templateName, workflowString(ref)))
+					emit(ref, "WF_REFERENCE_SCOPE", "Error", fmt.Sprintf("workflow parameters aggregate is not available for template %s in workflowTemplateRef %s", templateName, workflowString(ref)), rules...)
 				} else {
-					emit(ref, "WF_REFERENCE_SCOPE", "Error", fmt.Sprintf("workflow parameter %s is not declared for template %s in workflowTemplateRef %s", name, templateName, workflowString(ref)))
+					emit(ref, "WF_REFERENCE_SCOPE", "Error", fmt.Sprintf("workflow parameter %s is not declared for template %s in workflowTemplateRef %s", name, templateName, workflowString(ref)), rules...)
 				}
 			}
 		}

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Resource Rename through real stdio, with independent byte/binding expectations."""
+import hashlib
 import importlib.util
 import json
 import pathlib
@@ -68,6 +69,21 @@ def apply_all(files, work, result, versions):
         seen.add(relative)
         after[relative] = m.apply(files[relative], {'documentChanges': [change]}, uri, versions[relative])
     return after, seen
+
+
+def wait_current_scope(client, path, text, version):
+    expected_hash = hashlib.sha256(text.encode()).hexdigest()
+    deadline = time.monotonic() + 3
+    while True:
+        response = client.request('argo-workflows/explainAnalysis', {'textDocument': {'uri': path.as_uri()}})
+        status = response.get('result', {})
+        identity = status.get('inputIdentity', {})
+        ready = (identity.get('uri') == path.as_uri() and identity.get('source') == 'buffer' and
+                 identity.get('version') == version and
+                 identity.get('sha256') == expected_hash and
+                 status.get('completeness') == {'document': True, 'workspace': True})
+        if ready or time.monotonic() >= deadline:
+            return ready, response
 
 
 def success(name, files=None, config=CONFIG, selected='library.yaml', new_name='renamed', reference=False, unchanged=()):
@@ -167,6 +183,84 @@ def changed_after_prepare():
         client.close()
 
 
+def disk_configuration(name, changed_config, overlay=False):
+    """A filesystem write is deliberately not accompanied by a client event."""
+    files = {'library.yaml': BASE, 'caller.yaml': CALLER}
+    expected = {'library.yaml': BASE.replace('name: library', 'name: "renamed"'),
+                'caller.yaml': CALLER.replace('name: library', 'name: "renamed"')}
+    dest, work = m.setup(name, files, CONFIG)
+    config = work / '.argo-workflows-ls.yaml'
+    (dest / 'configuration-before.yaml').write_bytes(CONFIG.encode())
+    (dest / 'configuration-changed.yaml').write_bytes(changed_config.encode())
+    m.save(dest / 'expected.json', {'configurationAuthority': 'buffer' if overlay else 'disk',
+                                  'changedRequest': 'exact edit' if overlay else 'STALE_INPUT',
+                                  'restoredFiles': expected})
+    started = time.monotonic()
+    client = m.LSP(dest, work)
+    checks, details = {}, {}
+    try:
+        if overlay:
+            client.open(config, CONFIG, 9)
+        versions = {'library.yaml': 3, 'caller.yaml': 4}
+        for file, text in files.items():
+            client.open(work / file, text, versions[file])
+        params = {'textDocument': {'uri': (work / 'caller.yaml').as_uri()},
+                  'position': target(CALLER, reference=True), 'newName': 'renamed'}
+        prepared = wait_prepare(client, {k: v for k, v in params.items() if k != 'newName'})
+        checks['prepareWorked'] = prepared.get('result', {}).get('placeholder') == 'library'
+        sent_before = len(client.sent)
+        changed_at = time.monotonic()
+        config.write_bytes(changed_config.encode())
+        checks['diskChangeObserved'] = config.read_bytes() == changed_config.encode()
+        response = client.request('textDocument/rename', params)
+        details.update(prepare=prepared, changedRename=response,
+                       secondsSinceSession=time.monotonic() - started,
+                       secondsAfterDiskChange=time.monotonic() - changed_at)
+        checks['beforeMetadataPoll'] = details['secondsSinceSession'] < 10
+        checks['noConfigurationEvent'] = all(
+            item.get('method') not in ('workspace/didChangeWatchedFiles', 'workspace/didChangeConfiguration',
+                                       'textDocument/didOpen', 'textDocument/didSave', 'textDocument/didChange')
+            for item in client.sent[sent_before:])
+        if overlay:
+            after, affected = apply_all(files, work, response['result'], versions)
+            checks['configurationAuthority'] = after == expected and affected == set(files)
+        else:
+            checks['configurationAuthority'] = (response.get('error', {}).get('code') == -32801 and
+                response.get('error', {}).get('data', {}).get('reasonCode') == 'STALE_INPUT' and 'result' not in response)
+            # Restore bytes, still without a watch notification or config open.
+            # A newly issued request may use them; no old edit is applied.
+            config.write_bytes(CONFIG.encode())
+            recovered = client.request('textDocument/rename', params)
+            details['restoredRename'] = recovered
+            after, affected = apply_all(files, work, recovered['result'], versions)
+        checks['recoveredExactBytes'] = after == expected and affected == set(files)
+        for file in affected:
+            (dest / ('applied-' + file)).write_bytes(after[file].encode())
+            client.send('textDocument/didChange', {
+                'textDocument': {'uri': (work / file).as_uri(), 'version': versions[file] + 1},
+                'contentChanges': [{'text': after[file]}]})
+        point = m.pos(after['caller.yaml'], 'name: "renamed"', offset=7)
+        query = {'textDocument': {'uri': (work / 'caller.yaml').as_uri()}, 'position': point}
+        # A forward definition can be known before the complete reverse scope.
+        # Observe each current buffer identity and scope readiness independently
+        # before making either exact navigation query; never retry references
+        # until their result happens to match the expected answer.
+        readiness = {file: wait_current_scope(client, work / file, after[file], versions[file] + 1)
+                     for file in sorted(affected)}
+        checks['postEditScopeReady'] = all(ready for ready, _ in readiness.values())
+        details['postEditAnalysis'] = {file: response for file, (_, response) in readiness.items()}
+        definition = client.request('textDocument/definition', query)
+        references = client.request('textDocument/references', query | {'context': {'includeDeclaration': False}})
+        details.update(definitionAfter=definition, referencesAfter=references)
+        checks['bindingPreserved'] = len(definition.get('result', [])) == 1 and definition['result'][0]['uri'] == (work / 'library.yaml').as_uri()
+        checks['referencesPreserved'] = len(references.get('result', [])) == 1 and references['result'][0]['uri'] == (work / 'caller.yaml').as_uri()
+        checks['diskUntouched'] = (all((work / file).read_bytes() == text.encode() for file, text in files.items()) and
+                                   config.read_bytes() == (changed_config if overlay else CONFIG).encode())
+        return checks, details
+    finally:
+        client.close()
+
+
 cases = [
     ('declaration', lambda: success('declaration')),
     ('automatic-version', lambda: success('automatic-version', config=CONFIG.replace('"3.6.0"', '"auto"'))),
@@ -198,6 +292,10 @@ cases = [
     ('schema-only-peer', lambda: refused('schema-only-peer', {'library.yaml': BASE, 'caller.yaml': CALLER, 'binding.yaml': 'apiVersion: argoproj.io/v1alpha1\nkind: WorkflowEventBinding\nmetadata: {name: event, namespace: argo}\nspec: {event: {selector: "true"}, submit: {workflowTemplateRef: {name: library}}}\n'})),
     ('closed-after-prepare', closed_after_prepare),
     ('changed-after-prepare', changed_after_prepare),
+    ('disk-policy-without-event', lambda: disk_configuration('disk-policy-without-event', CONFIG.replace('referencePolicy: closed', 'referencePolicy: open'))),
+    ('disk-invalid-without-event', lambda: disk_configuration('disk-invalid-without-event', CONFIG + 'unsupportedFixtureSetting: true\n')),
+    ('disk-scope-without-event', lambda: disk_configuration('disk-scope-without-event', CONFIG + 'scopes:\n  - name: declarations\n    include: ["library.yaml"]\n  - name: callers\n    include: ["caller.yaml"]\n')),
+    ('configuration-overlay-authority', lambda: disk_configuration('configuration-overlay-authority', CONFIG + 'unsupportedFixtureSetting: true\n', overlay=True)),
 ]
 selected = sys.argv[4].split(',') if len(sys.argv) == 5 and sys.argv[3] == '--cases' else [name for name, _ in cases]
 if not selected or set(selected) - {name for name, _ in cases}:

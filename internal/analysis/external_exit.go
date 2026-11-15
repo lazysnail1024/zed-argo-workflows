@@ -11,7 +11,7 @@ import (
 // Explicit exit tokens and actual input arguments have independent source roles;
 // an inherited exit without a caller token does not invent a source location.
 func externalExitQueries(ctx context.Context, query *externalQuery, caller resource, candidates []resource, bind func(yamlview.Node, resource, yamlview.Node)) {
-	if query == nil || !query.definitions && !query.references || !workflowVersionAtLeast(caller.document.Target.Version, 4, 6) {
+	if query == nil || !query.definitions && !query.references || !workflowFeature(caller.document.Target.Version, externalExit) {
 		return
 	}
 	if query.definitions && !containsPosition(nodeLocation(caller.document.Snapshot, caller.root), query.uri, query.position) {

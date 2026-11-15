@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Normalize only locked CRD bytes; reject unreviewed constraint keywords."""
-import hashlib,itertools,json,pathlib,re,yaml
+import hashlib,itertools,json,pathlib,re,subprocess,sys,yaml
 root=pathlib.Path(__file__).resolve().parents[1];catalog_path=root/'compat/catalog.lock.json';catalog=json.loads(catalog_path.read_text());out=root/'internal/assets/schemas';out.mkdir(parents=True,exist_ok=True)
+provenance=subprocess.run([sys.executable,str(root/'scripts/check-modeled-rules.py')],capture_output=True,text=True)
+if provenance.returncode:raise ValueError('modeled semantic provenance must be reviewed independently of CRDs:\n'+provenance.stdout+provenance.stderr)
+semantic_provenance=json.loads(provenance.stdout)
 allowed={'type','properties','required','items','format','default','anyOf','allOf','oneOf','not','additionalProperties','pattern','enum','const','description','title','nullable','minimum','maximum','exclusiveMinimum','exclusiveMaximum','minLength','maxLength','minItems','maxItems','uniqueItems','minProperties','maxProperties','multipleOf','x-kubernetes-map-type','x-kubernetes-int-or-string','x-kubernetes-list-type','x-kubernetes-list-map-keys','x-kubernetes-preserve-unknown-fields','x-kubernetes-validations'}
 # These are exact translations of the ten CEL rules in the locked 4.x CRDs.
 # Do not ignore future rules or run a general expression interpreter at runtime.
@@ -99,7 +102,7 @@ def automatic_schema(schemas):
   digest=hashlib.sha256(payload).hexdigest()
   definitions[digest]=value
   return {'$ref':'#/$defs/'+digest}
- branches=[]
+ branches=[];indices=[]
  for schema in schemas:
   # Root prose only restates the kind already known to the editor. Omitting it
   # from automatic alternatives lets identical namespaced/cluster template
@@ -107,7 +110,8 @@ def automatic_schema(schemas):
   schema=dict(schema);schema.pop('description',None)
   branch=intern(schema)
   if branch not in branches:branches.append(branch)
- return {'$schema':'https://json-schema.org/draft/2020-12/schema','anyOf':branches,'$defs':definitions}
+  indices.append(branches.index(branch))
+ return {'$schema':'https://json-schema.org/draft/2020-12/schema','anyOf':branches,'$defs':definitions},indices
 
 automatic_sources=[]
 for kind in sorted({s['kind'] for v in catalog['versions'] for s in v['sources']}):
@@ -115,12 +119,16 @@ for kind in sorted({s['kind'] for v in catalog['versions'] for s in v['sources']
  for version in catalog['versions']:
   for source in version['sources']:
    if source['kind']==kind:
-    for api,schema in source['normalizedSchemas'].items():source_schemas.setdefault(api,{})[schema['file']]=None
+    for api,schema in source['normalizedSchemas'].items():source_schemas.setdefault(api,{}).setdefault(schema['file'],[]).append(version['version'])
  normalized={}
  for api,files in source_schemas.items():
-  schema=automatic_schema([json.loads((out/f).read_text()) for f in reversed(files)])
+  ordered=list(reversed(files))
+  schema,indices=automatic_schema([json.loads((out/f).read_text()) for f in ordered])
   data=json.dumps(schema,sort_keys=True,separators=(',',':')).encode();sha=hashlib.sha256(data).hexdigest();(out/(sha+'.json')).write_bytes(data)
-  normalized[api]={'sha256':sha,'file':sha+'.json','branchCount':len(schema['anyOf'])}
+  branch_versions=[[] for _ in schema['anyOf']]
+  for file,index in zip(ordered,indices):branch_versions[index].extend(files[file])
+  for versions in branch_versions:versions.sort(key=lambda v:tuple(map(int,v.split('.'))))
+  normalized[api]={'sha256':sha,'file':sha+'.json','branchCount':len(schema['anyOf']),'branchVersions':branch_versions}
  automatic_sources.append({'kind':kind,'url':'https://github.com/argoproj/argo-workflows/releases','availableVersions':[v['version'] for v in catalog['versions'] if any(s['kind']==kind for s in v['sources'])],'normalizedSchemas':normalized})
 catalog['automatic']={'version':'auto','sources':automatic_sources,'schemaSha256':hashlib.sha256(json.dumps(automatic_sources,sort_keys=True,separators=(',',':')).encode()).hexdigest()}
 catalog['defaultVersion']='auto'
@@ -132,5 +140,5 @@ catalog_path.write_text(json.dumps(catalog,indent=2)+'\n')
 referenced={s['file'] for v in catalog['versions']+[catalog['automatic']] for src in v['sources'] for s in src['normalizedSchemas'].values()}
 for path in out.glob('*.json'):
  if path.name not in referenced:path.unlink()
-report={'command':'python3 scripts/normalize-schemas.py','pyyamlVersion':yaml.__version__,'sources':len(cache),'schemas':len(list(out.glob('*.json'))),'catalogSha256':hashlib.sha256(catalog_path.read_bytes()).hexdigest(),'schemaAcceptance':'locked upstream conversion; complete schema alternatives for automatic editing','unknownKeywords':'rejected','celConstraints':len(cel_rules),'automaticSources':automatic_sources}
+report={'command':'python3 scripts/normalize-schemas.py','pyyamlVersion':yaml.__version__,'sources':len(cache),'schemas':len(list(out.glob('*.json'))),'catalogSha256':hashlib.sha256(catalog_path.read_bytes()).hexdigest(),'schemaAcceptance':'locked upstream conversion; complete schema alternatives for automatic editing','unknownKeywords':'rejected','celConstraints':len(cel_rules),'automaticSources':automatic_sources,'semanticProvenance':semantic_provenance}
 (root/'artifacts/wf2-normalization.json').write_text(json.dumps(report,indent=2)+'\n')

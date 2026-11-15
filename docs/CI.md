@@ -77,6 +77,17 @@ worktree 构建，避免 ignored Go/C/embed 文件污染；这不宣称二进制
 | Zed package/snippets | 包 bytes、来源身份、精确 snippet 展开由 native CLI 消费 | 独立 package 与负向控制。 |
 | 已发布包安装 | 文件系统安装、校验、替换、失败恢复与回滚 | 固定 fixture 和精确本次 release 两个入口。 |
 
+`wf-render-profiles` 在 extended suite 中使用两个固定真实 Helm major。它以独立
+dev/prod/reverse values 预期、实际工具调用日志和完整 stdio 帧验证 profile 结果，
+收集/resolve 零执行、配置/values/lifetime 过期拒绝与新动作恢复、scope 隔离、
+showDocument 响应后的下一请求、取消后代回收和无延迟打开，以及失败库存的保留与
+显式清理。实际执行前的拒绝消息须包含需要保存的 values 路径；运行中的自定义输出
+目录被替换成源 chart 链接时，源字节必须保持不变，原始工具输出仍由失败响应保留。
+缓存负例分别从真实生成的独立目录开始，避免被复制标记拒绝掩盖内容、
+额外文件或符号链接保护。`wf-quickfixes` 的 native 消费者同时验证 v2 配置 pin 只改变
+目标字段，保留 profile、values 顺序及重复项；对应行和 assertion 集合由 contracts
+文件独立固定。生成目录的所有权检查不等同于 Windows GUI 验收或所有竞争时序证明。
+
 同一完整基线可供相同 suite/参数/环境下的多个 mutation 复用；每个 mutant 只修改一个保护
 或语义规则，仍核验完整 case/assertion inventory。跨平台合同与兼容性版本不会因分组而减少。
 
@@ -88,7 +99,43 @@ watchdog 20 秒，产品分析 deadline 仍为五秒。聚合器核对顺序、�
 报告和退出状态，最后一个 shard 保留其他 CLI/LSP、CEL 及缺失 kind 断言。
 [版本消费者](../tests/e2e/wf-multi-version.py)、[聚合自测](../tests/ci/test_multi_version.py)
 
+`wf-compatibility` 进入同一 native runner/inventory/独立 assertion 合同，按资源验证 Schema
+候选、已建模规则候选及交集，覆盖九组语义边界和两条回移分支、来源身份、真实 auto/exact
+对照、动态/不完整 scope、原因归属、未保存 buffer 和旧动作拒绝。它不替代全 146 版本检查。
+`compatibility-joint-intersection`、`compatibility-marker-backport` 和
+`compatibility-incomplete-external` 三个 contracts mutation 必须让指定真实断言失败。
+`check-modeled-rules.py` 在生成 schema 前以及该消费者中验证语义来源清单；相同 CRD hash
+不能代替语义源码和调用条件审查。可选本地源文件校验核对精确 blob、函数和调用方 hash，
+该证据仅覆盖声明的边界样本，不表示执行了所有版本的上游 controller。
+
 ### 索引与请求
+
+`wf-reaudit-query-io` 保留原三个独立 inotify 读取合同，并检查默认关闭的实际工作 trace：
+真实补全结果、冷 Schema 编译、恢复/合成解析、缓存命中之前的当前读取和解析、trace-off
+等价性，以及取消回复到 worker 释放的不同时间。计数不是由输出命中率推算；原始 stderr
+保留后台和取消/丢弃工作的独立归属。计时为描述性证据，不新增或放宽资源门限。
+固定 warm 补全 fixture 另要求源解析不超过一次、总解析不超过三次，且投影不超过已测的六次；
+选定关闭依赖仍由 inotify 独立要求每次读取一次。该工作量合同来自先冻结的实际计数基线，
+不把结果缓存命中或恢复事实数当作解析减少。`ablate-query-facts.py` 的 `open-restoration`
+只禁用打开文档的恢复调用，必须让该工作量断言失败，同时完成全部五行消费者并保留正确
+候选、trace-off 等价性和读取约束；原有 `snapshot-bytes` 仍验证完整文本身份不能省略。
+
+`wf-equivalence` 保留原九种历史，另由固定字面量 fixture 比较 incremental/fresh 的真实
+版本化 Rename、补全和已 resolve Quick Fix 的完整应用结果。UTF-16 非 BMP 字符与 CRLF、
+同名其他 scope、实际应用版本的诊断和精确引用均进入预期；九个篡改控制验证 applier 会拒绝
+过期版本、错误路径、重叠/越界/代理对中间位置和错误替换字节。父级材料校验核对所有输入、
+独立预期、实际应用 YAML 和原始 session 生命周期；一致性通过不单独证明工作量下降。
+
+`wf-analysis-status` 通过真实 CLI/stdio 检查磁盘与未保存 buffer 身份、独立的文件/scope
+完整性、空引用结果的可判定性、拒绝原因及打开受影响文件后的恢复、配置和 buffer 使旧动作
+失效、只读客户端的可用性。它与现有 Rename/quickfix 消费者一起运行；请求 quickfix 的旧
+消费者显式使用 LSP `context.only`，避免把只读解释 command 当成可应用编辑。
+
+`wf-resource-rename` 与 `wf-reaudit-actions` 另以真实 stdio 请求验证未发送 watch/config
+事件的磁盘配置变化：policy、scope、target 或无效键不能在后台 metadata 刷新前继续授权
+实际 Rename/已 resolve Quick Fix。配置 overlay 仍优先于磁盘；恢复后的新请求必须生成
+精确版本化编辑，实际应用后绑定或诊断正确。最终交付原生测试补充已构造结果后才改配置的
+时序，原 epoch/proof 仍有效时也须拒绝；它不单独代替外部消费者的真实编辑验证。
 
 持续索引消费者覆盖已知输入立即失效、漏 watcher 的维护发现、精确最终位置、buffer 优先及
 超五秒 discovery 继续收敛；慢 I/O 使用单独有来源身份的读取 overlay。workspace-symbol
@@ -158,13 +205,70 @@ Linux native lane 在真实普通 binary 上执行
 ### 上传与下载后复验
 
 成功 native lane 将完整 evidence 转移到一个 receipt payload，包含隐藏配置输入；失败 lane
-保留原 evidence。只过滤已知 compiler/interpreter scratch，不删除语义输入。文本 payload
-使用 ZIP 压缩级别 6；release archives 与 ordinary imports 仍有各自独立消费者。
+保留原 evidence。只过滤已知 compiler/interpreter scratch，不删除语义输入。receipt 原有的
+文件字节选择规则不变：被选中的 file symlink 在任何 referent 移动前先稳定读取，核对原
+evidence digest 和 link/target 身份，再物化成独立普通文件。选中后变悬空、改指向或变成
+非普通文件会失败；原规则没有选中的目录链接、FIFO 等不扩大为读取输入。这是原有
+regular-byte payload 的交付，不承诺保存整个消费者工作目录的所有文件系统元数据。
+
+[transport.py](../tests/ci/transport.py) 将完成的 lane receipt 和 payload 打包成自包含的
+内容寻址 ZIP。同一收据中相同 SHA-256 的字节只存一份，lane receipt、producer manifest
+和所有子 JSON 均作为原始字节保存，不重新序列化或改写原命令路径。传输清单记录逻辑路径、
+类型和权限，普通文件另记大小与内容 hash。恢复为新目录中的独立普通文件；相同内容但不同权限
+的文件仍独立创建，修改其中一份不会改动其他文件。没有 producer 外部对象依赖。
+
+内层 ZIP 固定使用压缩级别 6；normal receipt artifact 只上传这个 ZIP，外层上传压缩级别
+为 0，避免重复压缩。ordinary producer 的普通 artifact 使用压缩级别 6；release archives
+与 ordinary imports 的身份验证和消费者不变。打包或上传失败时，独立的
+`raw-native-receipt-*` artifact 保留已经移到 `artifacts/receipt` 的原始材料和传输指标，
+原失败路径也保留尚在 `artifacts/ci` 的材料。raw fallback 不进入正常 acceptance 的
+`native-receipt-*` 下载选择，不会被当作成功传输悄悄接受。
+保留步骤用目录存在性选择原始或已移动材料，不使用 `hashFiles` 预读整个失败输入树。
+大目录中的原始输入和隐藏文件仍由上传步骤完整处理；实际归档、receipt 和 gate 的内容
+hash 校验保持不变，缺失材料仍不能形成成功的验收结果。
+
+五个平台均执行 `transport_e2e.py --producer-only`：真实创建并重写收据、日志、配置和
+可执行文件后运行 pack，独立读取 ZIP 验证原始字节、内容 hash 和 mode。固定 Windows
+Python 3.14.0 还必须实际观察到 path/fd ctime 不同而 birthtime 相同；跨 API 身份比较
+使用显式 birthtime，同一 API 在读取前后的完整 ctime/mode 检查仍保留。完整 hydrate、
+路径与来源变化负向控制继续在 Linux 执行。
+
+打包拒绝物理 symlink、特殊文件、输入变化及不安全路径。解包先验证严格 JSON、清单/对象
+集合、ZIP 物理头、类型和便携路径别名，再有界读取压缩流并逐对象核对实际大小与 hash；
+不信任 ZIP 声明的解压大小来截断验证。上限为 1,000,000 个逻辑项、单文件 4 GiB、逻辑字节总量 64 GiB、
+清单 128 MiB、中央目录 256 MiB，以及路径 4,096 UTF-8 字节/128 层。恢复拒绝已存在的
+目的地及 symlink 路径，使用持有的目录描述符创建文件。`pack` 面向各 native producer；
+`hydrate`/`hydrate-set` 要求 POSIX descriptor-relative no-follow 操作，当前 acceptance
+在 Linux 运行，本地控制也不等于其他平台的实际 CI 验收。
+
+`hydrate-set` 先验证整套 artifact 目录及 lane 唯一性，再把每个 lane 恢复到独立新目录，
+复核预检身份和最终输入集合。唯一 raw 兼容形式是原 docs-only 的
+`docs.json` + `payload-docs` 布局，仍由原 gate 验收。混合 raw/CAS、额外文件或重复 lane
+均拒绝；传输清单和指标始终留在 gate 收据树之外。失败可能保留排查用 partial 文件，
+后续 gate 只在 hydrate 成功后执行，不以目录存在作为成功信号。
 
 下载全部选中 lane 后，[downloaded_material_e2e.py](../tests/ci/downloaded_material_e2e.py)
 先要求原始完整 gate 通过，再重新生成真实 Linux receipt、归档解包并复验 gate。缺文件、
 错误 fixture/input/lifecycle 即使重新计算外层 hash 也必须以指定原因拒绝。原 payload 不被
-修改。归档耗时不等于 hosted 传输或整个 workflow 加速。
+修改。[transport_e2e.py](../tests/ci/transport_e2e.py) 用固定独立输入检查原 JSON/原始流
+字节、独立副本、模式、严格拒绝和实际并发变化；
+[receipt_materialization_e2e.py](../tests/ci/receipt_materialization_e2e.py) 检查选中文件链接的
+物化顺序、变化拒绝和失败材料保留。其 `--producer-only` 在五个平台实际重写 referent，
+再物化相对、绝对和多个文件链接，独立验证字节、hash、普通文件与独立身份；还拒绝悬空、
+改指向和读取中同尺寸改写并恢复 mtime。固定 Windows 3.14.0 必须观察到 path/fd ctime
+别名差异；只有跨 API 比较使用 birthtime，同 API 的完整 ctime/mode 与内容 hash 保护保留。
+该 Windows 正控用真实 `SetFileTime` 将测试 referent 的 creation time 固定到较早值，关闭
+属性句柄后记录前后 path/fd 时间、身份和内容 hash，并在调用生产物化前确认所需差异。
+不依赖紧邻写入自然产生不同时间，也不重试生产结果来满足断言。
+传输完整性不能替代原 `control.py`/`evidence.py`
+的执行身份、case 集合、原始协议和领域验收。
+
+本地归档比较应固定 Python/zlib、完整逻辑 inventory 和测试选择，交替重复当前 raw receipt
+布局的 ZIP6 重放与实际 CAS CLI，分别记录完整 archive 字节及归档、恢复、独立复核、
+原验证器重放耗时。ZIP6 布局重放不是 upload-artifact SDK 测量；历史 STORED0 下载包也
+不能充当当前 ZIP6 基线。历史 lane 必须使用其原始 source/run/attempt 和匹配的 pinned
+验证器，并明确标注没有新执行消费者或完整 matrix。hosted 上传、下载、排队和自然 PR
+样本只能来自真实 workflow；本地压缩数据不证明 hosted 或整个 workflow 加速。
 
 各 job 尝试以 `always()` 上传证据，保留期以 YAML 为准，通常 30 天。记录包含原始输出、
 命令及 timeout 回执、JSON 断言、协议、输入/源码/binary hash、工具链和实际资源限制。
@@ -213,6 +317,8 @@ CI 控制与时间数据入口：
 ```sh
 python3 tests/ci/control.py baseline --output artifacts/baseline.json
 python3 tests/ci/control_e2e.py --output artifacts/control-e2e
+python3 tests/ci/transport_e2e.py --output artifacts/transport-e2e
+python3 tests/ci/receipt_materialization_e2e.py --output artifacts/receipt-materialization-e2e
 python3 tests/ci/selection_e2e.py --output artifacts/selection-e2e
 python3 tests/e2e/session_e2e.py --output artifacts/session-e2e
 python3 tests/ci/trends.py --inputs artifacts/ci --output artifacts/timing.json
@@ -221,6 +327,19 @@ python3 tests/ci/trends.py --inputs artifacts/ci --output artifacts/timing.json
 baseline exporter 读取冻结 Git objects；时间汇总保留首个失败和原命令 hash，不替代产品门槛。
 性能对比要求五个 warm 和三个 cold 完整样本，不足时显式报告。Rust/WASI 入口见
 [开发指南](../DEVELOPMENT.md)。
+
+单包与 acceptance 集合的传输入口如下；输出目录/文件必须是新的，指标路径留在 gate 树外：
+
+```sh
+python3 tests/ci/transport.py pack \
+  --receipt artifacts/receipt/native-linux-amd64.json \
+  --output artifacts/transport/lane.zip --report artifacts/transport-metrics.json
+python3 tests/ci/transport.py hydrate \
+  --archive artifacts/transport/lane.zip --output artifacts/one-restored-lane
+python3 tests/ci/transport.py hydrate-set \
+  --inputs artifacts/receipt-transports --output artifacts/receipts \
+  --report artifacts/hydration-metrics.json
+```
 
 ## 与真实编辑器验收的关系
 

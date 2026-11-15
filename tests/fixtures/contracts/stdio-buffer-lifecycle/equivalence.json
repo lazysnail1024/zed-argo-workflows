@@ -1,7 +1,74 @@
 {
- "schemaVersion":1,
- "oracle":"The final saved files, unsaved overlay, document version and active target determine identical diagnostics and navigation in a fresh server. The fixture independently requires SCHEMA_TYPE at line 6 columns 15 through 20, severity 1; main resolves to line 8 column 12.",
- "cases":["incremental-final-overlay","edit-undo","target-isolation","root-isolation","repeat-event","delete-recreate","seed-17","seed-29","seed-43"],
- "cacheClaim":"Repeated-query equivalence only: no public cache-hit counter exists in this session contract.",
- "cancellationOwnership":"Existing wf-responsive-editing saturation and wf-bounded-cancel real constrained consumers remain mandatory. Cancellation-to-cold equivalence is not implied by those independent cases."
+  "schemaVersion": 1,
+  "oracle": "The final saved files, unsaved overlay, document version and active target determine identical diagnostics and navigation in a fresh server. The fixture independently requires SCHEMA_TYPE at line 6 columns 15 through 20, severity 1; main resolves to line 8 column 12.",
+  "cases": [
+    "incremental-final-overlay",
+    "edit-undo",
+    "target-isolation",
+    "root-isolation",
+    "repeat-event",
+    "delete-recreate",
+    "seed-17",
+    "seed-29",
+    "seed-43"
+  ],
+  "cacheClaim": "Repeated-query equivalence only: no public cache-hit counter exists in this session contract.",
+  "cancellationOwnership": "Existing wf-responsive-editing saturation and wf-bounded-cancel real constrained consumers remain mandatory. Cancellation-to-cold equivalence is not implied by those independent cases.",
+  "appliedEditCases": [
+    "applied-rename-equivalence",
+    "applied-completion-equivalence"
+  ],
+  "appliedEditOracle": "Literal complete input, intermediate and expected UTF-8 text below predates any server response. Both event-history and fresh sessions apply returned edits with a test-owned strict UTF-16 applier, retain CRLF/non-BMP text and same-spelled separate scope, then independently check empty final diagnostics and exact definition/reference bindings. Original nine cases remain unchanged.",
+  "editConfig": "schemaVersion: 1\ntargetVersion: \"3.6.0\"\nreferencePolicy: closed\nscopes:\n  - name: selected\n    include: [\"chosen/**\"]\n  - name: unrelated\n    include: [\"unrelated/**\"]\n",
+  "appliedEdits": {
+    "applied-rename-equivalence": {
+      "inputs": {
+        "chosen/library.yaml": "apiVersion: argoproj.io/v1alpha1\r\nkind: WorkflowTemplate\r\nmetadata: {annotations: {note: \"中🐌\"}, name: \"shared\", namespace: argo}\r\nspec:\r\n  entrypoint: worker\r\n  templates:\r\n    - name: worker\r\n      container: {image: alpine}\r\n",
+        "chosen/caller.yaml": "apiVersion: argoproj.io/v1alpha1\r\nkind: Workflow\r\nmetadata: {name: caller, namespace: argo}\r\nspec:\r\n  entrypoint: main\r\n  templates:\r\n    - name: main\r\n      steps:\r\n        - - name: first\r\n            templateRef: {name: \"shared\", template: worker}\r\n        - - name: second\r\n            templateRef: {name: \"shared\", template: worker}\r\n",
+        "unrelated/library.yaml": "apiVersion: argoproj.io/v1alpha1\r\nkind: WorkflowTemplate\r\nmetadata: {annotations: {note: \"中🐌\"}, name: \"shared\", namespace: argo}\r\nspec:\r\n  entrypoint: worker\r\n  templates:\r\n    - name: worker\r\n      container: {image: alpine}\r\n",
+        "unrelated/caller.yaml": "apiVersion: argoproj.io/v1alpha1\r\nkind: Workflow\r\nmetadata: {name: caller, namespace: argo}\r\nspec:\r\n  entrypoint: main\r\n  templates:\r\n    - name: main\r\n      steps:\r\n        - - name: first\r\n            templateRef: {name: \"shared\", template: worker}\r\n        - - name: second\r\n            templateRef: {name: \"shared\", template: worker}\r\n"
+      },
+      "expected": {
+        "chosen/library.yaml": "apiVersion: argoproj.io/v1alpha1\r\nkind: WorkflowTemplate\r\nmetadata: {annotations: {note: \"中🐌\"}, name: \"shared-next\", namespace: argo}\r\nspec:\r\n  entrypoint: worker\r\n  templates:\r\n    - name: worker\r\n      container: {image: alpine}\r\n",
+        "chosen/caller.yaml": "apiVersion: argoproj.io/v1alpha1\r\nkind: Workflow\r\nmetadata: {name: caller, namespace: argo}\r\nspec:\r\n  entrypoint: main\r\n  templates:\r\n    - name: main\r\n      steps:\r\n        - - name: first\r\n            templateRef: {name: \"shared-next\", template: worker}\r\n        - - name: second\r\n            templateRef: {name: \"shared-next\", template: worker}\r\n",
+        "unrelated/library.yaml": "apiVersion: argoproj.io/v1alpha1\r\nkind: WorkflowTemplate\r\nmetadata: {annotations: {note: \"中🐌\"}, name: \"shared\", namespace: argo}\r\nspec:\r\n  entrypoint: worker\r\n  templates:\r\n    - name: worker\r\n      container: {image: alpine}\r\n",
+        "unrelated/caller.yaml": "apiVersion: argoproj.io/v1alpha1\r\nkind: Workflow\r\nmetadata: {name: caller, namespace: argo}\r\nspec:\r\n  entrypoint: main\r\n  templates:\r\n    - name: main\r\n      steps:\r\n        - - name: first\r\n            templateRef: {name: \"shared\", template: worker}\r\n        - - name: second\r\n            templateRef: {name: \"shared\", template: worker}\r\n"
+      },
+      "versions": {
+        "chosen/library.yaml": 7,
+        "chosen/caller.yaml": 11,
+        "unrelated/library.yaml": 13,
+        "unrelated/caller.yaml": 17
+      },
+      "changedFiles": [
+        "chosen/library.yaml",
+        "chosen/caller.yaml"
+      ],
+      "editCount": 3,
+      "newName": "shared-next"
+    },
+    "applied-completion-equivalence": {
+      "inputs": {
+        "chosen/workflow.yaml": "apiVersion: argoproj.io/v1alpha1\r\nkind: Workflow\r\nmetadata: {name: completion, namespace: argo}\r\nspec:\r\n  entrypoint: main\r\n  templates:\r\n    - name: main\r\n      inputs: {parameters: [{name: message, default: ready}]}\r\n      container: {image: alpine, args: [\"中🐌\", \"{{inputs.parameters.me}}\"], imagePullPolcy: Always}\r\n    - name: other\r\n      inputs: {parameters: [{name: message, default: unrelated}]}\r\n      container: {image: alpine, args: [\"{{inputs.parameters.message}}\"]}\r\n",
+        "unrelated/workflow.yaml": "apiVersion: argoproj.io/v1alpha1\r\nkind: Workflow\r\nmetadata: {name: completion, namespace: argo}\r\nspec:\r\n  entrypoint: main\r\n  templates:\r\n    - name: main\r\n      inputs: {parameters: [{name: message, default: ready}]}\r\n      container: {image: alpine, args: [\"中🐌\", \"{{inputs.parameters.message}}\"], imagePullPolicy: Always}\r\n    - name: other\r\n      inputs: {parameters: [{name: message, default: unrelated}]}\r\n      container: {image: alpine, args: [\"{{inputs.parameters.message}}\"]}\r\n"
+      },
+      "afterCompletion": {
+        "chosen/workflow.yaml": "apiVersion: argoproj.io/v1alpha1\r\nkind: Workflow\r\nmetadata: {name: completion, namespace: argo}\r\nspec:\r\n  entrypoint: main\r\n  templates:\r\n    - name: main\r\n      inputs: {parameters: [{name: message, default: ready}]}\r\n      container: {image: alpine, args: [\"中🐌\", \"{{inputs.parameters.message}}\"], imagePullPolcy: Always}\r\n    - name: other\r\n      inputs: {parameters: [{name: message, default: unrelated}]}\r\n      container: {image: alpine, args: [\"{{inputs.parameters.message}}\"]}\r\n",
+        "unrelated/workflow.yaml": "apiVersion: argoproj.io/v1alpha1\r\nkind: Workflow\r\nmetadata: {name: completion, namespace: argo}\r\nspec:\r\n  entrypoint: main\r\n  templates:\r\n    - name: main\r\n      inputs: {parameters: [{name: message, default: ready}]}\r\n      container: {image: alpine, args: [\"中🐌\", \"{{inputs.parameters.message}}\"], imagePullPolicy: Always}\r\n    - name: other\r\n      inputs: {parameters: [{name: message, default: unrelated}]}\r\n      container: {image: alpine, args: [\"{{inputs.parameters.message}}\"]}\r\n"
+      },
+      "expected": {
+        "chosen/workflow.yaml": "apiVersion: argoproj.io/v1alpha1\r\nkind: Workflow\r\nmetadata: {name: completion, namespace: argo}\r\nspec:\r\n  entrypoint: main\r\n  templates:\r\n    - name: main\r\n      inputs: {parameters: [{name: message, default: ready}]}\r\n      container: {image: alpine, args: [\"中🐌\", \"{{inputs.parameters.message}}\"], imagePullPolicy: Always}\r\n    - name: other\r\n      inputs: {parameters: [{name: message, default: unrelated}]}\r\n      container: {image: alpine, args: [\"{{inputs.parameters.message}}\"]}\r\n",
+        "unrelated/workflow.yaml": "apiVersion: argoproj.io/v1alpha1\r\nkind: Workflow\r\nmetadata: {name: completion, namespace: argo}\r\nspec:\r\n  entrypoint: main\r\n  templates:\r\n    - name: main\r\n      inputs: {parameters: [{name: message, default: ready}]}\r\n      container: {image: alpine, args: [\"中🐌\", \"{{inputs.parameters.message}}\"], imagePullPolicy: Always}\r\n    - name: other\r\n      inputs: {parameters: [{name: message, default: unrelated}]}\r\n      container: {image: alpine, args: [\"{{inputs.parameters.message}}\"]}\r\n"
+      },
+      "versions": {
+        "chosen/workflow.yaml": 7,
+        "unrelated/workflow.yaml": 13
+      },
+      "changedFiles": [
+        "chosen/workflow.yaml"
+      ],
+      "completionLabel": "message",
+      "quickfixTitle": "Replace field with imagePullPolicy"
+    }
+  }
 }

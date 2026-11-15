@@ -63,7 +63,7 @@ func runWithIO(parent context.Context, args []string, stdout, stderr io.Writer) 
 			fmt.Fprintln(stderr, "usage: version --json")
 			return 2
 		}
-		emit(map[string]any{"product": "argo-workflows", "serverVersion": buildinfo.ServerVersion, "adapterContractVersion": 1, "analysisReady": true, "defaultTargetVersion": compat.DefaultVersion, "acceptedTargetVersions": compat.SupportedVersions(), "supportedTargetVersions": compat.SupportedVersions(), "supportedMajors": compat.SupportedMajors(), "supportedVersionRange": compat.SupportedRange(), "automaticVersionSupport": true, "configSchemaVersions": []int{1}, "reportSchemaVersions": []int{1}, "toolkitVersion": buildinfo.ToolkitVersion(), "catalogHash": compat.Hash(), "sourceCommit": buildinfo.Commit(), "dirty": buildinfo.IsDirty(), "buildMode": buildinfo.BuildMode})
+		emit(map[string]any{"product": "argo-workflows", "serverVersion": buildinfo.ServerVersion, "adapterContractVersion": 1, "analysisReady": true, "defaultTargetVersion": compat.DefaultVersion, "acceptedTargetVersions": compat.SupportedVersions(), "supportedTargetVersions": compat.SupportedVersions(), "supportedMajors": compat.SupportedMajors(), "supportedVersionRange": compat.SupportedRange(), "automaticVersionSupport": true, "configSchemaVersions": []int{1, 2}, "reportSchemaVersions": []int{1}, "toolkitVersion": buildinfo.ToolkitVersion(), "catalogHash": compat.Hash(), "sourceCommit": buildinfo.Commit(), "dirty": buildinfo.IsDirty(), "buildMode": buildinfo.BuildMode})
 		return 0
 	case "check":
 		flags := flag.NewFlagSet("check", flag.ContinueOnError)
@@ -220,21 +220,52 @@ func runWithIO(parent context.Context, args []string, stdout, stderr io.Writer) 
 		return lsp.Serve(os.Stdin, stdout, stderr, renderForEditor)
 	case "render-check":
 		return renderCheck(args[1:])
+	case "render-cache":
+		return renderCache(args[1:], stdout, stderr)
 	case "lint-official":
 		return lintOfficial(args[1:])
 	case "explain-config":
 		flags := flag.NewFlagSet("explain-config", flag.ContinueOnError)
 		flags.SetOutput(stderr)
 		root := flags.String("root", ".", "workspace root")
+		file := flags.String("file", "", "explain one file from disk (editor buffers are not read)")
 		if flags.Parse(args[1:]) != nil || flags.NArg() != 0 {
 			return 2
 		}
-		input, err := workspace.Load(*root, "", "")
+		ctx, cancel := context.WithTimeout(analysis.WithInvocation(parent), 5*time.Second)
+		defer cancel()
+		input, err := workspace.LoadContext(ctx, *root, "", "")
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 2
 		}
-		emit(map[string]any{"product": "argo-workflows", "schemaVersion": 1, "root": input.Root, "configuration": input.Config, "targets": input.Targets, "analysisReady": true, "notEvaluated": input.NotEvaluated})
+		result := map[string]any{"product": "argo-workflows", "schemaVersion": 1, "root": input.Root, "inputSource": "disk", "configuration": input.Config, "targets": input.Targets, "analysisReady": true, "notEvaluated": input.NotEvaluated}
+		if *file != "" {
+			name := *file
+			if !filepath.IsAbs(name) {
+				name = filepath.Join(input.Root, name)
+			}
+			uri, err := fileuri.FromPath(name)
+			if err != nil {
+				fmt.Fprintln(stderr, err)
+				return 2
+			}
+			found := false
+			for _, document := range input.Documents {
+				if string(document.Snapshot.URI()) == uri {
+					status := analysis.ExplainDocument(ctx, document, "disk", nil, !input.IncompleteScopes[document.Target.ID])
+					status.ExplainCompatibility(ctx, document, input)
+					result["analysis"] = status
+					found = true
+					break
+				}
+			}
+			if !found {
+				fmt.Fprintln(stderr, "file is not part of the selected disk workspace")
+				return 2
+			}
+		}
+		emit(result)
 		return 0
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n", args[0])

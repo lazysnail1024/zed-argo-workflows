@@ -7,6 +7,7 @@ import (
 	"github.com/lazysnail1024/k8s-crd-toolkit/schemaquery"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	"sort"
 )
 
@@ -24,7 +25,7 @@ func safePlan(ctx context.Context, s source.Snapshot, version string, plan edit.
 	before := AnalyzeSchema(WithLogicalResult(ctx), s, version)
 	after := AnalyzeSchema(WithLogicalResult(ctx), next, version)
 	if len(before.NotEvaluated) > 0 || len(after.NotEvaluated) > 0 {
-		return fmt.Errorf("analysis is incomplete")
+		return Refuse("INDEX_INCOMPLETE", "analysis is incomplete")
 	}
 	counts := map[string]int{}
 	for _, d := range before.Diagnostics {
@@ -77,6 +78,7 @@ func FieldFixes(ctx context.Context, s source.Snapshot, version string, requeste
 		if raw != field.name {
 			continue
 		}
+		worktrace.SchemaQuery(ctx, worktrace.SchemaLookups)
 		query, err := schemaquery.Lookup(ctx, field.schema, field.path, field.value, schemaquery.Limits{})
 		if err != nil {
 			continue
@@ -96,6 +98,7 @@ func FieldFixes(ctx context.Context, s source.Snapshot, version string, requeste
 		sort.Strings(names)
 		for _, name := range names {
 			path := append(append([]string(nil), field.path...), name)
+			worktrace.SchemaQuery(ctx, worktrace.SchemaTypes)
 			kind, err := schemaquery.Type(ctx, field.schema, path, field.value, schemaquery.Limits{})
 			if err != nil {
 				continue
@@ -128,7 +131,7 @@ func PlanEdits(s source.Snapshot, plan edit.Plan) []map[string]any {
 // Text/revision guards do not establish safety of changed external bindings.
 func SafeScopePlan(ctx context.Context, w workspace.Workspace, document workspace.Document, plan edit.Plan) error {
 	if w.IncompleteScopes[document.Target.ID] {
-		return fmt.Errorf("scope input is incomplete")
+		return Refuse("INDEX_INCOMPLETE", "scope input is incomplete")
 	}
 	next, err := edit.Apply(document.Snapshot, document.Snapshot.Revision()+1, plan)
 	if err != nil {
@@ -159,13 +162,13 @@ func safeScopeChange(ctx context.Context, before, after workspace.Workspace, tar
 		for _, d := range input.Documents {
 			result := AnalyzeSchema(ctx, d.Snapshot, d.Target.Version)
 			if len(result.NotEvaluated) != 0 {
-				return nil, fmt.Errorf("scope analysis is incomplete")
+				return nil, Refuse("INDEX_INCOMPLETE", "scope analysis is incomplete")
 			}
 			diagnostics = append(diagnostics, result.Diagnostics...)
 		}
 		externalDiagnostics, _, complete, _ := external(ctx, input, nil)
 		if !complete[target] {
-			return nil, fmt.Errorf("external scope analysis is incomplete")
+			return nil, Refuse("INDEX_INCOMPLETE", "external scope analysis is incomplete")
 		}
 		diagnostics = append(diagnostics, externalDiagnostics...)
 		return diagnostics, nil

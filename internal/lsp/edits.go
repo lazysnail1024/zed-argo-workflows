@@ -11,6 +11,7 @@ import (
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/zed-argo-workflows/compat"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/analysis"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/fileuri"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 	"path/filepath"
@@ -25,6 +26,49 @@ type pendingAction struct {
 	revision                                source.Revision
 	plan                                    edit.Plan
 	local                                   bool
+}
+
+// This records the metadata actually used to authorize a completed edit. It is
+// checked by the owner before publishing, not refreshed into an old scope proof.
+type editConfiguration struct {
+	root, override, identity string
+}
+
+func (s *session) replyEdit(id json.RawMessage, w workspace.Workspace, result any) error {
+	s.editConfiguration = &editConfiguration{w.Root, s.override, catalogIdentity(w, s.override)}
+	return s.reply(id, result)
+}
+
+func (s *session) checkEditConfiguration(ctx context.Context, expected *editConfiguration) error {
+	owned := false
+	for _, root := range s.roots {
+		owned = owned || root == expected.root
+	}
+	if !owned || s.override != expected.override {
+		return analysis.Refuse("STALE_INPUT", "edit configuration owner or target override changed")
+	}
+	uri, err := fileuri.FromPath(filepath.Join(expected.root, ".argo-workflows-ls.yaml"))
+	if err != nil {
+		return analysis.Refuse("STALE_INPUT", "edit configuration identity is unavailable: "+err.Error())
+	}
+	var overlay *string
+	if b, opened := s.buffers[uri]; opened {
+		if b.unavailable != "" {
+			return analysis.Refuse("STALE_INPUT", "edit configuration buffer is unavailable: "+b.unavailable, analysis.Location{URI: uri})
+		}
+		text := b.snapshot.Text()
+		overlay = &text
+	}
+	// Describe uses the existing bounded configuration reader and strict parser.
+	// An accepted config buffer stays authoritative over its saved disk bytes.
+	current, err := workspace.Describe(ctx, expected.root, expected.override, overlay)
+	if err != nil {
+		return analysis.Refuse("STALE_INPUT", "edit configuration is unavailable: "+err.Error(), analysis.Location{URI: uri})
+	}
+	if catalogIdentity(current, expected.override) != expected.identity {
+		return analysis.Refuse("STALE_INPUT", "edit configuration changed; request a new action after configuration refresh", analysis.Location{URI: uri})
+	}
+	return nil
 }
 
 func detachedPlan(plan edit.Plan) edit.Plan {
@@ -120,7 +164,7 @@ func (s *session) rememberFix(d workspace.Document, input string, fix analysis.F
 func (s *session) resourceEditWorkspace(d workspace.Document) (workspace.Workspace, error) {
 	w, proof, err := s.catalog.workspace(s.context(), s.root(string(d.Snapshot.URI())), d.Target.Scope, "", true, true, true)
 	if err != nil {
-		return w, err
+		return w, analysis.Refuse("INDEX_INCOMPLETE", err.Error())
 	}
 	s.proofs = append(s.proofs, proof)
 	return scopeWorkspace(w, d.Target.ID), nil
@@ -137,6 +181,16 @@ func (s *session) discardIndexProofForRefusal() {
 }
 
 func (s *session) requireResourceBuffers(w workspace.Workspace, files []source.URI) error {
+	err := s.checkResourceBuffers(w, files)
+	if err != nil {
+		s.discardIndexProofForRefusal()
+	}
+	return err
+}
+
+// A read-only explanation also contains positive scope facts. It uses this
+// check without discarding the proofs required to publish those facts.
+func (s *session) checkResourceBuffers(w workspace.Workspace, files []source.URI) error {
 	documents := make(map[source.URI]workspace.Document, len(w.Documents))
 	for _, d := range w.Documents {
 		documents[d.Snapshot.URI()] = d
@@ -144,13 +198,11 @@ func (s *session) requireResourceBuffers(w workspace.Workspace, files []source.U
 	for _, uri := range files {
 		b, opened := s.buffers[string(uri)]
 		if !opened || b.unavailable != "" {
-			s.discardIndexProofForRefusal()
-			return fmt.Errorf("resource rename requires every affected file to be open and versioned")
+			return analysis.Refuse("AFFECTED_FILE_NOT_OPEN", "resource rename requires every affected file to be open and versioned", analysis.Location{URI: string(uri)})
 		}
 		d, found := documents[uri]
 		if !found || d.Snapshot.Revision() != b.snapshot.Revision() || d.Snapshot.Text() != b.snapshot.Text() || !compat.Accepted(d.Target.Version) {
-			s.discardIndexProofForRefusal()
-			return fmt.Errorf("resource rename input no longer matches an accepted buffer")
+			return analysis.Refuse("STALE_INPUT", "resource rename input no longer matches an accepted buffer", analysis.Location{URI: string(uri)})
 		}
 	}
 	return nil
@@ -158,7 +210,7 @@ func (s *session) requireResourceBuffers(w workspace.Workspace, files []source.U
 
 func (s *session) handleEdit(m message) (bool, int, error) {
 	if !s.versionedEdits {
-		return false, 0, s.failure(m.ID, -32602, "client does not support versioned documentChanges")
+		return false, 0, s.failureError(m.ID, -32602, m.Method, analysis.Refuse("CLIENT_CAPABILITY_MISSING", "client does not support versioned documentChanges"))
 	}
 	if m.Method == "textDocument/codeAction" && len(s.actions) >= 128 {
 		s.actions = map[string]pendingAction{}
@@ -173,14 +225,14 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 			} `json:"data"`
 		}
 		if err := json.Unmarshal(m.Params, &p); err != nil {
-			return false, 0, s.failure(m.ID, -32602, err.Error())
+			return false, 0, s.failureError(m.ID, -32602, m.Method, err)
 		}
 		action, ok := s.actions[p.Data.Token]
 		if !ok {
 			return false, 0, s.failure(m.ID, -32801, "code action is stale")
 		}
 		if action.version != "" && !compat.Accepted(action.version) {
-			return false, 0, s.failure(m.ID, -32602, "experimental target edits are disabled")
+			return false, 0, s.failureError(m.ID, -32602, m.Method, analysis.Refuse("TARGET_UNKNOWN", "experimental target edits are disabled"))
 		}
 		b, opened := s.buffers[action.uri]
 		var w workspace.Workspace
@@ -206,7 +258,7 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		if _, err := edit.Apply(b.snapshot, b.snapshot.Revision()+1, action.plan); err != nil {
 			return false, 0, s.failure(m.ID, -32801, err.Error())
 		}
-		return false, 0, s.reply(m.ID, map[string]any{"title": action.title, "kind": "quickfix", "edit": versionedEdit(action.uri, b, action.plan), "data": map[string]any{"token": p.Data.Token}})
+		return false, 0, s.replyEdit(m.ID, w, map[string]any{"title": action.title, "kind": "quickfix", "edit": versionedEdit(action.uri, b, action.plan), "data": map[string]any{"token": p.Data.Token}})
 	}
 	var p struct {
 		TextDocument protocol.TextDocumentIdentifier `json:"textDocument"`
@@ -215,12 +267,12 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		NewName      string                          `json:"newName"`
 	}
 	if err := json.Unmarshal(m.Params, &p); err != nil {
-		return false, 0, s.failure(m.ID, -32602, err.Error())
+		return false, 0, s.failureError(m.ID, -32602, m.Method, err)
 	}
 	uri := string(p.TextDocument.URI)
 	b, opened := s.buffers[uri]
 	if !opened {
-		return false, 0, s.failure(m.ID, -32602, "edits require an opened versioned document")
+		return false, 0, s.failureError(m.ID, -32602, m.Method, analysis.Refuse("AFFECTED_FILE_NOT_OPEN", "edits require an opened versioned document"))
 	}
 	name, _ := filePath(uri)
 	if m.Method == "textDocument/codeAction" && name == filepath.Join(s.root(uri), ".argo-workflows-ls.yaml") {
@@ -267,55 +319,43 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 	}
 	d, err := s.queryDocument(uri)
 	if err != nil {
-		return false, 0, s.failure(m.ID, -32803, err.Error())
+		return false, 0, s.failureError(m.ID, -32803, m.Method, err)
 	}
 	if !compat.Accepted(d.Target.Version) {
 		if m.Method == "textDocument/codeAction" {
 			return false, 0, s.reply(m.ID, s.withRenderAction(uri, nil))
 		}
-		return false, 0, s.failure(m.ID, -32602, "experimental target edits are disabled")
+		return false, 0, s.failureError(m.ID, -32602, m.Method, analysis.Refuse("TARGET_UNKNOWN", "experimental target edits are disabled"))
 	}
 	pos := source.Position{Line: p.Position.Line, UTF16Column: p.Position.Character}
 	resourceName := false
 	if m.Method == "textDocument/prepareRename" || m.Method == "textDocument/rename" {
 		resourceName, err = analysis.ResourceRenameAt(ctx, b.snapshot, pos)
 		if err != nil {
-			return false, 0, s.failure(m.ID, -32602, err.Error())
+			return false, 0, s.failureError(m.ID, -32602, m.Method, err)
 		}
 	}
 	switch m.Method {
 	case "textDocument/prepareRename":
 		w, err := s.resourceEditWorkspace(d)
 		if err != nil {
-			return false, 0, s.failure(m.ID, -32602, err.Error())
+			return false, 0, s.failureError(m.ID, -32602, m.Method, err)
 		}
-		if err := analysis.SafeScopePlan(ctx, w, d, edit.Plan{BaseRevision: b.snapshot.Revision()}); err != nil {
-			return false, 0, s.failure(m.ID, -32602, err.Error())
-		}
-		var result any
-		if resourceName {
-			var files []source.URI
-			result, files, err = analysis.PrepareResourceRename(ctx, w, uri, pos)
-			if err == nil {
-				err = s.requireResourceBuffers(w, files)
-			}
-		} else {
-			result, err = analysis.PrepareRename(ctx, b.snapshot, d.Target.Version, pos)
-		}
+		result, err := s.prepareRenameSelection(w, d, pos, resourceName)
 		if err != nil {
-			return false, 0, s.failure(m.ID, -32602, err.Error())
+			return false, 0, s.failureError(m.ID, -32602, m.Method, err)
 		}
 		return false, 0, s.reply(m.ID, result)
 	case "textDocument/rename":
 		w, err := s.resourceEditWorkspace(d)
 		if err != nil {
-			return false, 0, s.failure(m.ID, -32602, err.Error())
+			return false, 0, s.failureError(m.ID, -32602, m.Method, err)
 		}
 		if resourceName {
 			plans, err := analysis.RenameResource(ctx, w, uri, pos, p.NewName)
 			if err != nil {
 				s.discardIndexProofForRefusal()
-				return false, 0, s.failure(m.ID, -32602, err.Error())
+				return false, 0, s.failureError(m.ID, -32602, m.Method, err)
 			}
 			files := make([]source.URI, 0, len(plans))
 			for file := range plans {
@@ -323,27 +363,27 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 			}
 			sort.Slice(files, func(i, j int) bool { return files[i] < files[j] })
 			if err := s.requireResourceBuffers(w, files); err != nil {
-				return false, 0, s.failure(m.ID, -32602, err.Error())
+				return false, 0, s.failureError(m.ID, -32602, m.Method, err)
 			}
 			changes := []any{}
 			for _, file := range files {
 				buffer := s.buffers[string(file)]
 				changes = append(changes, map[string]any{"textDocument": map[string]any{"uri": file, "version": buffer.version}, "edits": analysis.PlanEdits(buffer.snapshot, plans[file])})
 			}
-			return false, 0, s.reply(m.ID, map[string]any{"documentChanges": changes})
+			return false, 0, s.replyEdit(m.ID, w, map[string]any{"documentChanges": changes})
 		}
 		plan, err := analysis.RenameLocal(ctx, b.snapshot, d.Target.Version, pos, p.NewName)
 		if err != nil {
-			return false, 0, s.failure(m.ID, -32602, err.Error())
+			return false, 0, s.failureError(m.ID, -32602, m.Method, err)
 		}
 		if err := analysis.SafeScopePlan(ctx, w, d, plan); err != nil {
-			return false, 0, s.failure(m.ID, -32602, err.Error())
+			return false, 0, s.failureError(m.ID, -32602, m.Method, err)
 		}
-		return false, 0, s.reply(m.ID, versionedEdit(uri, b, plan))
+		return false, 0, s.replyEdit(m.ID, w, versionedEdit(uri, b, plan))
 	case "textDocument/codeAction":
 		local, err := s.localEditWorkspace(d)
 		if err != nil {
-			return false, 0, s.failure(m.ID, -32803, err.Error())
+			return false, 0, s.failureError(m.ID, -32803, m.Method, err)
 		}
 		result := []map[string]any{}
 		localFixes := analysis.FieldFixes(analysis.WithLogicalResult(ctx), b.snapshot, d.Target.Version, p.Range)
@@ -359,7 +399,7 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		}
 		w, err := s.workspace(s.root(uri), "")
 		if err != nil {
-			return false, 0, s.failure(m.ID, -32803, err.Error())
+			return false, 0, s.failureError(m.ID, -32803, m.Method, err)
 		}
 		if w.IncompleteScopes[d.Target.ID] {
 			return false, 0, s.reply(m.ID, s.withRenderAction(uri, result))

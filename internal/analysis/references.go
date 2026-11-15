@@ -200,11 +200,11 @@ func referenceDiagnostics(ctx context.Context, snapshot source.Snapshot, sourceR
 	inherited := workflowMember(spec, "workflowTemplateRef").present
 	// Both the JSON aggregate alias and standalone-template allowance start
 	// at 3.4.2 in the fixed catalog. Other validation families keep their gates.
-	parameterJSON := workflowVersionAtLeast(version, 4, 2)
+	parameterJSON := workflowFeature(version, workflowParametersJSON)
 	independentTemplate := parameterJSON && (resourceKind == "WorkflowTemplate" || resourceKind == "ClusterWorkflowTemplate")
 	parameters, _ := workflowMember(workflowMember(spec, "arguments"), "parameters").value.([]any)
 	aggregateAvailable := len(parameters) > 0
-	emit := func(node workflowValue, code, message string) {
+	emit := func(node workflowValue, code, message string, rules ...string) {
 		loc := nodeLocation(snapshot, node.node)
 		severity := "Error"
 		if code == "WF_REFERENCE_INCOMPLETE" {
@@ -219,7 +219,7 @@ func referenceDiagnostics(ctx context.Context, snapshot source.Snapshot, sourceR
 		if node.origin == "derived" || sharedOrigin(shared, node.Span()) {
 			origin = "derived"
 		}
-		diagnostics = append(diagnostics, Diagnostic{URI: loc.URI, Range: loc.Range, Code: code, Severity: severity, Message: message, Source: "argo-workflows", TargetID: version, PositionKind: origin})
+		diagnostics = append(diagnostics, Diagnostic{URI: loc.URI, Range: loc.Range, Code: code, Severity: severity, Message: message, Source: "argo-workflows", TargetID: version, PositionKind: origin, ruleIDs: rules})
 	}
 	checkWorkflowParameter := func(node workflowValue, parts []string) {
 		if len(parts) < 2 || parts[0] != "workflow" || parts[1] != "parameters" || inherited || independentTemplate {
@@ -227,14 +227,22 @@ func referenceDiagnostics(ctx context.Context, snapshot source.Snapshot, sourceR
 		}
 		if len(parts) == 2 {
 			if !aggregateAvailable {
-				emit(node, "WF_REFERENCE_SCOPE", "workflow parameters aggregate is not available")
+				rules := []string{}
+				if !parameterJSON && (resourceKind == "WorkflowTemplate" || resourceKind == "ClusterWorkflowTemplate") {
+					rules = append(rules, "workflow-parameters-json")
+				}
+				emit(node, "WF_REFERENCE_SCOPE", "workflow parameters aggregate is not available", rules...)
 			}
 			return
 		}
 		if workflowParameters[parts[2]] || parts[2] == "json" && parameterJSON && aggregateAvailable {
 			return
 		}
-		emit(node, "WF_REFERENCE_SCOPE", "workflow parameter is not declared: "+parts[2])
+		rules := []string{}
+		if !parameterJSON && (parts[2] == "json" && aggregateAvailable || resourceKind == "WorkflowTemplate" || resourceKind == "ClusterWorkflowTemplate") {
+			rules = append(rules, "workflow-parameters-json")
+		}
+		emit(node, "WF_REFERENCE_SCOPE", "workflow parameter is not declared: "+parts[2], rules...)
 	}
 	for _, template := range templateList {
 		inputs := workflowMember(template, "inputs")

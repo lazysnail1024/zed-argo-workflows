@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"encoding/json"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -124,6 +125,7 @@ func (s *session) helmQuery(m message) (bool, error) {
 // placeholder cannot establish identity, even if two masked values coincide.
 // Alias/merge identity requires rendered values and is deliberately declined.
 func (s *session) staticSourceIdentity(snapshot source.Snapshot) bool {
+	worktrace.Parse(s.context(), worktrace.ParseHelmCalls, len(snapshot.Text()))
 	view, err := yamlview.Parse(s.context(), snapshot)
 	if err != nil {
 		return false

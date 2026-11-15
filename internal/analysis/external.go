@@ -7,6 +7,7 @@ import (
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/k8s-crd-toolkit/yamlview"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/workspace"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 	"sort"
 	"strings"
 )
@@ -160,6 +161,15 @@ func externalResources(ctx context.Context, w workspace.Workspace, readOnly bool
 }
 func external(ctx context.Context, w workspace.Workspace, query *externalQuery) ([]Diagnostic, []externalBinding, map[string]bool, map[source.URI]ExternalCompletion) {
 	resources, complete, progress, remaining := externalResources(ctx, w, query != nil)
+	return externalPrepared(ctx, w, query, resources, complete, progress, remaining, "")
+}
+
+// Prepared resources carry immutable parsed/projected values. Explicit version
+// explanation reuses them across the finite semantic signatures; normal queries
+// retain the same collection and resolution path.
+func externalPrepared(ctx context.Context, w workspace.Workspace, query *externalQuery, resources []resource, complete map[string]bool, progress map[source.URI]ExternalCompletion, remaining map[source.URI]int, diagnosticURI source.URI) ([]Diagnostic, []externalBinding, map[string]bool, map[source.URI]ExternalCompletion) {
+	worktrace.Add(ctx, worktrace.DomainPasses, 1)
+	worktrace.Add(ctx, worktrace.DomainExternalPasses, 1)
 	diagnostics := []Diagnostic{}
 	bindings := []externalBinding{}
 	candidatesByIdentity := make(map[externalIdentity][]resource, len(resources))
@@ -249,6 +259,10 @@ func external(ctx context.Context, w workspace.Workspace, query *externalQuery) 
 			done.Completed = remaining[uri] == 0
 			progress[uri] = done
 		}
+		if diagnosticURI != "" && caller.document.Snapshot.URI() != diagnosticURI {
+			finish()
+			continue
+		}
 		// Definitions return bindings from the selected document. Only an
 		// inherited workflow-parameter use needs other callers' environments.
 		if query != nil && query.definitions && parameters == nil && string(caller.document.Snapshot.URI()) != query.uri {
@@ -281,10 +295,12 @@ func external(ctx context.Context, w workspace.Workspace, query *externalQuery) 
 		if ctx.Err() != nil {
 			return diagnostics, bindings, complete, progress
 		}
-		emit := func(node workflowValue, code, severity, message string) {
+		worktrace.Add(ctx, worktrace.DomainResources, 1)
+		emitRules := func(node workflowValue, code, severity, message string, rules ...string) {
 			loc := nodeLocation(caller.document.Snapshot, node.node)
-			diagnostics = append(diagnostics, Diagnostic{URI: loc.URI, Range: loc.Range, Code: code, Severity: severity, Message: message, Source: "argo-workflows", TargetID: caller.document.Target.ID, PositionKind: node.origin})
+			diagnostics = append(diagnostics, Diagnostic{URI: loc.URI, Range: loc.Range, Code: code, Severity: severity, Message: message, Source: "argo-workflows", TargetID: caller.document.Target.ID, PositionKind: node.origin, ruleIDs: rules})
 		}
+		emit := func(node workflowValue, code, severity, message string) { emitRules(node, code, severity, message) }
 		bind := func(from yamlview.Node, callee resource, to yamlview.Node) {
 			_, a, fromExact := exactName(from)
 			_, z, toExact := exactName(to)
@@ -475,7 +491,7 @@ func external(ctx context.Context, w workspace.Workspace, query *externalQuery) 
 			}
 			callee := candidates[0]
 			if whole && query == nil && complete[caller.document.Target.ID] {
-				inheritedParameterDiagnostics(ctx, caller, callee, emit)
+				inheritedParameterDiagnostics(ctx, caller, callee, emitRules)
 			}
 			if whole && query == nil {
 				// Caller objects win as whole named arguments. Base-winning values
@@ -497,9 +513,9 @@ func external(ctx context.Context, w workspace.Workspace, query *externalQuery) 
 					if own[name] || counts[name] != 1 {
 						continue
 					}
-					message, _ := argumentValueError(arg.value, caller.document.Target.Version, caller.kind == "WorkflowTemplate" || caller.kind == "ClusterWorkflowTemplate")
+					message, _, rules := argumentValueDecision(arg.value, caller.document.Target.Version, caller.kind == "WorkflowTemplate" || caller.kind == "ClusterWorkflowTemplate")
 					if message != "" {
-						emit(nameValue, "WF_ARGUMENT_VALUE_INVALID", "Error", message)
+						emitRules(nameValue, "WF_ARGUMENT_VALUE_INVALID", "Error", message, rules...)
 					}
 				}
 			}
@@ -518,7 +534,7 @@ func external(ctx context.Context, w workspace.Workspace, query *externalQuery) 
 			}
 			templateValidation := caller.kind == "WorkflowTemplate" || caller.kind == "ClusterWorkflowTemplate"
 			if whole && query == nil {
-				if workflowVersionAtLeast(caller.document.Target.Version, 4, 6) {
+				if workflowFeature(caller.document.Target.Version, externalExit) {
 					// onExit uses the caller's original arguments, unlike entrypoint.
 					exitValue := workflowMember(semanticCall, "onExit")
 					exitName := workflowString(exitValue)
@@ -538,10 +554,10 @@ func external(ctx context.Context, w workspace.Workspace, query *externalQuery) 
 							}
 						}
 						if count == 0 {
-							emit(exitValue, "WF_TEMPLATE_REF_UNRESOLVED", "Error", "resolved resource does not declare template "+exitName)
+							emitRules(exitValue, "WF_TEMPLATE_REF_UNRESOLVED", "Error", "resolved resource does not declare template "+exitName, "external-exit")
 						} else if count == 1 {
 							for _, missing := range missingArguments(caller.document.Target.Version, selectedExit.value, workflowMember(semanticCall, "arguments").value) {
-								emit(exitValue, "WF_ARGUMENT_MISSING", "Error", "required input "+missing+" was not supplied")
+								emitRules(exitValue, "WF_ARGUMENT_MISSING", "Error", "required input "+missing.name+" was not supplied", append([]string{"external-exit"}, missing.ruleIDs...)...)
 							}
 						}
 					}
@@ -568,7 +584,7 @@ func external(ctx context.Context, w workspace.Workspace, query *externalQuery) 
 					// Workflow-template entrypoints are checked with FakeArguments.
 					if query == nil && (!whole || !templateValidation) {
 						for _, missing := range missingArguments(caller.document.Target.Version, semanticTemplate.value, args...) {
-							emit(templateValue, "WF_ARGUMENT_MISSING", "Error", "required input "+missing+" was not supplied")
+							emitRules(templateValue, "WF_ARGUMENT_MISSING", "Error", "required input "+missing.name+" was not supplied", missing.ruleIDs...)
 						}
 					}
 					if templateCount == 1 {

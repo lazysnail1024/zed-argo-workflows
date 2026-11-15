@@ -3,6 +3,7 @@ package analysis
 import (
 	"context"
 	"errors"
+	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/k8s-crd-toolkit/yamlvalue"
@@ -44,16 +45,19 @@ func project(ctx context.Context, snapshot source.Snapshot, doc yamlview.Documen
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	worktrace.Add(ctx, worktrace.ProjectionLookups, 1)
 	state, _ := ctx.Value(invocationKey{}).(*invocation)
 	key := projectionIdentity{snapshotKey(snapshot), version, doc.Span()}
 	if state != nil {
 		if value, ok := state.projection(key); ok {
+			worktrace.Add(ctx, worktrace.ProjectionHits, 1)
 			if err := admitProjection(ctx, key, value.graphNodes); err != nil {
 				return nil, err
 			}
 			return value.value, nil
 		}
 	}
+	worktrace.Add(ctx, worktrace.ProjectionCalls, 1)
 	projected, err := yamlvalue.Project(ctx, snapshot, doc, yamlvalue.Options{MaxNodes: 100000, MaxVisits: 100000, RejectExplicitTags: true})
 	if err != nil {
 		var failure *yamlvalue.Error

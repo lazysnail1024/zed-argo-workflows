@@ -30,6 +30,8 @@ ClusterWorkflowTemplate、CronWorkflow 有工作流语义；其余四种提供 s
 | [cmd/argo-workflows-ls/main.go](../cmd/argo-workflows-ls/main.go) | 分派 `version`、`check`、`serve --stdio`、`explain-config` 等命令；CLI 组装报告并冻结终止状态，统一报告完整性和退出码 |
 | [tools.go](../cmd/argo-workflows-ls/tools.go)、[Unix](../cmd/argo-workflows-ls/process_unix.go)/[Windows](../cmd/argo-workflows-ls/process_windows.go) 进程支持 | 显式 `render-check`、`lint-official`；子进程超时、合并输出预算及进程组/Job Object 回收 |
 | [internal/workspace](../internal/workspace) | 产品配置、scope/target 选择、候选文件和 Helm 边界、稳定有界磁盘读取、CLI 一次性收集及请求输入预算 |
+| [workspace/render.go](../internal/workspace/render.go) | CLI/LSP 共用的只读 RenderRequest；profile、root/scope、源文件及有序 values 身份；收集和解析动作不启动工具 |
+| [internal/rendercache](../internal/rendercache) | 默认生成目录的持有句柄、来源标记和精确库存；显式列出/删除，拒绝更改、外来文件及路径替换；自定义输出不进入所有权登记 |
 | [internal/helmsource](../internal/helmsource/source.go) | 识别真实 Helm action，按原始字节位置投影受支持的字面量和简单标量；结构性 action、动态键或不明确身份拒绝导航；Identity 投影只用于选择显式 render 动作 |
 | [internal/fileuri](../internal/fileuri/fileuri.go) | 本地绝对路径和 file URI 互转；包含 Windows 盘符及转义边界 |
 | [internal/buildinfo](../internal/buildinfo/info.go) | 原生版本、源码身份与 Go build metadata 中实际链接的 toolkit 版本 |
@@ -60,6 +62,7 @@ scope 的有效 target。`stream.go` 的 `Describe` 只读取配置元数据，`
 | [document_workspace.go](../internal/lsp/document_workspace.go) | 为被 exclude 或内部目录隔离的 `opened:<URI>` buffer 重新获取当前输入；Quick Fix 不会误选磁盘 scope |
 | [query_cache.go](../internal/lsp/query_cache.go) | 在获取当前输入后复用完整 scope 的最终查询结果；身份包含方法/参数、文本、配置及索引候选 generation |
 | [edits.go](../internal/lsp/edits.go) | Rename/Code Action 协议，版本化 WorkspaceEdit，延迟 resolve 的 token、输入 fingerprint 与安全性复查 |
+| [explanation.go](../internal/lsp/explanation.go) | 从当前 buffer/catalog 派生只读分析解释，区分文件和 scope 完整性；显式 source action/command 及标准错误 data，复用实际 prepareRename 检查，不保存第二套状态 |
 | [helm.go](../internal/lsp/helm.go) | 对受支持的 Helm 字面源提供原文件坐标的 Definition；同 chart 的静态目标才参与绑定，其他源查询保守返回空结果 |
 | [render.go](../internal/lsp/render.go)、[workspace/chart.go](../internal/workspace/chart.go) | 发现最近祖先 Chart，创建并复核 saved-chart action；仅执行命令时调用有界 render 回调，检查未保存/过时输入并按客户端能力打开生成 YAML |
 
@@ -150,6 +153,12 @@ Expr 与 JSON Schema 是本仓实际使用并单独记录补丁的依赖，不�
    同 size/mtime 的字节变化也能被发现。查询重新获取已知依赖；完全未知的新文件由维护扫描发现。
    维护扫描本身有 I/O，不承诺无成本。
 8. **发布和查询分别确认。** 只有接受的诊断 publication 能确认外部诊断已完成；普通 query 不修改此状态。
+
+只读解释的字段由当前不可变 snapshot、有效 target 和 catalog readiness 生成；根、配置和
+文档版本沿用现有请求 proof 检查。显式 command 使用 `window/showMessage` 展示结果，只有
+用户请求时才发送。领域安全拒绝由 [analysis/explanation.go](../internal/analysis/explanation.go)
+的类型化原因携带，原因码在拒绝发生的位置创建，不从错误字符串反推。解释中的可用状态不
+作为编辑凭据；实际 Rename 仍重新运行相同检查。
    本地诊断先发后，scope 完整时补发外部诊断。结果带 root epoch、scope generation、file stamp/hash，
    失效后不能发布旧位置或恢复旧 Quick Fix；无变化的 Ready→Ready 不反复刷新全部已打开文件。
 
@@ -189,6 +198,11 @@ scope 共同使用 8 MiB 文本、512,000 节点上限；同 URI 替换，最近
 不会恢复旧配置、诊断、绑定结果或完整性结论。每个逻辑结果仍独立计算 alias/merge 展开准入；
 超缓存预算仅放弃复用，不减少分析输入或放宽拒绝条件。保存由成功且当前的索引票据或请求 proof
 验收；树计费在 worker 中完成，owner 保存时不重新遍历 CST。
+
+打开文档的查询先取得当前 buffer 和配置 header proof，再向同一个 FactStore 恢复精确身份
+匹配的事实，避免在最终查询结果缓存之前重复解析已经接受的源文本。关闭文件仍执行当前
+磁盘读取后才恢复；合成/恢复查询文本仍调用 parser，直接查询投影也仍执行。命中最终结果
+不代表这些前置工作为零，解析复用也不承诺减少投影、Schema 查询或领域检查。
 
 ### 资源索引表达什么
 
@@ -263,6 +277,47 @@ worker 只携带证明，不重复建立证明分页或提前复核；提前检�
 领域 namespace/kind 过滤与候选唯一性仍由本仓解释。
 [实现预算](../internal/workspace/budget.go)、[LSP 内存策略测试](../internal/lsp/memory_test.go)、
 [CI 资源验收](CI.md)
+
+## 实际工作观测
+
+`ARGO_WORKFLOWS_LS_TRACE=1` 为默认关闭的 stderr 观测开关。每个请求、输入接收、后台索引
+文件、配置刷新和诊断批次分别持有计数 context；并发 parser 使用固定原子计数器，不用进程
+总量相减推测前台工作。关闭时，计数入口在 context 查询、分配和读时钟之前返回。
+记录不保存正文、配置或 URI 清单，也不增加缓存、输入状态机或外部遥测服务。
+[计数定义](../internal/worktrace/trace.go)、[请求生命周期](../internal/lsp/serve.go)
+
+| 字段 | 计数边界 |
+| --- | --- |
+| `readAttempts` / `readFailures` | 有界输入获取及其失败终态，包括 stat、预算、身份或稳定性拒绝；配置不存在也保留失败 open 的成本，默认配置仍可正常使用 |
+| `readFiles` / `readBytes` | 完成的实际字节读取次数及取得的字节数；后续稳定性拒绝不会抹掉已读取的工作，部分失败读取也计入 bytes |
+| `parseCalls` / `parseBytes` | 每次产品调用实际 YAML parser 及其输入大小；普通、preparse、Helm、恢复和合成查询另有计数，命中 view 不算一次解析 |
+| `projectionCalls` / `configDecodes` | 实际 YAML value 投影；配置 loader 的严格解码与字段存在性解码分别计数 |
+| `schemaLoads` / `schemaCompiles` | 嵌入 Schema 的实际 JSON 解码与实际编译；请求调用、命中和冷编译许可等待分开记录 |
+| `schemaQueries` | 产品调用 `Lookup`、`Type`、`Values`、`AllowsKey`、`SelectShapes` 的总次数及分类；不声称计量 Toolkit 内部遍历节点 |
+| `domainPasses` / `domainResources` | 实际进入本地规则、外部解析准备或绑定收集，以及实际检查的资源；已有外部诊断事实命中另记，不伪装成重新执行资源规则 |
+| `factsRestored` / `projectionsRestored` | 当前请求新接纳的精确文档 view 和投影；与 `resultCacheHits`、已发生的读取/解析分别记录 |
+
+输入获取计数不包括目录枚举、生成缓存完整性检查和 Helm 子进程内部 I/O。`phase:index`
+原有累计摘要保持原意。`parseBytes` 是提交给 parser 的输入大小，不表示取消前已处理全部
+字节；`schemaLoadCalls` 只计 `Document` API 请求，实际 `schemaLoads` 也包含编译路径的
+解码，两者不是简单的 attempts/hits 分区。`schemaQueries` 不包含 JSON Schema validation
+或版本分支验证；`domainResources` 为每次进入检查的资源，一个 YAML 资源可在不同 pass 中
+计数多次，不是唯一资源数量。request 的 queue 从准入到 goroutine 开始；service 到 worker 完成；
+reply 与 release 相对准入分别记录。后台文件记录从实际开始处理计时，不声称观测了 Toolkit
+WorkQueue 内部等待。显式取消先回复、后回收时，两段间隔分别保留；丢弃结果仍保留已发生的
+计数。交付状态直接来自现有 owner 判断，计数不参与证明、调度或诊断。关闭进程或致命
+transport I/O 可早于 worker 完成记录，因此这些记录不声称是完整进程总账。
+
+前台 `start` 只表示 worker 已开始，不证明解析已发生。启用 trace 时，每个请求的首次实际
+parser 调用入口另外发出一次 `parse-start`，包含请求身份、解析用途和提交的输入字节数，
+不含正文。取消消费者观察该入口后再发送取消，并核对最终记录保留这些已提交的工作；
+不靠固定延迟假定 parser 已开始，也不把解析前取消的零计数当作计数丢失。
+
+正确性与节省工作分开验收。trace-off 必须给出相同结果；独立 inotify 仍要求外部查询重新读
+选定关闭文件一次，其他 scope 零读取。合成/恢复补全和冷 Schema 编译作为正校准，避免遗漏
+前置工作或全零计数被当成收益。编辑等价性实际应用版本化 Rename、补全和 resolve 后 Quick Fix，
+比较独立全文预期、UTF-16/CRLF、其他 scope 和应用后的诊断/引用。延迟与 RSS 仍以现有外部
+进程测量和原阈值为准；启用 tracing 的样本必须与同样启用 tracing 的基线比较。
 
 ## 构建、adapter 和发布隔离
 

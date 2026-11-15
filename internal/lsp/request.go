@@ -38,7 +38,7 @@ type requestInput struct {
 }
 
 func (s *session) queueRequest(m message) queuedRequest {
-	q := queuedRequest{message: m, epoch: s.epoch}
+	q := queuedRequest{message: m, epoch: s.epoch, trace: s.tracer.Begin("request", m.Method, m.ID)}
 	var params struct {
 		TextDocument struct{ URI string }   `json:"textDocument"`
 		Data         struct{ Token string } `json:"data"`
@@ -51,7 +51,7 @@ func (s *session) queueRequest(m message) queuedRequest {
 		q.input.uri = s.actions[params.Data.Token].uri
 	}
 	switch m.Method {
-	case "textDocument/hover", "textDocument/completion", "textDocument/documentSymbol", "textDocument/definition", "textDocument/references":
+	case "textDocument/hover", "textDocument/completion", "textDocument/documentSymbol", "textDocument/definition", "textDocument/references", "argo-workflows/explainAnalysis":
 		q.input.readOnly = q.input.uri != ""
 	}
 	if !q.input.readOnly {
