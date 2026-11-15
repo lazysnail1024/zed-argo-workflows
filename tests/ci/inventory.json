@@ -453,6 +453,9 @@
       "files": [
         "tests/ci/control.py",
         "tests/ci/control_e2e.py",
+        "tests/ci/transport.py",
+        "tests/ci/transport_e2e.py",
+        "tests/ci/receipt_materialization_e2e.py",
         "tests/ci/build_identity.py",
         "tests/ci/import_e2e.py",
         "tests/ci/runtime_e2e.py",

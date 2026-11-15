@@ -199,13 +199,54 @@ Linux native lane 在真实普通 binary 上执行
 ### 上传与下载后复验
 
 成功 native lane 将完整 evidence 转移到一个 receipt payload，包含隐藏配置输入；失败 lane
-保留原 evidence。只过滤已知 compiler/interpreter scratch，不删除语义输入。文本 payload
-使用 ZIP 压缩级别 6；release archives 与 ordinary imports 仍有各自独立消费者。
+保留原 evidence。只过滤已知 compiler/interpreter scratch，不删除语义输入。receipt 原有的
+文件字节选择规则不变：被选中的 file symlink 在任何 referent 移动前先稳定读取，核对原
+evidence digest 和 link/target 身份，再物化成独立普通文件。选中后变悬空、改指向或变成
+非普通文件会失败；原规则没有选中的目录链接、FIFO 等不扩大为读取输入。这是原有
+regular-byte payload 的交付，不承诺保存整个消费者工作目录的所有文件系统元数据。
+
+[transport.py](../tests/ci/transport.py) 将完成的 lane receipt 和 payload 打包成自包含的
+内容寻址 ZIP。同一收据中相同 SHA-256 的字节只存一份，lane receipt、producer manifest
+和所有子 JSON 均作为原始字节保存，不重新序列化或改写原命令路径。传输清单记录逻辑路径、
+类型和权限，普通文件另记大小与内容 hash。恢复为新目录中的独立普通文件；相同内容但不同权限
+的文件仍独立创建，修改其中一份不会改动其他文件。没有 producer 外部对象依赖。
+
+内层 ZIP 固定使用压缩级别 6；normal receipt artifact 只上传这个 ZIP，外层上传压缩级别
+为 0，避免重复压缩。ordinary producer 的普通 artifact 使用压缩级别 6；release archives
+与 ordinary imports 的身份验证和消费者不变。打包或上传失败时，独立的
+`raw-native-receipt-*` artifact 保留已经移到 `artifacts/receipt` 的原始材料和传输指标，
+原失败路径也保留尚在 `artifacts/ci` 的材料。raw fallback 不进入正常 acceptance 的
+`native-receipt-*` 下载选择，不会被当作成功传输悄悄接受。
+
+打包拒绝物理 symlink、特殊文件、输入变化及不安全路径。解包先验证严格 JSON、清单/对象
+集合、ZIP 物理头、类型和便携路径别名，再有界读取压缩流并逐对象核对实际大小与 hash；
+不信任 ZIP 声明的解压大小来截断验证。上限为 1,000,000 个逻辑项、单文件 4 GiB、逻辑字节总量 64 GiB、
+清单 128 MiB、中央目录 256 MiB，以及路径 4,096 UTF-8 字节/128 层。恢复拒绝已存在的
+目的地及 symlink 路径，使用持有的目录描述符创建文件。`pack` 面向各 native producer；
+`hydrate`/`hydrate-set` 要求 POSIX descriptor-relative no-follow 操作，当前 acceptance
+在 Linux 运行，本地控制也不等于其他平台的实际 CI 验收。
+
+`hydrate-set` 先验证整套 artifact 目录及 lane 唯一性，再把每个 lane 恢复到独立新目录，
+复核预检身份和最终输入集合。唯一 raw 兼容形式是原 docs-only 的
+`docs.json` + `payload-docs` 布局，仍由原 gate 验收。混合 raw/CAS、额外文件或重复 lane
+均拒绝；传输清单和指标始终留在 gate 收据树之外。失败可能保留排查用 partial 文件，
+后续 gate 只在 hydrate 成功后执行，不以目录存在作为成功信号。
 
 下载全部选中 lane 后，[downloaded_material_e2e.py](../tests/ci/downloaded_material_e2e.py)
 先要求原始完整 gate 通过，再重新生成真实 Linux receipt、归档解包并复验 gate。缺文件、
 错误 fixture/input/lifecycle 即使重新计算外层 hash 也必须以指定原因拒绝。原 payload 不被
-修改。归档耗时不等于 hosted 传输或整个 workflow 加速。
+修改。[transport_e2e.py](../tests/ci/transport_e2e.py) 用固定独立输入检查原 JSON/原始流
+字节、独立副本、模式、严格拒绝和实际并发变化；
+[receipt_materialization_e2e.py](../tests/ci/receipt_materialization_e2e.py) 检查选中文件链接的
+物化顺序、变化拒绝和失败材料保留。传输完整性不能替代原 `control.py`/`evidence.py`
+的执行身份、case 集合、原始协议和领域验收。
+
+本地归档比较应固定 Python/zlib、完整逻辑 inventory 和测试选择，交替重复当前 raw receipt
+布局的 ZIP6 重放与实际 CAS CLI，分别记录完整 archive 字节及归档、恢复、独立复核、
+原验证器重放耗时。ZIP6 布局重放不是 upload-artifact SDK 测量；历史 STORED0 下载包也
+不能充当当前 ZIP6 基线。历史 lane 必须使用其原始 source/run/attempt 和匹配的 pinned
+验证器，并明确标注没有新执行消费者或完整 matrix。hosted 上传、下载、排队和自然 PR
+样本只能来自真实 workflow；本地压缩数据不证明 hosted 或整个 workflow 加速。
 
 各 job 尝试以 `always()` 上传证据，保留期以 YAML 为准，通常 30 天。记录包含原始输出、
 命令及 timeout 回执、JSON 断言、协议、输入/源码/binary hash、工具链和实际资源限制。
@@ -254,6 +295,8 @@ CI 控制与时间数据入口：
 ```sh
 python3 tests/ci/control.py baseline --output artifacts/baseline.json
 python3 tests/ci/control_e2e.py --output artifacts/control-e2e
+python3 tests/ci/transport_e2e.py --output artifacts/transport-e2e
+python3 tests/ci/receipt_materialization_e2e.py --output artifacts/receipt-materialization-e2e
 python3 tests/ci/selection_e2e.py --output artifacts/selection-e2e
 python3 tests/e2e/session_e2e.py --output artifacts/session-e2e
 python3 tests/ci/trends.py --inputs artifacts/ci --output artifacts/timing.json
@@ -262,6 +305,19 @@ python3 tests/ci/trends.py --inputs artifacts/ci --output artifacts/timing.json
 baseline exporter 读取冻结 Git objects；时间汇总保留首个失败和原命令 hash，不替代产品门槛。
 性能对比要求五个 warm 和三个 cold 完整样本，不足时显式报告。Rust/WASI 入口见
 [开发指南](../DEVELOPMENT.md)。
+
+单包与 acceptance 集合的传输入口如下；输出目录/文件必须是新的，指标路径留在 gate 树外：
+
+```sh
+python3 tests/ci/transport.py pack \
+  --receipt artifacts/receipt/native-linux-amd64.json \
+  --output artifacts/transport/lane.zip --report artifacts/transport-metrics.json
+python3 tests/ci/transport.py hydrate \
+  --archive artifacts/transport/lane.zip --output artifacts/one-restored-lane
+python3 tests/ci/transport.py hydrate-set \
+  --inputs artifacts/receipt-transports --output artifacts/receipts \
+  --report artifacts/hydration-metrics.json
+```
 
 ## 与真实编辑器验收的关系
 

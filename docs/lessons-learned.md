@@ -351,5 +351,29 @@ didOpen 前等待该索引明确就绪，再执行相同的 20/100/20 阶段。�
 [真实版本矩阵](../tests/e2e/wf-multi-version.py)、
 [兼容机制负对照](../tests/e2e/wf-multi-version-ablation.py)
 
+## 21. 归档自洽不代表材料完整或消费者通过
+
+**可观察问题。** 新的收据传输原型曾把 ZIP 声明的解压大小作为读到 EOF 的依据；恶意包
+把声明改成零并重签外层 hash，底层仍有非空压缩流，却能返回成功。另一处先预检 lane，
+后按同一路径重开包，允许间隙中的合法包替换改变已选择的 lane。真实 render consumer
+还保留 file symlink；原 `--move-payload` 移动的是链接本体，会使 referent 丢失或留下
+不能独立交付的 payload。
+
+**当前修复。** 传输解析绑定 local/central 物理头和边界，实际有界解压并核对 CRC、EOF、
+内容 hash 与大小；整套恢复绑定预检文件身份、返回 lane 和最终输入集合。物化先复制所有
+已选文件链接，按原 evidence digest 复核 link/target 身份，成功后才移动普通 referent。
+收据、producer manifest 和子报告保留原字节；恢复文件相互独立，传输指标不混入 gate 树。
+
+**防回归。** 固定输入控制保留了零声明但非空流、真实预检后替换、逐文件读取后的新增
+目录成员、选中链接变化，以及同内容不同 mode 的独立副本。真实 profiles 材料链经过
+物化、pack/hydrate 后仍由原 consumer verifier 复核。生产验证器合同要求的原始子流缺失、
+错误 source/attempt 和零 cases 即使重签传输 hash 仍须被匹配原身份的生产验证器拒绝。
+首轮误选未被旧验证器要求的非聚合流，旧验证器接受的结果作为 oracle 校准失败保留，不能
+据此宣称任意 raw stream 都会被该历史版本检查。历史材料重放不记为新消费者执行。
+打包或上传失败的 raw fallback 同时覆盖已移动 receipt 和剩余 evidence。
+[传输控制](../tests/ci/transport_e2e.py)、
+[物化与保留控制](../tests/ci/receipt_materialization_e2e.py)、
+[下载后领域复核](../tests/ci/downloaded_material_e2e.py)
+
 这些规则描述当前源码要求；某次修复是否已经交付，应核对实际 release 和二进制身份。
 CI、WASI 运行时与真实 Zed 编辑会话的结果分别记录，不能互相代替。

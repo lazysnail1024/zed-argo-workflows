@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import subprocess
 import shutil
+import stat
 import time
 import sys
 
@@ -98,11 +99,67 @@ def generated_payload_path(relative):
          or parts[0] in ('cache','go-cache','module-cache','tmp','temp','scratch')
          or ('source' in parts and any(part in ('artifacts','build','target') for part in parts[parts.index('source')+1:])))
 
+def material_signature(value, cross_api=False):
+ return (value.st_dev,value.st_ino,value.st_size,value.st_mtime_ns,value.st_ctime_ns,
+         stat.S_IFMT(value.st_mode) if cross_api else value.st_mode)
+
+def file_link_snapshot(path):
+ link=path.lstat();require(stat.S_ISLNK(link.st_mode),'selected file link changed type')
+ target=path.stat();require(stat.S_ISREG(target.st_mode),'selected file link no longer refers to a regular file')
+ return (material_signature(link),os.readlink(path),material_signature(target))
+
+def snapshot_file_links(files):
+ links={}
+ for path in files:
+  value=path.lstat()
+  require(stat.S_ISREG(value.st_mode) or stat.S_ISLNK(value.st_mode),'selected byte material is no longer a regular file')
+  if stat.S_ISLNK(value.st_mode):links[path]=file_link_snapshot(path)
+ return links
+
+def materialize_files(files,root,payload,evidence,move,links):
+ if not move:
+  for source in files:
+   dest=payload/source.relative_to(root);dest.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(source,dest)
+  return
+ # Materialize every already-selected file link before moving any referent.
+ # A receipt promises regular-file bytes, not the original fixture's link type.
+ # Unselected directory links/FIFOs retain the existing selection semantics.
+ for source,selected in links.items():
+  require(file_link_snapshot(source)==selected,'selected file link changed before materialization')
+  descriptor=os.open(source,os.O_RDONLY|getattr(os,'O_BINARY',0)|getattr(os,'O_NONBLOCK',0))
+  try:
+   opened=os.fstat(descriptor);target=source.stat()
+   require(stat.S_ISREG(opened.st_mode) and material_signature(opened,True)==material_signature(target,True)
+           and material_signature(target)==selected[2],'selected referent changed while opening')
+   dest=payload/source.relative_to(root);dest.parent.mkdir(parents=True,exist_ok=True)
+   digest=hashlib.sha256();size=0
+   with dest.open('xb') as output:
+    while True:
+     data=os.read(descriptor,1024*1024)
+     if not data:break
+     size+=len(data);require(size<=opened.st_size,'selected referent grew while copying')
+     digest.update(data);output.write(data)
+   require(size==opened.st_size and digest.hexdigest()==evidence[source.relative_to(root).as_posix()],
+           'selected link bytes differ from validated evidence')
+   require(material_signature(os.fstat(descriptor))==material_signature(opened)
+           and file_link_snapshot(source)==selected,'selected file link changed while copying')
+  finally:os.close(descriptor)
+ for source,selected in links.items():require(file_link_snapshot(source)==selected,'selected file link changed after copying')
+ for source,selected in links.items():
+  require(material_signature(source.lstat())==selected[0] and os.readlink(source)==selected[1],
+          'selected file link changed before transfer')
+  source.unlink()
+ for source in files:
+  if source in links:continue
+  require(stat.S_ISREG(source.lstat().st_mode),'selected regular material changed type')
+  dest=payload/source.relative_to(root);dest.parent.mkdir(parents=True,exist_ok=True);shutil.move(str(source),str(dest))
+
 def receipt(args):
  value=json.loads(args.plan.read_text());validate_plan(value)
  require(args.lane in value['selectedLanes'],'unselected lane')
  require(args.evidence.resolve() not in args.output.resolve().parents,'receipt output must be outside its evidence tree')
  files=[p for p in args.evidence.rglob('*') if p.is_file() and not generated_payload_path(p.relative_to(args.evidence))]
+ links=snapshot_file_links(files)
  if value['workflow']!='native' or value['selection']=='docs':
   started=json.loads(args.started.read_text());require(started.get('identity')==identity(),'stale job launch identity')
   require(all(p.stat().st_mtime_ns>=started['startedNs'] for p in files),'report predates this execution')
@@ -113,11 +170,7 @@ def receipt(args):
  require(not args.output.exists() and not payload.exists(),'refusing old lane receipt')
  if args.move_payload:
   require(value['workflow']=='native','payload transfer is restricted to native lanes')
-  for source in files:
-   dest=payload/source.relative_to(args.evidence);dest.parent.mkdir(parents=True,exist_ok=True);shutil.move(str(source),str(dest))
- else:
-  for source in files:
-   dest=payload/source.relative_to(args.evidence);dest.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(source,dest)
+ materialize_files(files,args.evidence,payload,evidence,args.move_payload,links)
  save(args.output,{'schemaVersion':1,'lane':args.lane,'identity':identity(),'planDigest':sha(args.plan),'evidence':evidence,'executionStart':json.loads(args.started.read_text()) if args.started else None,'pass':True})
 
 def gate(args):
