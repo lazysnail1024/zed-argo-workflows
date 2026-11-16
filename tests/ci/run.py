@@ -28,7 +28,7 @@ NATIVE = (
     "wf-remediation-semantics", "wf-remediation-lifecycle",
     "wf-remediation-rename", "wf-remediation-targets",
     "wf-default-target-provenance", "wf-schema-queries",
-    "wf-schema-query-targets", "wf-domain-queries", "wf-quickfixes",
+    "wf-schema-query-targets", "wf-domain-queries", "wf-definition-recovery", "wf-quickfixes",
     "wf-local-rename", "wf-bounded-scalars", "wf-bounded-completion",
     "wf-toolkit-budget", "wf-remediation-helm-boundary",
     "wf-helm-navigation", "wf-helm-identity",

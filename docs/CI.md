@@ -131,6 +131,13 @@ watchdog 20 秒，产品分析 deadline 仍为五秒。聚合器核对顺序、�
 失效、只读客户端的可用性。它与现有 Rename/quickfix 消费者一起运行；请求 quickfix 的旧
 消费者显式使用 LSP `context.only`，避免把只读解释 command 当成可应用编辑。
 
+`wf-definition-recovery` 在同一真实 stdio 会话中切换完整、无关尾部 flow 未闭合和恢复原文，
+用启动服务前固定的 token 范围检查本地模板 Definition，覆盖 entrypoint/onExit、DAG 调用、
+完整 hooks、CRLF/UTF-16 和多文档隔离。模板集合或 hook 调用作用域自身损坏、重复声明、
+alias/merge、动态和继承目标有独立拒绝控制。损坏状态仍须报告原始 buffer hash 与不完整状态，
+References、Prepare Rename、Rename 和 Quick Fix 保留原有拒绝；磁盘字节不变，进程正常退出。
+该消费者加入 native runner 与独立 assertion 合同，不把只读跳转恢复算作资源完整性证明。
+
 `wf-resource-rename` 与 `wf-reaudit-actions` 另以真实 stdio 请求验证未发送 watch/config
 事件的磁盘配置变化：policy、scope、target 或无效键不能在后台 metadata 刷新前继续授权
 实际 Rename/已 resolve Quick Fix。配置 overlay 仍优先于磁盘；恢复后的新请求必须生成

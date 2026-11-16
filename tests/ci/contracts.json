@@ -289,6 +289,27 @@
         {"id": {"case": "completion-bracket"}, "assertions": ["exactBytes", "fullCLI", "unique"]}
       ]
     },
+    "wf-definition-recovery": {
+      "assertionKey": "assertions",
+      "rows": [
+        {"id": {"case": "same-session-tail-sequence"}, "assertions": ["validExactDefinition", "damagedExactDefinition", "restoredExactDefinition", "validExactReferences", "restoredExactReferences", "damagedReferencesRefused", "referencesRemainIncomplete", "documentRemainsIncomplete", "originalBufferIdentity", "prepareRenameRefused", "renameRefused", "quickFixWithheld", "diskUnchanged", "cleanLifecycle"]},
+        {"id": {"case": "same-session-local-calls"}, "assertions": ["validExactDefinition", "damagedExactDefinition", "restoredExactDefinition", "validExactReferences", "restoredExactReferences", "damagedReferencesRefused", "referencesRemainIncomplete", "documentRemainsIncomplete", "originalBufferIdentity", "prepareRenameRefused", "renameRefused", "quickFixWithheld", "diskUnchanged", "cleanLifecycle"]},
+        {"id": {"case": "crlf-utf16-tail-mapping"}, "assertions": ["validExactDefinition", "damagedExactDefinition", "restoredExactDefinition", "validExactReferences", "restoredExactReferences", "damagedReferencesRefused", "referencesRemainIncomplete", "documentRemainsIncomplete", "originalBufferIdentity", "prepareRenameRefused", "renameRefused", "quickFixWithheld", "diskUnchanged", "cleanLifecycle"]},
+        {"id": {"case": "multi-document-tail"}, "assertions": ["validExactDefinition", "damagedExactDefinition", "restoredExactDefinition", "validExactReferences", "restoredExactReferences", "damagedReferencesRefused", "referencesRemainIncomplete", "documentRemainsIncomplete", "originalBufferIdentity", "prepareRenameRefused", "renameRefused", "quickFixWithheld", "diskUnchanged", "cleanLifecycle"]},
+        {"id": {"case": "damaged-template-scope"}, "assertions": ["noInventedDefinition", "diskUnchanged", "cleanLifecycle"]},
+        {"id": {"case": "damaged-template-declaration"}, "assertions": ["noInventedDefinition", "diskUnchanged", "cleanLifecycle"]},
+        {"id": {"case": "damaged-call"}, "assertions": ["noInventedDefinition", "diskUnchanged", "cleanLifecycle"]},
+        {"id": {"case": "damaged-workflow-scope"}, "assertions": ["noInventedDefinition", "diskUnchanged", "cleanLifecycle"]},
+        {"id": {"case": "damaged-hook-call-scope"}, "assertions": ["noInventedDefinition", "diskUnchanged", "cleanLifecycle"]},
+        {"id": {"case": "duplicate-template-key"}, "assertions": ["noInventedDefinition", "diskUnchanged", "cleanLifecycle"]},
+        {"id": {"case": "duplicate-template-name"}, "assertions": ["noInventedDefinition", "diskUnchanged", "cleanLifecycle"]},
+        {"id": {"case": "encoded-duplicate-name"}, "assertions": ["noInventedDefinition", "diskUnchanged", "cleanLifecycle"]},
+        {"id": {"case": "alias-duplicate-template"}, "assertions": ["noInventedDefinition", "diskUnchanged", "cleanLifecycle"]},
+        {"id": {"case": "merge-derived-template"}, "assertions": ["noInventedDefinition", "diskUnchanged", "cleanLifecycle"]},
+        {"id": {"case": "inherited-workflow-entrypoint"}, "assertions": ["noInventedDefinition", "diskUnchanged", "cleanLifecycle"]},
+        {"id": {"case": "dynamic-entrypoint"}, "assertions": ["noInventedDefinition", "diskUnchanged", "cleanLifecycle"]}
+      ]
+    },
     "wf-quickfixes": {
       "assertionKey": "assertions",
       "rows": [

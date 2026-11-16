@@ -556,6 +556,12 @@ func (s *session) handle(m message) (bool, int, error) {
 			if w, e := s.workspace(s.root(string(d.Snapshot.URI())), d.Target.Scope); e == nil {
 				result = append(result, analysis.ExternalDefinitions(ctx, scopeWorkspace(w, d.Target.ID), string(d.Snapshot.URI()), pos)...)
 			}
+			if len(result) == 0 {
+				result, err = analysis.RecoverLocalTemplateDefinitions(ctx, d.Snapshot, d.Target.Version, pos)
+				if err != nil {
+					return false, 0, s.failure(m.ID, -32803, err.Error())
+				}
+			}
 		} else {
 			result = analysis.References(ctx, d.Snapshot, d.Target.Version, pos, p.Context.IncludeDeclaration)
 			if w, e := s.workspace(s.root(string(d.Snapshot.URI())), d.Target.Scope); e == nil {

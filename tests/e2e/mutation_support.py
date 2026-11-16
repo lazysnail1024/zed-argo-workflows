@@ -54,6 +54,28 @@ class Mutation:
 
 MUTATIONS = (
     Mutation(
+        "definition-recovery-disabled", "contracts", "incomplete unrelated EOF flow preserves exact local Definition", "internal/lsp/stdio.go",
+        (("result, err = analysis.RecoverLocalTemplateDefinitions(ctx, d.Snapshot, d.Target.Version, pos)",
+          "result, err = []analysis.Location{}, nil"),),
+        "wf-definition-recovery.py", tuple((name, "damagedExactDefinition") for name in (
+            "same-session-tail-sequence", "same-session-local-calls",
+            "crlf-utf16-tail-mapping", "multi-document-tail",
+        )),
+    ),
+    Mutation(
+        "definition-recovery-template-scope", "contracts", "the complete template collection must belong to original source", "internal/analysis/definition_recovery.go",
+        (("return ok && templates.Kind() == yamlview.Sequence && recoveryOriginalNode(original, templates) && recoveryCallScope(original, spec, offset)",
+          "return ok && templates.Kind() == yamlview.Sequence && recoveryCallScope(original, spec, offset)"),),
+        "wf-definition-recovery.py", (("damaged-template-scope", "noInventedDefinition"),
+                                      ("damaged-template-declaration", "noInventedDefinition")),
+    ),
+    Mutation(
+        "definition-recovery-call-scope", "contracts", "the selected call's enclosing spec field must belong to original source", "internal/analysis/definition_recovery.go",
+        (("return ok && templates.Kind() == yamlview.Sequence && recoveryOriginalNode(original, templates) && recoveryCallScope(original, spec, offset)",
+          "return ok && templates.Kind() == yamlview.Sequence && recoveryOriginalNode(original, templates)"),),
+        "wf-definition-recovery.py", (("damaged-hook-call-scope", "noInventedDefinition"),),
+    ),
+    Mutation(
         "compatibility-joint-intersection", "contracts", "modeled candidates require the schema and semantic intersection", "internal/analysis/compatibility.go",
         (("item.Candidates = schemaSet.intersect(semanticSet).strings()", "item.Candidates = schemaSet.strings()"),),
         "wf-compatibility.py", (("joint-empty", "joint_empty"),),
@@ -395,7 +417,7 @@ def read_results(dest: Path) -> dict[str, dict]:
             raise GateError(f"{name}: assertions must be nonempty booleans; exceptions do not count")
         if type(row.get("pass")) is not bool or row["pass"] != all(checks.values()):
             raise GateError(f"{name}: inconsistent case status")
-        for key in ("completed", "naturalExit", "lspExit", "parse", "exception", "terminalExit", "terminalJSON"):
+        for key in ("completed", "naturalExit", "cleanLifecycle", "lspExit", "parse", "exception", "terminalExit", "terminalJSON"):
             if checks.get(key) is False:
                 raise GateError(f"{name}: incomplete consumer or abnormal LSP exit ({key})")
         if "shutdown" in checks and checks.get("exit") is False:

@@ -406,5 +406,25 @@ scope 已索引完整；后者未就绪时 references 按合同保守返回空�
 [资源改名消费者](../tests/e2e/wf-resource-rename.py)、
 [Action 生命周期消费者](../tests/e2e/wf-reaudit-actions.py)
 
+## 23. 无关尾部语法错误会遮住完整的本地模板绑定
+
+**编辑体验对照中复现。** 在完整 Workflow 的 `templates` 后追加未闭合的 `arguments: [`，
+前面 `entrypoint: main` 的 Definition 返回空；删除这段未完成输入后恢复。当前 YAML 接口
+在此输入上暴露损坏根节点，严格本地 binder 因整个资源不完整而拒绝，不能只遍历根节点
+假定能取到完整子树，也不能放宽共用 binder 并让所有查询继承恢复结果。
+
+**当前修复。** 只在普通 YAML 的 Definition 原路径没有结果时尝试有界的 EOF 补全，
+使用同一严格解析与投影。整个模板集合及包含所选调用的字段必须已经完整地存在于原文；
+原文位置、唯一静态绑定、资源作用域和来源边界都要成立。补全自身闭合模板或 hook 调用容器
+时拒绝，临时候选不进入真实事实缓存。可返回一个确定的本地定义，不代表资源、引用集合
+或安全编辑已完整；Helm、References、诊断和编辑继续遵守各自原有合同。
+
+**防回归。** 真实 stdio 消费者先固定输入 token 与期望位置，再检查完整→损坏→恢复的
+同会话结果，包含 CRLF、非 BMP 字符、多文档同名模板与完整 hooks。模板/调用作用域损坏、
+重复或派生声明、动态和继承引用必须拒绝；损坏输入的原始 hash、不完整状态、编辑拒绝、
+磁盘字节与正常生命周期分别断言，不能用一个成功跳转掩盖其他能力被意外放宽。
+[Definition 恢复](../internal/analysis/definition_recovery.go)、
+[真实协议消费者](../tests/e2e/wf-definition-recovery.py)
+
 这些规则描述当前源码要求；某次修复是否已经交付，应核对实际 release 和二进制身份。
 CI、WASI 运行时与真实 Zed 编辑会话的结果分别记录，不能互相代替。
