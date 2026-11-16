@@ -59,6 +59,7 @@
     "missing-object": "OBJECT_MISMATCH",
     "extra-object": "OBJECT_MISMATCH",
     "wrong-object-hash": "OBJECT_MISMATCH",
+    "receipt-evidence-mismatch": "OBJECT_MISMATCH",
     "wrong-object-size": "OBJECT_MISMATCH",
     "duplicate-zip-member": "UNSAFE_ARCHIVE",
     "symlink-zip-member": "UNSAFE_ARCHIVE",

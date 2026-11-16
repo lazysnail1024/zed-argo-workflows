@@ -235,7 +235,9 @@ Python 3.14.0 还必须实际观察到 path/fd ctime 不同而 birthtime 相同�
 
 打包拒绝物理 symlink、特殊文件、输入变化及不安全路径。解包先验证严格 JSON、清单/对象
 集合、ZIP 物理头、类型和便携路径别名，再有界读取压缩流并逐对象核对实际大小与 hash；
-不信任 ZIP 声明的解压大小来截断验证。上限为 1,000,000 个逻辑项、单文件 4 GiB、逻辑字节总量 64 GiB、
+原 receipt 的 `evidence` 摘要还必须与传输清单中对应文件的摘要一致。清单与实际对象
+自身一致，也不能改写原始收据所绑定的材料。不信任 ZIP 声明的解压大小来截断验证。
+上限为 1,000,000 个逻辑项、单文件 4 GiB、逻辑字节总量 64 GiB、
 清单 128 MiB、中央目录 256 MiB，以及路径 4,096 UTF-8 字节/128 层。恢复拒绝已存在的
 目的地及 symlink 路径，使用持有的目录描述符创建文件。`pack` 面向各 native producer；
 `hydrate`/`hydrate-set` 要求 POSIX descriptor-relative no-follow 操作，当前 acceptance
@@ -251,7 +253,12 @@ Python 3.14.0 还必须实际观察到 path/fd ctime 不同而 birthtime 相同�
 先要求原始完整 gate 通过，再重新生成真实 Linux receipt、归档解包并复验 gate。缺文件、
 错误 fixture/input/lifecycle 即使重新计算外层 hash 也必须以指定原因拒绝。原 payload 不被
 修改。[transport_e2e.py](../tests/ci/transport_e2e.py) 用固定独立输入检查原 JSON/原始流
-字节、独立副本、模式、严格拒绝和实际并发变化；
+字节、独立副本、模式、严格拒绝和实际并发变化。`receipt-evidence-mismatch` 复用
+`opaque-byte-roundtrip` 的有效归档正例，只将固定 stdout 换为等长新字节，并一致地更新
+传输清单和实际对象；原 receipt 的 CRLF、空格、`pass:false` 及原 evidence 摘要均保持不变。
+消费者独立确认 ZIP CRC、对象大小/hash、原收据字节及唯一逻辑摘要变化后，要求实际
+`hydrate` 以 `OBJECT_MISMATCH` 和精确原因 `transport rewrites original evidence digests`
+拒绝。该控制由现有 Linux 完整传输套件执行；合成材料不代表一次 Native 领域执行。
 [receipt_materialization_e2e.py](../tests/ci/receipt_materialization_e2e.py) 检查选中文件链接的
 物化顺序、变化拒绝和失败材料保留。其 `--producer-only` 在五个平台实际重写 referent，
 再物化相对、绝对和多个文件链接，独立验证字节、hash、普通文件与独立身份；还拒绝悬空、

@@ -45,7 +45,7 @@ def row(name, passed, **details):
     print(name, "PASS" if passed else "FAIL", flush=True)
 
 
-def run(name, command, expected=None):
+def run(name, command, expected=None, expected_message=None):
     dest = out / "commands" / name
     dest.mkdir(parents=True, exist_ok=False)
     full = [sys.executable, str(CODEC), *map(str, command)]
@@ -54,12 +54,20 @@ def run(name, command, expected=None):
     (dest / "stderr.raw").write_bytes(result.stderr)
     (dest / "command.json").write_text(json.dumps({"command": full, "exitCode": result.returncode}, indent=2) + "\n")
     if expected is not None:
+        message = None
         try:
-            code = json.loads(result.stderr)["error"]["code"]
+            error = json.loads(result.stderr)["error"]
+            code = error["code"]
+            if expected_message is not None:
+                message = error.get("message")
         except (ValueError, KeyError, TypeError):
             code = None
-        row(name, result.returncode == 1 and code == expected, expectedCode=expected, observedCode=code,
-            exitCode=result.returncode)
+        passed = result.returncode == 1 and code == expected
+        details = {"expectedCode": expected, "observedCode": code, "exitCode": result.returncode}
+        if expected_message is not None:
+            passed = passed and message == expected_message
+            details.update(expectedMessage=expected_message, observedMessage=message)
+        row(name, passed, **details)
     return result
 
 
@@ -110,6 +118,47 @@ def rewrite(path, members, special=None, compression=zipfile.ZIP_DEFLATED):
             if special and name == special[0]:
                 info.external_attr = special[1] << 16
             archive.writestr(info, value)
+
+
+def verify_receipt_binding_input(archive, original_manifest, original_members, originals):
+    """Prove the new input disagrees only with the unchanged original receipt."""
+    target = "payload-native-linux-amd64/native/child/stdout.raw"
+    original = SPEC["literalFiles"]["native/child/stdout.raw"].encode()
+    replacement = b"X" * len(original)
+    with zipfile.ZipFile(archive) as stream:
+        member_count = len(stream.infolist())
+        crc_valid = stream.testzip() is None
+        actual = {info.filename: stream.read(info) for info in stream.infolist()}
+    manifest = json.loads(actual["transport.json"])
+    before = {entry["path"]: entry for entry in original_manifest["entries"]}
+    entries = {entry["path"]: entry for entry in manifest["entries"]}
+    files = {path: entry for path, entry in entries.items() if entry["type"] == "file"}
+    objects = {entry["sha256"]: entry["size"] for entry in files.values()}
+    expected_manifest = copy.deepcopy(original_manifest)
+    next(entry for entry in expected_manifest["entries"] if entry["path"] == target)["sha256"] = sha_bytes(replacement)
+    receipt_name = original_manifest["receipt"]
+    receipt_raw = actual["objects/" + entries[receipt_name]["sha256"]]
+    checks = {
+        "zipCRCValid": crc_valid,
+        "exactObjectInventory": member_count == len(actual) and set(actual) == {"transport.json", *("objects/" + digest for digest in objects)},
+        "allObjectHashesAndSizesMatch": all(len(actual["objects/" + digest]) == size and
+            sha_bytes(actual["objects/" + digest]) == digest for digest, size in objects.items()),
+        "exactOriginalLiteral": originals[target] == original and original_members["objects/" + before[target]["sha256"]] == original,
+        "originalTargetObjectIsUnique": sum(entry.get("sha256") == before[target]["sha256"] for entry in before.values()) == 1,
+        "onlyTargetDigestChanged": manifest == expected_manifest,
+        "sameSizeDifferentLiteral": len(replacement) == len(original) and replacement != original and
+            actual["objects/" + entries[target]["sha256"]] == replacement,
+        "exactOriginalReceipt": receipt_raw == originals[receipt_name],
+        "originalReceiptStillFailedAndCRLF": b"\r\n" in receipt_raw and json.loads(receipt_raw)["pass"] is False,
+        "originalEvidenceDigestRetained": json.loads(receipt_raw)["evidence"]["native/child/stdout.raw"] == sha_bytes(original),
+        "otherLogicalBytesUnchanged": all(actual["objects/" + entry["sha256"]] == originals[path]
+            for path, entry in files.items() if path != target),
+    }
+    witness = {"case": "receipt-evidence-mismatch", "target": target, "checks": checks,
+        "archiveSha256": sha_bytes(archive.read_bytes()), "originalReceiptSha256": sha_bytes(receipt_raw),
+        "originalEvidenceSha256": sha_bytes(original), "replacementEvidenceSha256": sha_bytes(replacement)}
+    archive.with_suffix(".input.json").write_text(json.dumps(witness, indent=2) + "\n")
+    assert all(checks.values()), "receipt binding input must isolate the original evidence mismatch"
 
 
 def declared_size(path, member, size, crc=None):
@@ -254,6 +303,7 @@ for name, code in SPEC["refusalCases"].items():
     chosen = next(entry for entry in value["entries"] if entry["type"] == "file" and entry["path"].startswith("payload-"))
     special = None
     compression = zipfile.ZIP_DEFLATED
+    expected_message = None
     if name == "duplicate-manifest-key":
         changed["transport.json"] = members["transport.json"].replace(b'{', b'{"schemaVersion":1,', 1)
     elif name == "duplicate-receipt-key":
@@ -300,6 +350,16 @@ for name, code in SPEC["refusalCases"].items():
     elif name == "missing-object": changed.pop(object_name)
     elif name == "extra-object": changed["objects/" + sha_bytes(b"extra")] = b"extra"
     elif name == "wrong-object-hash": changed[object_name] = b"x" * len(changed[object_name])
+    elif name == "receipt-evidence-mismatch":
+        # Keep the receipt's exact CRLF/pass:false bytes and evidence digests.
+        # Only the transport inventory and its real same-size object agree on
+        # new bytes; object hashing alone cannot detect this disagreement.
+        chosen = next(entry for entry in value["entries"] if entry["path"] == "payload-native-linux-amd64/native/child/stdout.raw")
+        replacement = b"X" * len(SPEC["literalFiles"]["native/child/stdout.raw"].encode())
+        changed.pop("objects/" + chosen["sha256"])
+        chosen["sha256"] = sha_bytes(replacement)
+        changed["objects/" + chosen["sha256"]] = replacement
+        expected_message = "transport rewrites original evidence digests"
     elif name == "wrong-object-size": chosen["size"] += 1
     elif name == "symlink-zip-member": special = (object_name, stat.S_IFLNK | 0o777)
     elif name == "fifo-zip-member": special = (object_name, stat.S_IFIFO | 0o600)
@@ -309,6 +369,7 @@ for name, code in SPEC["refusalCases"].items():
     if name != "duplicate-manifest-key": changed["transport.json"] = json.dumps(value).encode()
     archive = faults / (name + ".zip")
     rewrite(archive, changed, special, compression)
+    if name == "receipt-evidence-mismatch": verify_receipt_binding_input(archive, manifest, members, originals)
     if name == "manifest-byte-bound": declared_size(archive, "transport.json", SPEC["limits"]["manifestBytes"] + 1)
     if name == "central-directory-bound":
         raw = bytearray(archive.read_bytes());end = raw.rfind(b"PK\x05\x06")
@@ -317,7 +378,7 @@ for name, code in SPEC["refusalCases"].items():
     if name == "duplicate-zip-member":
         with zipfile.ZipFile(archive, "a", compression=zipfile.ZIP_DEFLATED) as extra: extra.writestr(object_name, members[object_name])
     if name == "truncated-archive": archive.write_bytes(archive.read_bytes()[:-15])
-    run(name, ["hydrate", "--archive", archive, "--output", out / ("rejected-" + name)], code)
+    run(name, ["hydrate", "--archive", archive, "--output", out / ("rejected-" + name)], code, expected_message)
 
 for name in ("extra-source-file", "source-symlink", "source-directory-symlink", "source-dangling-symlink", "source-fifo"):
     current, current_receipt, _, _ = fixture("input-" + name)
