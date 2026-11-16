@@ -51,6 +51,7 @@
         "tests/e2e/wf-symbol-query-budget.py",
         "tests/e2e/wf-equivalence.py",
         "tests/e2e/wf-analysis-status.py",
+        "tests/e2e/wf-reference-candidates.py",
         "tests/e2e/wf-compatibility.py"
       ]
     },

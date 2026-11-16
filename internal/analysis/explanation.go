@@ -88,17 +88,18 @@ func ExplainInput(snapshot source.Snapshot, inputSource string, version *int32, 
 // AnalysisExplanation is a detached view of a particular input. It is never
 // retained as a second lifecycle state or used as authorization to perform edits.
 type AnalysisExplanation struct {
-	Root          string                           `json:"root"`
-	Roots         []string                         `json:"roots"`
-	Scope         string                           `json:"scope"`
-	TargetVersion string                           `json:"targetVersion"`
-	InputIdentity InputIdentity                    `json:"inputIdentity"`
-	Phase         string                           `json:"phase"`
-	Completeness  Completeness                     `json:"completeness"`
-	Reasons       []*Refusal                       `json:"reasons"`
-	Operations    map[string]OperationAvailability `json:"operations"`
-	References    *ReferenceStatus                 `json:"references,omitempty"`
-	Compatibility *CompatibilityExplanation        `json:"compatibility,omitempty"`
+	Root                string                           `json:"root"`
+	Roots               []string                         `json:"roots"`
+	Scope               string                           `json:"scope"`
+	TargetVersion       string                           `json:"targetVersion"`
+	InputIdentity       InputIdentity                    `json:"inputIdentity"`
+	Phase               string                           `json:"phase"`
+	Completeness        Completeness                     `json:"completeness"`
+	Reasons             []*Refusal                       `json:"reasons"`
+	Operations          map[string]OperationAvailability `json:"operations"`
+	References          *ReferenceStatus                 `json:"references,omitempty"`
+	Compatibility       *CompatibilityExplanation        `json:"compatibility,omitempty"`
+	ReferenceCandidates *ReferenceCandidateExplanation   `json:"referenceCandidates,omitempty"`
 }
 
 func ExplainDocument(ctx context.Context, document workspace.Document, inputSource string, version *int32, complete bool) AnalysisExplanation {
