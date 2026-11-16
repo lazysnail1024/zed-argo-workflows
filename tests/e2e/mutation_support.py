@@ -54,6 +54,27 @@ class Mutation:
 
 MUTATIONS = (
     Mutation(
+        "reference-candidate-exact-name", "contracts", "substring index matches are not same-name resource candidates", "internal/analysis/reference_candidates.go",
+        (('if identity[0] != "WorkflowTemplate" || identity[2] != name || row.Symbol.Name != name {',
+          'if identity[0] != "WorkflowTemplate" {'),),
+        "wf-reference-candidates.py", (("multi-candidates", "candidateItemsExact"),
+                                       ("query-cap-empty-exact-set", "candidateItemsExact")),
+    ),
+    Mutation(
+        "reference-candidate-query-truncation", "contracts", "filtering to no exact matches cannot erase query truncation", "internal/analysis/reference_candidates.go",
+        (("result.Complete, result.Truncated = rows.Complete && !rows.Truncated, rows.Truncated",
+          "result.Complete, result.Truncated = rows.Complete, false"),),
+        "wf-reference-candidates.py", (("query-cap-empty-exact-set", "candidateEnumerationComplete"),),
+    ),
+    Mutation(
+        "reference-candidate-target-freshness", "contracts", "closed-target source changes invalidate its old candidate action independently of session guards", "internal/lsp/reference_candidates.go",
+        (("if target == arg.Target {",
+          "if target.Key == arg.Target.Key && target.Symbol == arg.Target.Symbol && target.Location.URI == arg.Target.Location.URI {"),),
+        "wf-reference-candidates.py", (("stale-closed-target", "oldResolveRefused"),
+                                       ("stale-closed-target", "oldExecuteRefused"),
+                                       ("stale-closed-target", "noStaleOpen")),
+    ),
+    Mutation(
         "definition-recovery-disabled", "contracts", "incomplete unrelated EOF flow preserves exact local Definition", "internal/lsp/stdio.go",
         (("result, err = analysis.RecoverLocalTemplateDefinitions(ctx, d.Snapshot, d.Target.Version, pos)",
           "result, err = []analysis.Location{}, nil"),),

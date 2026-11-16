@@ -38,38 +38,39 @@ type buffer struct {
 	unavailable string
 }
 type session struct {
-	tracer               *worktrace.Tracer
-	explainActionAllowed bool
-	explainPosition      *analysis.Position
-	render               RenderCommand
-	showDocument         bool
-	catalog              *catalog
-	focus, method        string
-	callerDefinitions    bool
-	proofs               []catalogProof
-	editConfiguration    *editConfiguration
-	localPublication     bool
-	queryResults         map[string]json.RawMessage
-	queryBytes           int
-	queryKey             string
-	externalFacts        *analysis.ExternalFacts
-	factInput            *workspace.Workspace
-	factBoundary         string
-	factMixed            bool
-	workspaces           map[workspaceKey]workspace.Workspace
-	ctx                  context.Context
-	pending              map[string]bool
-	out                  io.Writer
-	log                  io.Writer
-	roots                []string
-	override             string
-	buffers              map[string]buffer
-	initialized          bool
-	shutdown             bool
-	epoch                uint64
-	versionedEdits       bool
-	actions              map[string]pendingAction
-	actionSequence       uint64
+	tracer                 *worktrace.Tracer
+	explainActionAllowed   bool
+	candidateActionAllowed bool
+	explainPosition        *analysis.Position
+	render                 RenderCommand
+	showDocument           bool
+	catalog                *catalog
+	focus, method          string
+	callerDefinitions      bool
+	proofs                 []catalogProof
+	editConfiguration      *editConfiguration
+	localPublication       bool
+	queryResults           map[string]json.RawMessage
+	queryBytes             int
+	queryKey               string
+	externalFacts          *analysis.ExternalFacts
+	factInput              *workspace.Workspace
+	factBoundary           string
+	factMixed              bool
+	workspaces             map[workspaceKey]workspace.Workspace
+	ctx                    context.Context
+	pending                map[string]bool
+	out                    io.Writer
+	log                    io.Writer
+	roots                  []string
+	override               string
+	buffers                map[string]buffer
+	initialized            bool
+	shutdown               bool
+	epoch                  uint64
+	versionedEdits         bool
+	actions                map[string]pendingAction
+	actionSequence         uint64
 }
 
 func read(r *bufio.Reader) (message, error) {
@@ -124,7 +125,8 @@ func read(r *bufio.Reader) (message, error) {
 		var id string
 		_ = json.Unmarshal(data, &fields)
 		_, hasMethod := fields["method"]
-		if hasMethod || len(m.Params) != 0 || json.Unmarshal(m.ID, &id) != nil || !strings.HasPrefix(id, "argo-workflows-render:") || (len(m.Result) == 0) == (len(m.Error) == 0) {
+		if hasMethod || len(m.Params) != 0 || json.Unmarshal(m.ID, &id) != nil ||
+			(!strings.HasPrefix(id, "argo-workflows-render:") && !strings.HasPrefix(id, referenceCandidateRequestPrefix)) || (len(m.Result) == 0) == (len(m.Error) == 0) {
 			return m, fmt.Errorf("invalid JSON-RPC response")
 		}
 		if len(m.Error) > 0 {
@@ -155,6 +157,11 @@ func (s *session) write(value any) error {
 func (s *session) reply(id json.RawMessage, result any) error {
 	if s.method == "textDocument/codeAction" {
 		if actions, ok := result.([]map[string]any); ok {
+			var err error
+			actions, err = s.withReferenceCandidateActions(s.focus, actions)
+			if err != nil {
+				return s.referenceCandidateFailure(id, err)
+			}
 			result = s.withExplanationAction(s.focus, actions)
 		}
 	}
@@ -470,7 +477,7 @@ func (s *session) handle(m message) (bool, int, error) {
 		}
 		s.initialized = true
 		capabilities := map[string]any{"workspace": map[string]any{"workspaceFolders": map[string]any{"supported": true, "changeNotifications": true}}, "positionEncoding": "utf-16", "completionProvider": map[string]any{"resolveProvider": false}, "hoverProvider": true, "definitionProvider": true, "referencesProvider": true, "documentSymbolProvider": true, "workspaceSymbolProvider": true, "textDocumentSync": map[string]any{"openClose": true, "change": 2, "save": map[string]any{"includeText": false}}}
-		commands := []string{explainCommand}
+		commands := []string{explainCommand, referenceCandidateCommand}
 		if s.render != nil {
 			commands = append(commands, "argo-workflows.renderCheck")
 		}
@@ -499,6 +506,9 @@ func (s *session) handle(m message) (bool, int, error) {
 				return false, 0, s.failure(m.ID, -32602, b.unavailable)
 			}
 		}
+	}
+	if handled, err := s.referenceCandidateRequest(m); handled {
+		return false, 0, err
 	}
 	if handled, err := s.explanationRequest(m); handled {
 		return false, 0, err

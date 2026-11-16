@@ -116,6 +116,13 @@ func (s *session) explainAnalysis(uri string, position *analysis.Position) (anal
 	if position == nil {
 		return status, nil
 	}
+	candidates, err := s.collectReferenceCandidates(d, w, position)
+	if err != nil {
+		return status, err
+	}
+	if candidates != nil {
+		status.ReferenceCandidates = candidates.explanation
+	}
 	status.References = &analysis.ReferenceStatus{Complete: false}
 	if !status.Completeness.Workspace {
 		status.References.Refusal = analysis.Refuse("INDEX_INCOMPLETE", "reference search requires the complete selected scope")
@@ -247,6 +254,13 @@ func explanationMessage(status analysis.AnalysisExplanation) string {
 			lines = append(lines, "Candidate evaluation is incomplete; review the current input.")
 		}
 	}
+	if candidates := status.ReferenceCandidates; candidates != nil {
+		lines = append(lines, fmt.Sprintf("%s. Enumeration complete: %t; scope complete: %t; truncated: %t.", candidates.Label, candidates.Complete, candidates.ScopeComplete, candidates.Truncated))
+		lines = append(lines, candidates.ReasonCode+": "+candidates.Message+" "+candidates.NextStep)
+		for _, candidate := range candidates.Items {
+			lines = append(lines, "Candidate: "+candidateDescription(status.Root, candidate))
+		}
+	}
 	if status.References != nil {
 		if status.References.Complete {
 			lines = append(lines, fmt.Sprintf("Complete static reference proof: %d references found.", status.References.Count))
@@ -281,11 +295,9 @@ func (s *session) explanationRequest(m message) (bool, error) {
 		}
 		if json.Unmarshal(m.Params, &p) == nil {
 			s.explainPosition = &p.Range.Start
-			s.explainActionAllowed = len(p.Context.Only) == 0
-			for _, kind := range p.Context.Only {
-				s.explainActionAllowed = s.explainActionAllowed || kind == "source" || kind == "source.explainAnalysis"
-			}
-			if len(p.Context.Only) == 1 && p.Context.Only[0] == "source.explainAnalysis" {
+			s.explainActionAllowed = sourceActionAllowed(p.Context.Only, "source.explainAnalysis")
+			s.candidateActionAllowed = sourceActionAllowed(p.Context.Only, referenceCandidateActionKind)
+			if len(p.Context.Only) == 1 && (p.Context.Only[0] == "source.explainAnalysis" || p.Context.Only[0] == referenceCandidateActionKind) {
 				return true, s.reply(m.ID, []map[string]any{})
 			}
 		}

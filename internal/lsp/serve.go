@@ -419,7 +419,8 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 			if lane != nil && current && valid && !result.canceled && !lane.canceled && result.err == nil && result.state.editConfiguration != nil {
 				// A disk config change need not have produced a client event or
 				// reached the throttled background metadata refresh. Reacquire its
-				// effective source only for an actual WorkspaceEdit, at delivery.
+				// effective source for a WorkspaceEdit or an explicit candidate
+				// inspection command, at delivery.
 				// The worker context has ended; use a bounded owner context while
 				// accounting this read to the same request's actual work.
 				ctx, cancel := context.WithTimeout(result.trace.Context(s.catalog.ctx), 5*time.Second)

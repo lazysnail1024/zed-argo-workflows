@@ -123,6 +123,37 @@ arguments returned by the source action; changed buffer/configuration/root input
 invalidate that action. Explanations are requested explicitly and do not generate
 background message notifications.
 
+At a static `templateRef.name` or `workflowTemplateRef.name` whose caller has no
+known namespace, the explanation also includes `referenceCandidates`. These are
+same-name `WorkflowTemplate` resources from the selected scope, explicitly
+labeled **binding unproven**. Each item reports `kind`, `name`, `namespace`, an
+exact source `location`, and the `TARGET_UNKNOWN` reason. An empty candidate
+namespace stays unknown; the service does not invent a default namespace.
+Existing explicit namespaces and a configured `defaultNamespace` retain their
+ordinary binding rules. Cluster-scoped and dynamic calls do not use this view.
+
+`referenceCandidates.complete` describes candidate enumeration only;
+`scopeComplete` separately reports the selected scope's readiness. Known fresh
+candidates can be shown while that scope is incomplete, with both flags false.
+`truncated` remains true if either the index's 1000-entry substring search or
+the 20-item display limit is reached. Exact-name filtering does not erase
+truncation. Duplicate declarations remain separate items, including resources
+in different documents of one file. Inexact declarations are not offered as
+precise locations and prevent an enumeration-complete claim. None of these
+flags establishes a binding, reference completeness, or permission to edit.
+
+The **Argo Workflows: open candidate … (binding unproven)** source actions use
+kind `source.openReferenceCandidate` and command
+`argo-workflows.openReferenceCandidate`. They remain available without
+versioned-edit support and never contain a WorkspaceEdit. Resolve and execute
+revalidate the source buffer, configuration, selected scope, target bytes and
+location; changed inputs return `STALE_INPUT` and require a new action. With
+`window.showDocument.support`, execution requests the exact source selection.
+Otherwise it returns `{location, message}` and displays instructions for opening
+that location manually. A successful command does not claim that the client has
+already opened a document. Clients should execute the arguments returned by the
+action instead of constructing or retaining resource locations themselves.
+
 Both file explanation paths include `analysis.compatibility` (or `compatibility`
 in the custom LSP result). It contains catalog and modeled-rule provenance hashes
 and separate records for each owned resource in the YAML stream. Each record has
