@@ -87,10 +87,24 @@ Completion、References 或 Rename；简单标量投影不等于运行 Helm。�
 | [index.go](../internal/analysis/index.go) | 将当前资源投射成共享 `index.Facts` 与脱离原文的 DomainSymbol 摘要 |
 | [queries.go](../internal/analysis/queries.go)、[query_context.go](../internal/analysis/query_context.go)、[query_schema.go](../internal/analysis/query_schema.go) | 未完成 YAML 的临时查询上下文，调用公共 `Lookup/Values/AllowsKey/Type/SelectShapes`；Workflow 自己选择 release catalog 并组装补全/悬停，不保留私有完整 schema walker |
 | [domain_queries.go](../internal/analysis/domain_queries.go)、[domain_external_completion.go](../internal/analysis/domain_external_completion.go)、[symbols.go](../internal/analysis/symbols.go) | 域内/跨资源名称补全、定义、引用和符号位置 |
+| [definition_recovery.go](../internal/analysis/definition_recovery.go) | 仅普通 YAML 的 Definition 请求在原路径无结果时，尝试有界 EOF 流式集合恢复；完整模板集合及调用位置必须保留原文，临时结果不参与引用完整性、诊断、索引或编辑 |
 | [edits.go](../internal/analysis/edits.go)、[quickfixes.go](../internal/analysis/quickfixes.go)、[localrename.go](../internal/analysis/localrename.go)、[pin.go](../internal/analysis/pin.go) | 源码编辑计划、YAML 标量编码、绑定安全性和版本 pin 修复；拒绝不精确或不安全的修改 |
 | [local_edits.go](../internal/analysis/local_edits.go) | 在当前文档内模拟修复，要求资源身份、导出模板和外部调用边界保持不变；可证明局部安全时不等待完整目录，否则使用完整 scope 验证 |
 | [externalrename.go](../internal/analysis/externalrename.go) | 按当前 CST 的光标位置选择局部或资源 Rename；静态 WorkflowTemplate/ClusterWorkflowTemplate 资源名及引用复用现有资源/调用模型，检查全 scope、唯一声明、精确来源、新名捕获与批量修改后的语义 |
 | [invocation.go](../internal/analysis/invocation.go)、[preparse.go](../internal/analysis/preparse.go)、[facts.go](../internal/analysis/facts.go)、[facts_store.go](../internal/analysis/facts_store.go)、[external_facts.go](../internal/analysis/external_facts.go) | 单次分析复用、CLI 有界预解析、catalog/请求共享的有界解析事实交接及外部诊断复用；缓存不改变输入准入或完整性判断 |
+
+普通 YAML 尾部一个无关流式值尚未闭合时，例如完整 `templates` 后的 `arguments: [`，
+Definition 可在临时文本末尾追加最多两个 `]` / `}`，逐一严格解析六种候选。原文的任何字节
+均不删除、覆盖或移动；若原文以空白行结束，可沿用最后内容行的缩进追加最多 256 个空格，
+使闭合符保持合法缩进，所有追加字节共同受 5 MiB 输入预算约束。追加闭合符必须实际闭合
+流式集合，不能成为字符串内容。资源 header 必须完整，包围模板的根与 spec 必须是 block
+mapping；整个 `templates` 集合以及选中调用所属的 `spec` 直接成员必须与原文完整对应。
+因此完整 `hooks` 可以导航，
+只有追加闭合符才能补全的 `hooks` 仍拒绝。调用和声明位置使用原文范围，
+已有 binder 还须证明唯一的本地 template 身份。损坏触及模板集合、动态或继承目标不确定、
+alias/merge 来源、重复声明等情况保守返回空结果。该路径不恢复任意 YAML 错误，也不扩大
+Helm、References、DocumentSymbol、Schema 或 Rename/Quick Fix 的证明范围。临时候选
+不读写解析事实缓存或域索引，返回位置仍由当前原文快照计算并接受既有 LSP 新鲜度检查。
 
 ## 公共依赖与隔离边界
 

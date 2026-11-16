@@ -197,13 +197,16 @@ class EvidenceTests(unittest.TestCase):
             mutation.classify_results((('known-case', 'correctValue'),), before, after, {'exitCode': 1})
 
     def test_mutation_rejects_exception_and_process_failure(self):
-        for change in ('duplicate', 'exception', 'crash', 'timeout'):
+        for change in ('duplicate', 'exception', 'clean-lifecycle', 'crash', 'timeout'):
             with self.subTest(change=change):
                 rows = copy.deepcopy(self.control)
                 if change == 'duplicate':
                     rows += rows
                 elif change == 'exception':
                     rows[0] = {'case': 'known-case', 'assertions': {'completed': False}, 'pass': False}
+                elif change == 'clean-lifecycle':
+                    rows[0] = {'case': 'known-case', 'assertions': {
+                        'correctValue': False, 'cleanLifecycle': False}, 'pass': False}
                 else:
                     (self.root / 'native.command.json').write_text(json.dumps({'exitCode': -9 if change == 'crash' else 1, 'timedOut': change == 'timeout'}))
                 self.write(rows)

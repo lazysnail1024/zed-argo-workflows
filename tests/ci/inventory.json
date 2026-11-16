@@ -24,6 +24,7 @@
         "tests/e2e/wf-schema-queries.py",
         "tests/e2e/wf-schema-query-targets.py",
         "tests/e2e/wf-domain-queries.py",
+        "tests/e2e/wf-definition-recovery.py",
         "tests/e2e/wf-quickfixes.py",
         "tests/e2e/wf-local-rename.py",
         "tests/e2e/wf-bounded-scalars.py",
