@@ -63,6 +63,7 @@ scope 的有效 target。`stream.go` 的 `Describe` 只读取配置元数据，`
 | [query_cache.go](../internal/lsp/query_cache.go) | 在获取当前输入后复用完整 scope 的最终查询结果；身份包含方法/参数、文本、配置及索引候选 generation |
 | [edits.go](../internal/lsp/edits.go) | Rename/Code Action 协议，版本化 WorkspaceEdit，延迟 resolve 的 token、输入 fingerprint 与安全性复查 |
 | [explanation.go](../internal/lsp/explanation.go) | 从当前 buffer/catalog 派生只读分析解释，区分文件和 scope 完整性；显式 source action/command 及标准错误 data，复用实际 prepareRename 检查，不保存第二套状态 |
+| [reference_candidates.go](../internal/lsp/reference_candidates.go) | 为 namespace 未知的静态外部资源调用展示同名候选及只读打开动作；按当前源、配置、目标 revision/hash 重新验证并复用 catalog 发布 proof，不建立跨资源绑定 |
 | [helm.go](../internal/lsp/helm.go) | 对受支持的 Helm 字面源提供原文件坐标的 Definition；同 chart 的静态目标才参与绑定，其他源查询保守返回空结果 |
 | [render.go](../internal/lsp/render.go)、[workspace/chart.go](../internal/workspace/chart.go) | 发现最近祖先 Chart，创建并复核 saved-chart action；仅执行命令时调用有界 render 回调，检查未保存/过时输入并按客户端能力打开生成 YAML |
 
@@ -87,6 +88,7 @@ Completion、References 或 Rename；简单标量投影不等于运行 Helm。�
 | [index.go](../internal/analysis/index.go) | 将当前资源投射成共享 `index.Facts` 与脱离原文的 DomainSymbol 摘要 |
 | [queries.go](../internal/analysis/queries.go)、[query_context.go](../internal/analysis/query_context.go)、[query_schema.go](../internal/analysis/query_schema.go) | 未完成 YAML 的临时查询上下文，调用公共 `Lookup/Values/AllowsKey/Type/SelectShapes`；Workflow 自己选择 release catalog 并组装补全/悬停，不保留私有完整 schema walker |
 | [domain_queries.go](../internal/analysis/domain_queries.go)、[domain_external_completion.go](../internal/analysis/domain_external_completion.go)、[symbols.go](../internal/analysis/symbols.go) | 域内/跨资源名称补全、定义、引用和符号位置 |
+| [reference_candidates.go](../internal/analysis/reference_candidates.go) | 仅为精确静态 `templateRef.name` / `workflowTemplateRef.name` 且调用方 namespace 未知的场景查询当前 scope 的同名 WorkflowTemplate；严格重查候选声明原文，保留重复项与枚举截断 |
 | [definition_recovery.go](../internal/analysis/definition_recovery.go) | 仅普通 YAML 的 Definition 请求在原路径无结果时，尝试有界 EOF 流式集合恢复；完整模板集合及调用位置必须保留原文，临时结果不参与引用完整性、诊断、索引或编辑 |
 | [edits.go](../internal/analysis/edits.go)、[quickfixes.go](../internal/analysis/quickfixes.go)、[localrename.go](../internal/analysis/localrename.go)、[pin.go](../internal/analysis/pin.go) | 源码编辑计划、YAML 标量编码、绑定安全性和版本 pin 修复；拒绝不精确或不安全的修改 |
 | [local_edits.go](../internal/analysis/local_edits.go) | 在当前文档内模拟修复，要求资源身份、导出模板和外部调用边界保持不变；可证明局部安全时不等待完整目录，否则使用完整 scope 验证 |
@@ -105,6 +107,23 @@ mapping；整个 `templates` 集合以及选中调用所属的 `spec` 直接成�
 alias/merge 来源、重复声明等情况保守返回空结果。该路径不恢复任意 YAML 错误，也不扩大
 Helm、References、DocumentSymbol、Schema 或 Rename/Quick Fix 的证明范围。临时候选
 不读写解析事实缓存或域索引，返回位置仍由当前原文快照计算并接受既有 LSP 新鲜度检查。
+
+namespace 未知时，显式分析解释中的 `referenceCandidates` 和
+`source.openReferenceCandidate` 动作可展示当前 scope 的同名 WorkflowTemplate。
+展示项携带 kind、name、namespace、文件位置及 `TARGET_UNKNOWN` 原因，始终说明 binding
+unproven；已知 namespace、`clusterScope: true`、动态或派生调用来源不进入此路径。
+索引查询最多保留 1000 个同 kind 的名称子串匹配，再严格筛选同名并最多展示 20 项；任一
+截断都保留 `truncated: true`，不同文件或同文件不同文档的重复声明不会按名称去重。
+候选声明需要当前严格 YAML 的精确原文位置，普通引号内的名字按 UTF-16 映射到客户端；
+不能精确展示的声明使枚举 `complete: false`。已知的新鲜候选可在 scope 尚未就绪时展示，
+但 `scopeComplete` 与枚举 `complete` 均为 false。枚举完整不等于绑定或引用完整。
+
+候选动作只携带脱离源码的输入/目标身份；resolve 与 execute 都重新读取当前候选，检查
+源版本、配置、scope、目标 revision/hash 和位置。命令不会产生 WorkspaceEdit，也不改变
+Definition、References、Rename 或 Quick Fix 的身份规则。支持 `window/showDocument`
+的客户端收到带精确 selection 的打开请求；其他客户端收到 Location 和手动打开说明。
+命令不把发送请求当作已经打开。候选文本读取和索引遍历继续使用既有请求预算及取消路径；
+最终响应、消息和打开请求由同一 owner proof 一并决定是否交付。
 
 ## 公共依赖与隔离边界
 
