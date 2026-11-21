@@ -386,8 +386,8 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 			return false, 0, s.failureError(m.ID, -32803, m.Method, err)
 		}
 		result := []map[string]any{}
-		localFixes := analysis.FieldFixes(analysis.WithLogicalResult(ctx), b.snapshot, d.Target.Version, p.Range)
-		localFixes = append(localFixes, analysis.ValueFixes(analysis.WithLogicalResult(ctx), local, d, p.Range)...)
+		fieldFixes := analysis.FieldFixes(analysis.WithLogicalResult(ctx), b.snapshot, d.Target.Version, p.Range)
+		localFixes := append(fieldFixes[:len(fieldFixes):len(fieldFixes)], analysis.ValueFixes(analysis.WithLogicalResult(ctx), local, d, p.Range)...)
 		localFingerprint := localActionFingerprint(local)
 		for _, fix := range localFixes {
 			if analysis.SafeLocalPlan(ctx, local, d, fix.Plan) == nil {
@@ -404,8 +404,7 @@ func (s *session) handleEdit(m message) (bool, int, error) {
 		if w.IncompleteScopes[d.Target.ID] {
 			return false, 0, s.reply(m.ID, s.withRenderAction(uri, result))
 		}
-		fixes := analysis.FieldFixes(analysis.WithLogicalResult(ctx), b.snapshot, d.Target.Version, p.Range)
-		fixes = append(fixes, analysis.ValueFixes(analysis.WithLogicalResult(ctx), w, d, p.Range)...)
+		fixes := append(fieldFixes[:len(fieldFixes):len(fieldFixes)], analysis.ValueFixes(analysis.WithLogicalResult(ctx), w, d, p.Range)...)
 		scoped := scopeWorkspace(w, d.Target.ID)
 		requestFingerprint := s.actionFingerprint(scoped)
 		for _, fix := range fixes {

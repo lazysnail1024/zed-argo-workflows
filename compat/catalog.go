@@ -8,7 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -58,44 +61,77 @@ func ExperimentalReason(version string) string {
 	return "target " + version + " is outside the embedded supported release catalog"
 }
 
-func SupportedVersions() []string {
+type parsedVersion struct {
+	raw   string
+	parts [3]int
+}
+
+func parseVersionTuple(v string) [3]int {
+	var parts [3]int
+	rest := v
+	for i := range parts {
+		dot := strings.IndexByte(rest, '.')
+		seg := rest
+		if dot >= 0 {
+			seg = rest[:dot]
+			rest = rest[dot+1:]
+		} else {
+			rest = ""
+		}
+		parts[i], _ = strconv.Atoi(seg)
+		if rest == "" {
+			break
+		}
+	}
+	return parts
+}
+
+var supportedCatalog = sync.OnceValue(func() (versions []string) {
 	index, err := catalogIndex()
 	if err != nil {
 		return nil
 	}
-	result := make([]string, 0, len(index)-1)
+	parsed := make([]parsedVersion, 0, len(index)-1)
 	for version := range index {
 		if version != DefaultVersion {
-			result = append(result, version)
+			parsed = append(parsed, parsedVersion{raw: version, parts: parseVersionTuple(version)})
 		}
 	}
-	sort.Slice(result, func(i, j int) bool {
-		var a, b [3]int
-		fmt.Sscanf(result[i], "%d.%d.%d", &a[0], &a[1], &a[2])
-		fmt.Sscanf(result[j], "%d.%d.%d", &b[0], &b[1], &b[2])
-		for k := range a {
-			if a[k] != b[k] {
-				return a[k] < b[k]
+	sort.Slice(parsed, func(i, j int) bool {
+		for k := range parsed[i].parts {
+			if parsed[i].parts[k] != parsed[j].parts[k] {
+				return parsed[i].parts[k] < parsed[j].parts[k]
 			}
 		}
 		return false
 	})
-	return result
-}
-func SupportedMajors() []int {
-	versions := SupportedVersions()
+	versions = make([]string, len(parsed))
+	for i, p := range parsed {
+		versions[i] = p.raw
+	}
+	return versions
+})
+
+var supportedMajors = sync.OnceValue(func() []int {
+	versions := supportedCatalog()
 	majors := []int{}
 	for _, version := range versions {
-		var major int
-		fmt.Sscanf(version, "%d.", &major)
+		major := parseVersionTuple(version)[0]
 		if len(majors) == 0 || majors[len(majors)-1] != major {
 			majors = append(majors, major)
 		}
 	}
 	return majors
+})
+
+func SupportedVersions() []string {
+	return slices.Clone(supportedCatalog())
+}
+func SupportedMajors() []int {
+	return slices.Clone(supportedMajors())
 }
 func SupportedRange() map[string]string {
-	versions := SupportedVersions()
+	versions := supportedCatalog()
 	if len(versions) == 0 {
 		return nil
 	}

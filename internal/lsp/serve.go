@@ -91,8 +91,13 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 	clearedForeign := map[string]bool{}
 	lanes := [2]requestLane{}
 	due := time.Time{}
-	timer := time.NewTicker(20 * time.Millisecond)
-	defer timer.Stop()
+	var debounceTimer *time.Timer
+	var debounceC <-chan time.Time
+	defer func() {
+		if debounceTimer != nil {
+			debounceTimer.Stop()
+		}
+	}()
 	snapshot := func(ctx context.Context) session {
 		clone := s
 		clone.ctx = ctx
@@ -282,6 +287,23 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 				due = time.Time{}
 				launch(nil, uris)
 			}
+		}
+		if !s.shutdown && !backgroundRunning && len(s.pending) > 0 && !due.IsZero() {
+			wait := time.Until(due)
+			if wait < 0 {
+				wait = 0
+			}
+			if debounceTimer == nil {
+				debounceTimer = time.NewTimer(wait)
+			} else {
+				debounceTimer.Reset(wait)
+			}
+			debounceC = debounceTimer.C
+		} else {
+			if debounceTimer != nil {
+				debounceTimer.Stop()
+			}
+			debounceC = nil
 		}
 		select {
 		case input := <-incoming:
@@ -510,7 +532,7 @@ func Serve(in io.Reader, out, log io.Writer, render ...RenderCommand) int {
 					due = time.Now().Add(120 * time.Millisecond)
 				}
 			}
-		case <-timer.C:
+		case <-debounceC:
 		}
 	}
 }

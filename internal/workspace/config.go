@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -164,31 +165,48 @@ func loadConfig(ctx context.Context, root string, overlay *string) (Config, []by
 		}
 		return c, nil, fmt.Errorf("configuration exceeds 1 MiB")
 	}
+	// Decode strictly once while retaining presence for targetVersion and renderProfiles.
+	var decoded struct {
+		SchemaVersion    *int            `json:"schemaVersion"`
+		TargetVersion    *string         `json:"targetVersion"`
+		ReferencePolicy  *string         `json:"referencePolicy"`
+		DefaultNamespace string          `json:"defaultNamespace"`
+		Exclude          []string        `json:"exclude"`
+		Scopes           []Scope         `json:"scopes"`
+		RenderProfiles   json.RawMessage `json:"renderProfiles"`
+	}
 	worktrace.Add(ctx, worktrace.ConfigDecodes, 1)
-	if err = yaml.UnmarshalStrict(raw, &c); err != nil {
+	if err = yaml.UnmarshalStrict(raw, &decoded); err != nil {
 		return c, nil, err
 	}
-	// Presence matters: an explicit pin equal to the default still comes from
-	// root configuration, while a configuration containing only policy does not.
-	var selection struct {
-		TargetVersion  *string         `json:"targetVersion"`
-		RenderProfiles json.RawMessage `json:"renderProfiles"`
+	if decoded.SchemaVersion != nil {
+		c.SchemaVersion = *decoded.SchemaVersion
 	}
-	worktrace.Add(ctx, worktrace.ConfigDecodes, 1)
-	if err = yaml.Unmarshal(raw, &selection); err != nil {
-		return c, nil, err
-	}
-	if selection.TargetVersion != nil {
+	if decoded.TargetVersion != nil {
+		c.TargetVersion = *decoded.TargetVersion
 		c.targetSource = "root"
 	}
+	if decoded.ReferencePolicy != nil {
+		c.ReferencePolicy = *decoded.ReferencePolicy
+	}
+	c.DefaultNamespace = decoded.DefaultNamespace
+	c.Exclude = decoded.Exclude
+	c.Scopes = decoded.Scopes
 	if c.SchemaVersion != 1 && c.SchemaVersion != 2 {
 		return c, nil, fmt.Errorf("unsupported configuration schemaVersion")
 	}
-	if c.SchemaVersion == 1 && len(selection.RenderProfiles) != 0 {
+	if c.SchemaVersion == 1 && len(decoded.RenderProfiles) != 0 {
 		return c, nil, fmt.Errorf("renderProfiles requires configuration schemaVersion 2")
 	}
-	if string(selection.RenderProfiles) == "null" {
+	if string(decoded.RenderProfiles) == "null" {
 		return c, nil, fmt.Errorf("renderProfiles must be an object")
+	}
+	if len(decoded.RenderProfiles) != 0 {
+		dec := json.NewDecoder(bytes.NewReader(decoded.RenderProfiles))
+		dec.DisallowUnknownFields()
+		if err = dec.Decode(&c.RenderProfiles); err != nil {
+			return c, nil, err
+		}
 	}
 	for name, profile := range c.RenderProfiles {
 		if err := validateRenderProfile(name, profile); err != nil {
@@ -234,9 +252,6 @@ func LoadContext(ctx context.Context, root, selected, override string) (Workspac
 	return readDocuments(ctx, header, selected, override)
 }
 
-func Load(root, selected, override string) (Workspace, error) {
-	return LoadContext(context.Background(), root, selected, override)
-}
 
 // scopeName selects membership before resource I/O or target-version resolution.
 // This keeps an unselected unassigned file from activating an invalid root default.

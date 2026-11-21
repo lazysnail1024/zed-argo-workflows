@@ -100,17 +100,13 @@ func commandFailure(ctx context.Context, operation string, err error, stdout, st
 	emit(map[string]any{"operation": operation, "product": "argo-workflows", "analysisComplete": false, "error": err.Error(), "toolExitCode": code, "stdout": string(stdout), "stderr": string(stderr)})
 	return exit
 }
-func selectedTarget(ctx context.Context, root, scope, override string) (string, error) {
-	w, err := workspace.LoadContext(ctx, root, scope, override)
-	if err != nil {
-		return "", err
-	}
-	if len(w.Config.Scopes) > 1 && scope == "" {
+func selectTarget(config workspace.Config, scope, override string) (string, error) {
+	if len(config.Scopes) > 1 && scope == "" {
 		return "", fmt.Errorf("multiple scopes require explicit --scope")
 	}
-	target := w.Config.TargetVersion
-	for _, s := range w.Config.Scopes {
-		if s.Name == scope || scope == "" && len(w.Config.Scopes) == 1 {
+	target := config.TargetVersion
+	for _, s := range config.Scopes {
+		if s.Name == scope || scope == "" && len(config.Scopes) == 1 {
 			if s.TargetVersion != "" {
 				target = s.TargetVersion
 			}
@@ -506,11 +502,11 @@ func lintOfficial(args []string) int {
 	if !filepath.IsAbs(*argo) {
 		return fail(fmt.Errorf("--argo-binary must be an absolute path"))
 	}
-	version, err := selectedTarget(ctx, *root, *scope, *target)
+	w, err := workspace.LoadContext(ctx, *root, *scope, *target)
 	if err != nil {
 		return fail(err)
 	}
-	w, err := workspace.LoadContext(ctx, *root, *scope, *target)
+	version, err := selectTarget(w.Config, *scope, *target)
 	if err != nil {
 		return fail(err)
 	}

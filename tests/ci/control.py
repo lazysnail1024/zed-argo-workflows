@@ -33,11 +33,17 @@ INSTALL_CASES = {
 }
 
 def sha(path): return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+_HEAD_CACHE={}
 def git(*args): return subprocess.check_output(['git',*args],cwd=ROOT,text=True).strip()
+def _head_sha():
+ key=str(ROOT)
+ if key not in _HEAD_CACHE:
+  _HEAD_CACHE[key]=git('rev-parse','HEAD')
+ return _HEAD_CACHE[key]
 def save(path,value):
  path=Path(path);path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes((json.dumps(value,indent=2,sort_keys=True)+'\n').encode('utf-8'))
 def identity():
- return {'repository':os.environ.get('GITHUB_REPOSITORY','lazysnail1024/zed-argo-workflows'), 'testedSHA':git('rev-parse','HEAD'), 'runID':os.environ.get('GITHUB_RUN_ID','local'), 'attempt':os.environ.get('GITHUB_RUN_ATTEMPT','1')}
+ return {'repository':os.environ.get('GITHUB_REPOSITORY','lazysnail1024/zed-argo-workflows'), 'testedSHA':_head_sha(), 'runID':os.environ.get('GITHUB_RUN_ID','local'), 'attempt':os.environ.get('GITHUB_RUN_ATTEMPT','1')}
 def require(ok,message):
  if not ok: raise ValueError(message)
 def plan(workflow):

@@ -7,7 +7,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/lazysnail1024/k8s-crd-toolkit/index"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
@@ -221,11 +220,15 @@ func (c *catalog) document(ctx context.Context, uri string) (workspace.Document,
 		if r.problem == "configuration pending" {
 			// Describe is metadata-only. A local closed-file request waits for
 			// that result, never for directory discovery or scope completeness.
+			if r.headerReady == nil {
+				r.headerReady = make(chan struct{})
+			}
+			wait := r.headerReady
 			c.mu.Unlock()
 			select {
 			case <-ctx.Done():
 				return workspace.Document{}, catalogProof{}, ctx.Err()
-			case <-time.After(5 * time.Millisecond):
+			case <-wait:
 			}
 			continue
 		}
