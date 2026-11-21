@@ -127,12 +127,13 @@ Definition、References、Rename 或 Quick Fix 的身份规则。支持 `window/
 
 ## 公共依赖与隔离边界
 
-通过 [go.mod](../go.mod) 固定源码版本
-`v0.0.0-20261112033740-db4adba0093e`，完整 commit 为
-`db4adba0093ee2a709356aa1c2517e6d62644745`。
-[toolkit.lock.json](../contracts/toolkit.lock.json)记录源码/ZIP/合同 hash，`published: false`；
-依赖方式是固定源码 commit 和已提交 vendor，无需 toolkit release、兄弟仓库 checkout 或本地 `replace`。
-[toolkit-design-5.md](../contracts/toolkit-design-5.md)是按 hash 校验的当前 API 合同。
+[go.mod](../go.mod) pins the published release `v0.0.1-alpha.2` (full commit
+`2668c0767ff7fa23610306031593d2c1a272966e`).
+[toolkit.lock.json](../contracts/toolkit.lock.json) records the source, Go module
+ZIP, and contract SHA-256 digests (`published: true`); builds use the pinned
+module version and committed vendor without a sibling checkout or local `replace`.
+[toolkit-design-6.md](../contracts/toolkit-design-6.md) is the hash-verified API
+contract.
 
 | 共享能力 | 本仓落点 | 留在 Workflows 的决策 |
 | --- | --- | --- |
