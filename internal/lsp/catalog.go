@@ -37,6 +37,7 @@ type catalogRoot struct {
 	checked                                               time.Time
 	reportedAt                                            time.Time
 	overlay                                               *string
+	headerReady                                           chan struct{}
 	reads, bytes, parses                                  uint64
 	known, unknown, pending                               int
 	unready                                               map[string]int
@@ -80,6 +81,7 @@ type catalog struct {
 	queryFiles               []source.URI
 	queryEpoch               uint64
 	events                   chan struct{}
+	discoverWake             chan struct{}
 	publications             map[string]bool
 	logs                     map[string]string
 	symbolBytes, symbolCount int
@@ -99,7 +101,7 @@ func newCatalog(tracers ...*worktrace.Tracer) (*catalog, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	c := &catalog{ctx: ctx, cancel: cancel, documents: documents, index: idx, queue: queue, roots: map[string]*catalogRoot{}, files: map[source.URI]*catalogFile{}, events: make(chan struct{}, 1), publications: map[string]bool{}, logs: map[string]string{}}
+	c := &catalog{ctx: ctx, cancel: cancel, documents: documents, index: idx, queue: queue, roots: map[string]*catalogRoot{}, files: map[source.URI]*catalogFile{}, events: make(chan struct{}, 1), discoverWake: make(chan struct{}, 1), publications: map[string]bool{}, logs: map[string]string{}}
 	if len(tracers) > 0 {
 		c.tracer = tracers[0]
 	}
@@ -114,6 +116,20 @@ func (c *catalog) signal() {
 	select {
 	case c.events <- struct{}{}:
 	default:
+	}
+}
+
+func (c *catalog) wakeDiscovery() {
+	select {
+	case c.discoverWake <- struct{}{}:
+	default:
+	}
+}
+
+func (r *catalogRoot) notifyHeader() {
+	if r.headerReady != nil {
+		close(r.headerReady)
+		r.headerReady = nil
 	}
 }
 
@@ -215,6 +231,7 @@ func (c *catalog) syncInputs(s *session, m message) {
 			r.problem, r.scanProblem, r.complete = "configuration pending", "", false
 			if unavailable != "" {
 				r.problem = unavailable
+				r.notifyHeader()
 			}
 			for uri, file := range c.files {
 				if file.root == root {
@@ -226,11 +243,13 @@ func (c *catalog) syncInputs(s *session, m message) {
 				}
 			}
 			c.signal()
+			c.wakeDiscovery()
 		}
 	}
-	for root := range c.roots {
+	for root, state := range c.roots {
 		if !current[root] {
 			rootsChanged = true
+			state.notifyHeader()
 			delete(c.roots, root)
 		}
 	}
@@ -243,6 +262,7 @@ func (c *catalog) syncInputs(s *session, m message) {
 			root.done, root.complete, root.reported = false, false, false
 			root.nextPass = time.Time{}
 		}
+		c.wakeDiscovery()
 	}
 	for uri, file := range c.files {
 		root := c.rootFor(uri)

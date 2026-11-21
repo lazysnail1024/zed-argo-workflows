@@ -28,11 +28,7 @@ func emit(v any) {
 	}
 }
 func run(args []string) int {
-	return runContext(context.Background(), args)
-}
-
-func runContext(parent context.Context, args []string) int {
-	return runWithIO(parent, args, os.Stdout, os.Stderr)
+	return runWithIO(context.Background(), args, os.Stdout, os.Stderr)
 }
 func runWithIO(parent context.Context, args []string, stdout, stderr io.Writer) (code int) {
 	var outputErr error
@@ -48,7 +44,7 @@ func runWithIO(parent context.Context, args []string, stdout, stderr io.Writer) 
 		}
 	}
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: argo-workflows-ls version --json | check | serve --stdio | help")
+		fmt.Fprintln(stderr, "usage: argo-workflows-ls <version --json | check | explain-config | serve --stdio | render-check | render-cache | lint-official | help>")
 		return 2
 	}
 	switch args[0] {
@@ -56,7 +52,7 @@ func runWithIO(parent context.Context, args []string, stdout, stderr io.Writer) 
 		if len(args) != 1 {
 			return 2
 		}
-		fmt.Fprintln(stdout, "argo-workflows-ls: version --json; check --root <dir> --format json|human; serve --stdio\nAutomatic compatibility across the embedded supported releases is enabled by default; exact version pins remain available.")
+		fmt.Fprintln(stdout, "argo-workflows-ls commands:\n  version --json\n  check [--root <dir>] [--scope <name>] [--file <path>] [--target-version <auto|x.y.z>] [--format human|json] [--warnings-as-errors]\n  explain-config [--root <dir>] [--file <path>]\n  serve --stdio\n  render-check [--root <dir>] [--scope <name>] [--profile <name>] [--chart <dir>] [--file <path>] [--target-version <x.y.z>] [--helm-binary <path>] [--output <dir>]\n  render-cache [--remove <dir>]\n  lint-official --argo-binary <abs-path> [--root <dir>] [--scope <name>] [--target-version <x.y.z>]\n  help\n\nAutomatic compatibility across the embedded supported releases is enabled by default; exact version pins remain available.")
 		return 0
 	case "version":
 		if len(args) != 2 || args[1] != "--json" {
@@ -78,7 +74,7 @@ func runWithIO(parent context.Context, args []string, stdout, stderr io.Writer) 
 			return 2
 		}
 		if *format != "json" && *format != "human" {
-			fmt.Fprintln(stderr, "invalid format")
+			fmt.Fprintf(stderr, "invalid format %q: expected \"json\" or \"human\"\n", *format)
 			return 2
 		}
 		started := time.Now()
@@ -268,7 +264,7 @@ func runWithIO(parent context.Context, args []string, stdout, stderr io.Writer) 
 		emit(result)
 		return 0
 	default:
-		fmt.Fprintf(stderr, "unknown command: %s\n", args[0])
+		fmt.Fprintf(stderr, "unknown command: %s (run \"argo-workflows-ls help\" for available commands)\n", args[0])
 		return 2
 	}
 }

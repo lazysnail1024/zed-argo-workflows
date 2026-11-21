@@ -164,10 +164,11 @@ func AnalyzeSchema(ctx context.Context, snapshot source.Snapshot, version string
 		if !owned(api, resourceKind) {
 			continue
 		}
-		schema, err := assets.Compile(ctx, version, api, resourceKind)
+		shared := sharedOrigins(ctx, snapshot, doc, version)
+		schema, preserved, err := assets.CompileWithFieldPolicy(ctx, version, api, resourceKind)
 		if errors.Is(err, compat.ErrSchemaUnavailable) {
 			node, positionKind := location(root, []string{"kind"})
-			if sharedOrigin(sharedOrigins(ctx, snapshot, doc, version), node.Span()) {
+			if sharedOrigin(shared, node.Span()) {
 				positionKind = "derived"
 			}
 			loc := nodeLocation(snapshot, node)
@@ -180,15 +181,10 @@ func AnalyzeSchema(ctx context.Context, snapshot source.Snapshot, version string
 			continue
 		}
 		if version != compat.DefaultVersion {
-			document, err := assets.Document(ctx, version, api, resourceKind)
-			if err != nil {
-				result.NotEvaluated = append(result.NotEvaluated, err.Error())
-				continue
-			}
-			result.Diagnostics = append(result.Diagnostics, unknownFields(snapshot, root, value, document, version, sharedOrigins(ctx, snapshot, doc, version))...)
+			result.Diagnostics = append(result.Diagnostics, unknownFields(snapshot, root, value, schema, preserved, version, shared)...)
 		}
-		result.Diagnostics = append(result.Diagnostics, localDiagnostics(ctx, snapshot, root, value, sharedOrigins(ctx, snapshot, doc, version), resourceKind, version)...)
-		references, referenceErr := referenceDiagnostics(ctx, snapshot, root, value, sharedOrigins(ctx, snapshot, doc, version), resourceKind, version)
+		result.Diagnostics = append(result.Diagnostics, localDiagnostics(ctx, snapshot, root, value, shared, resourceKind, version)...)
+		references, referenceErr := referenceDiagnostics(ctx, snapshot, root, value, shared, resourceKind, version)
 		result.Diagnostics = append(result.Diagnostics, references...)
 		if referenceErr != nil {
 			result.NotEvaluated = append(result.NotEvaluated, referenceErr.Error())
@@ -219,7 +215,7 @@ func AnalyzeSchema(ctx context.Context, snapshot source.Snapshot, version string
 				}
 				seen[key] = true
 				node, positionKind := location(root, path)
-				if sharedOrigin(sharedOrigins(ctx, snapshot, doc, version), node.Span()) {
+				if sharedOrigin(shared, node.Span()) {
 					positionKind = "derived"
 				}
 				start, e1 := snapshot.Position(node.Span().Start)

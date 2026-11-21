@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/k8s-crd-toolkit/yamlview"
-	"github.com/lazysnail1024/zed-argo-workflows/internal/assets"
 	"github.com/lazysnail1024/zed-argo-workflows/internal/worktrace"
 )
 
@@ -40,7 +39,6 @@ type invocation struct {
 // WithInvocation reuses immutable parsing/projection results only inside one
 // sequential analysis. Exact text is part of identity, including simulated edits.
 func WithInvocation(ctx context.Context) context.Context {
-	ctx = assets.WithDocumentReuse(ctx)
 	if _, ok := ctx.Value(symbolQueryKey{}).(*symbolQueryBudget); !ok {
 		ctx = context.WithValue(ctx, symbolQueryKey{}, &symbolQueryBudget{remaining: symbolQueryWorkLimit})
 	}

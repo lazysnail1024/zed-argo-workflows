@@ -310,7 +310,7 @@ func (s *session) publish(uri string) error {
 			text := b.snapshot.Text()
 			overlay = &text
 		}
-		if err := workspace.ValidateConfig(s.context(), filepath.Dir(configPath), s.override, overlay); err != nil {
+		if _, err := workspace.Describe(s.context(), filepath.Dir(configPath), s.override, overlay); err != nil {
 			params["diagnostics"] = []map[string]any{{"range": analysis.Range{}, "code": "WF_CONFIGURATION_ERROR", "source": "argo-workflows", "severity": 1, "message": err.Error()}}
 		}
 		return s.write(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": params})
@@ -573,7 +573,6 @@ func (s *session) handle(m message) (bool, int, error) {
 				}
 			}
 		} else {
-			result = analysis.References(ctx, d.Snapshot, d.Target.Version, pos, p.Context.IncludeDeclaration)
 			if w, e := s.workspace(s.root(string(d.Snapshot.URI())), d.Target.Scope); e == nil {
 				result = analysis.ScopeReferences(ctx, scopeWorkspace(w, d.Target.ID), string(d.Snapshot.URI()), pos, p.Context.IncludeDeclaration)
 			} else {

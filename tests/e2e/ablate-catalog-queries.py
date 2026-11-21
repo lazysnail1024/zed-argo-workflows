@@ -6,7 +6,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -74,28 +73,27 @@ if rows[0]["passed"]:
         row = {"id": name, "passed": False}
         try:
             with tempfile.TemporaryDirectory(prefix="wf-catalog-ablation-") as temporary:
-                source = Path(temporary)
-                for directory in ("cmd", "internal", "compat", "schemas", "vendor"):
-                    shutil.copytree(ROOT / directory, source / directory)
-                for filename in ("go.mod", "go.sum"):
-                    shutil.copyfile(ROOT / filename, source / filename)
-                path = source / file
-                before = path.read_text()
+                temp = Path(temporary)
+                original = ROOT / file
+                before = original.read_text()
                 if before.count(old) != 1:
                     raise ValueError("mutation must match exactly once: " + name)
                 after = before.replace(old, new, 1)
-                path.write_text(after)
+                mutated = temp / original.name
+                mutated.write_text(after)
+                overlay = temp / "overlay.json"
+                overlay.write_text(json.dumps({"Replace": {str(original): str(mutated)}}, indent=2) + "\n")
                 (folder / "mutation.diff").write_text("".join(difflib.unified_diff(before.splitlines(True), after.splitlines(True), file, file)))
-                binary = source / ("mutant.exe" if os.name == "nt" else "mutant")
-                command = [go, "test", "-c", "-mod=vendor", "-o", binary, "./internal/lsp"] if case == "go" else [
-                    go, "build", "-mod=vendor", "-buildvcs=false", "-trimpath", "-o", binary, "./cmd/argo-workflows-ls"]
-                build = run(folder, "build", command, source)
+                binary = temp / ("mutant.exe" if os.name == "nt" else "mutant")
+                command = [go, "test", "-c", "-mod=vendor", "-trimpath", "-overlay", overlay, "-o", binary, "./internal/lsp"] if case == "go" else [
+                    go, "build", "-mod=vendor", "-buildvcs=false", "-trimpath", "-overlay", overlay, "-o", binary, "./cmd/argo-workflows-ls"]
+                build = run(folder, "build", command, ROOT)
                 row["buildExit"] = build.returncode
                 if build.returncode != 0:
                     raise RuntimeError("mutant failed to compile")
                 row["binarySHA256"] = hashlib.sha256(binary.read_bytes()).hexdigest()
                 if case == "go":
-                    probe = run(folder, "probe", [binary, "-test.run", "^" + required_case + "$", "-test.count=1", "-test.timeout=60s"], source)
+                    probe = run(folder, "probe", [binary, "-test.run", "^" + required_case + "$", "-test.count=1", "-test.timeout=60s"], ROOT)
                     text = probe.stdout.decode(errors="replace") + probe.stderr.decode(errors="replace")
                     row["passed"] = probe.returncode == 1 and "--- FAIL: " + required_case in text and required_assertion in text and not any(marker in text for marker in ("panic:", "fatal error:", "test timed out"))
                 else:

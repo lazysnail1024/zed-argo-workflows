@@ -28,6 +28,7 @@ func (c *catalog) discover() {
 		select {
 		case <-c.ctx.Done():
 			return
+		case <-c.discoverWake:
 		case <-timer.C:
 		}
 		c.mu.Lock()
@@ -72,7 +73,7 @@ func (c *catalog) reportProgress(root *catalogRoot) {
 
 func (c *catalog) refreshHeader(root *catalogRoot) {
 	c.mu.Lock()
-	if root.unavailable != "" || time.Since(root.checked) < 30*time.Second {
+	if root.unavailable != "" || root.problem != "configuration pending" && time.Since(root.checked) < 30*time.Second {
 		c.mu.Unlock()
 		return
 	}
@@ -89,6 +90,9 @@ func (c *catalog) refreshHeader(root *catalogRoot) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.roots[name] != root || root.epoch != epoch {
+		if c.roots[name] == root && root.problem == "configuration pending" {
+			c.wakeDiscovery()
+		}
 		return
 	}
 	if err != nil {
@@ -98,6 +102,7 @@ func (c *catalog) refreshHeader(root *catalogRoot) {
 		root.problem = err.Error()
 		root.complete = false
 		root.reported = false
+		root.notifyHeader()
 		for uri, file := range c.files {
 			if file.root == name {
 				c.mark(uri, shared.Background, true)
@@ -114,6 +119,7 @@ func (c *catalog) refreshHeader(root *catalogRoot) {
 		return
 	}
 	root.header, root.identity, root.problem = header, identity, ""
+	root.notifyHeader()
 	root.epoch++
 	root.done, root.complete, root.scanProblem = false, false, ""
 	root.reported = false

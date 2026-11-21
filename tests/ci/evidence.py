@@ -30,14 +30,21 @@ def child_streams(destination):
   for stream in ('stdout','stderr'):
    require((record.parent/(label+'.'+stream+suffix)).is_file(),'missing required raw child stream: '+str(record.parent/(label+'.'+stream+suffix)))
 
+_BUILD_CONTEXT_CACHE={}
+def _build_context():
+ key=str(ROOT)
+ if key not in _BUILD_CONTEXT_CACHE:
+  from build_identity import input_digest
+  _BUILD_CONTEXT_CACHE[key]=(git('rev-parse','HEAD^{tree}'),input_digest())
+ return _BUILD_CONTEXT_CACHE[key]
 def build(root,lane):
  value=load(root/'build/build.json')
  require(value.get('schemaVersion')==1 and value.get('buildRole')=='ordinary','missing ordinary build receipt')
  require(value.get('sourceCommit')==identity()['testedSHA'] and value.get('dirty') is False,'wrong build source')
- from build_identity import input_digest
  expected_platform=lane.removeprefix('native-').replace('-','/') if lane.startswith('native-') else 'linux/amd64'
  require(value.get('platform')==expected_platform,'wrong native platform')
- require(value.get('sourceTree')==git('rev-parse','HEAD^{tree}') and value.get('inputs')==input_digest(),'wrong source tree or build inputs')
+ expected_tree,expected_inputs=_build_context()
+ require(value.get('sourceTree')==expected_tree and value.get('inputs')==expected_inputs,'wrong source tree or build inputs')
  require(all(value.get('producer',{}).get(k)==v for k,v in identity().items()),'stale producer execution')
  binary=root/'build'/('argo-workflows-ls.exe' if lane=='native-windows-amd64' else 'argo-workflows-ls')
  require(sha(binary)==value.get('binarySha256'),'build binary bytes missing or changed')

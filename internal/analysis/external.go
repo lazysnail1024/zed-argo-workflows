@@ -141,13 +141,14 @@ func externalResources(ctx context.Context, w workspace.Workspace, readOnly bool
 				}
 				templateValues, _ = queryMember(semanticSpec, "templates").([]any)
 			}
+			shared := sharedOrigins(ctx, d.Snapshot, doc, d.Target.Version)
 			semanticRoot := workflowRoot(projected, root)
-			semanticRoot.shared = sharedOrigins(ctx, d.Snapshot, doc, d.Target.Version)
+			semanticRoot.shared = shared
 			semanticSpec := workflowMember(semanticRoot, "spec")
 			if kind == "CronWorkflow" {
 				semanticSpec = workflowMember(semanticSpec, "workflowSpec")
 			}
-			resources = append(resources, resource{d, root, spec, kind, name, namespace, declarations, templateValues, sharedOrigins(ctx, d.Snapshot, doc, d.Target.Version), semanticSpec})
+			resources = append(resources, resource{d, root, spec, kind, name, namespace, declarations, templateValues, shared, semanticSpec})
 			remaining[d.Snapshot.URI()]++
 		}
 	}

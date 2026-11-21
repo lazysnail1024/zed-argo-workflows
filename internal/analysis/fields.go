@@ -4,19 +4,27 @@ import (
 	"fmt"
 	"github.com/lazysnail1024/k8s-crd-toolkit/source"
 	"github.com/lazysnail1024/k8s-crd-toolkit/yamlview"
+	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 	"sort"
 	"strconv"
 )
 
-func unknownFields(snapshot source.Snapshot, root yamlview.Node, value any, schema map[string]any, version string, shared map[source.Span]bool) []Diagnostic {
+func unknownFields(snapshot source.Snapshot, root yamlview.Node, value any, schema *jsonschema.Schema, preserved map[string]bool, version string, shared map[source.Span]bool) []Diagnostic {
 	result := []Diagnostic{}
-	var walk func(any, map[string]any, []string)
-	walk = func(value any, schema map[string]any, path []string) {
+	var walk func(any, *jsonschema.Schema, []string)
+	walk = func(value any, schema *jsonschema.Schema, path []string) {
+		for schema != nil && schema.Ref != nil {
+			schema = schema.Ref
+		}
+		if schema == nil {
+			return
+		}
 		switch object := value.(type) {
 		case map[string]any:
-			props, _ := schema["properties"].(map[string]any)
-			additional, hasAdditional := schema["additionalProperties"]
-			preserve, _ := schema["x-kubernetes-preserve-unknown-fields"].(bool)
+			props := schema.Properties
+			additional := schema.AdditionalProperties
+			hasAdditional := additional != nil
+			preserve := preserved[schema.Location]
 			keys := make([]string, 0, len(object))
 			for key := range object {
 				keys = append(keys, key)
@@ -24,11 +32,11 @@ func unknownFields(snapshot source.Snapshot, root yamlview.Node, value any, sche
 			sort.Strings(keys)
 			for _, key := range keys {
 				childPath := append(append([]string{}, path...), key)
-				if child, ok := props[key].(map[string]any); ok {
+				if child, ok := props[key]; ok && child != nil {
 					walk(object[key], child, childPath)
 					continue
 				}
-				if child, ok := additional.(map[string]any); ok {
+				if child, ok := additional.(*jsonschema.Schema); ok && child != nil {
 					walk(object[key], child, childPath)
 					continue
 				}
@@ -64,7 +72,11 @@ func unknownFields(snapshot source.Snapshot, root yamlview.Node, value any, sche
 				result = append(result, Diagnostic{URI: string(snapshot.URI()), Range: Range{Position{start.Line, start.UTF16Column}, Position{end.Line, end.UTF16Column}}, Code: "SCHEMA_UNKNOWN_FIELD", Source: "argo-workflows", Severity: severity, Message: fmt.Sprintf("field %q is not defined for target %s", key, version), TargetID: version, PositionKind: positionKind})
 			}
 		case []any:
-			if items, ok := schema["items"].(map[string]any); ok {
+			items := schema.Items2020
+			if items == nil {
+				items, _ = schema.Items.(*jsonschema.Schema)
+			}
+			if items != nil {
 				for i, item := range object {
 					walk(item, items, append(append([]string{}, path...), strconv.Itoa(i)))
 				}

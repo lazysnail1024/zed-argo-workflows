@@ -6,7 +6,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -61,19 +60,18 @@ if rows[0]['passed']:
         row = {'id': name, 'passed': False, 'requiredCase': case, 'requiredAssertion': required}
         try:
             with tempfile.TemporaryDirectory(prefix='wf-responsive-ablation-') as temporary:
-                source = Path(temporary)
-                for directory in ('cmd', 'internal', 'compat', 'schemas', 'vendor'):
-                    shutil.copytree(ROOT / directory, source / directory)
-                for filename in ('go.mod', 'go.sum'):
-                    shutil.copyfile(ROOT / filename, source / filename)
-                path = source / 'internal/lsp/request.go'
+                temp = Path(temporary)
+                path = ROOT / 'internal/lsp/request.go'
                 original = path.read_text()
                 assert original.count(old) == 1, 'mutation must match exactly once: ' + name
                 changed = original.replace(old, new, 1)
-                path.write_text(changed)
-                (folder / 'mutation.diff').write_text(''.join(difflib.unified_diff(original.splitlines(True), changed.splitlines(True), str(path), str(path))))
-                binary = source / ('server.exe' if os.name == 'nt' else 'server')
-                build = command(folder, 'build', [GO, 'build', '-mod=vendor', '-buildvcs=false', '-trimpath', '-o', binary, './cmd/argo-workflows-ls'], source)
+                mutated = temp / 'request.go'
+                mutated.write_text(changed)
+                overlay = temp / 'overlay.json'
+                overlay.write_text(json.dumps({'Replace': {str(path): str(mutated)}}, indent=2) + '\n')
+                (folder / 'mutation.diff').write_text(''.join(difflib.unified_diff(original.splitlines(True), changed.splitlines(True), 'a/internal/lsp/request.go', 'b/internal/lsp/request.go')))
+                binary = temp / ('server.exe' if os.name == 'nt' else 'server')
+                build = command(folder, 'build', [GO, 'build', '-mod=vendor', '-buildvcs=false', '-trimpath', '-overlay', overlay, '-o', binary, './cmd/argo-workflows-ls'], ROOT)
                 row['buildExit'] = build.returncode
                 assert build.returncode == 0, 'mutant must compile'
                 row['binarySha256'] = hashlib.sha256(binary.read_bytes()).hexdigest()
