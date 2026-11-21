@@ -4,7 +4,7 @@
 
 | Component | Source version | Distribution |
 | --- | --- | --- |
-| Native Go LSP/CLI | [VERSION](../VERSION): `0.0.1-alpha.4` | Platform binaries, archives, provenance and `SHA256SUMS` under `v<VERSION>` |
+| Native Go LSP/CLI | [VERSION](../VERSION): `0.0.1-alpha.5` | Platform binaries, archives, provenance and `SHA256SUMS` under `v<VERSION>` |
 | Zed adapter | [extension.toml](../editors/zed/extension.toml) and [Cargo.toml](../editors/zed/Cargo.toml): `0.0.1-alpha.5` | Precompiled ZIP, identity record and `SHA256SUMS` under `zed-v<VERSION>` |
 | Adapter native server | [native-server-version](../editors/zed/native-server-version): `0.0.1-alpha.4` | Pinned native release, versioned independently of the adapter |
 

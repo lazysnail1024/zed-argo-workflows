@@ -252,7 +252,6 @@ func LoadContext(ctx context.Context, root, selected, override string) (Workspac
 	return readDocuments(ctx, header, selected, override)
 }
 
-
 // scopeName selects membership before resource I/O or target-version resolution.
 // This keeps an unselected unassigned file from activating an invalid root default.
 func scopeName(config Config, relative string) (string, error) {

@@ -33,18 +33,17 @@ replace an already published binary with the same version.
 
 ## Shared toolkit and vendored patches
 
-[contracts/toolkit.lock.json](contracts/toolkit.lock.json) pins the toolkit source
-commit; [go.mod](go.mod) contains its Go pseudo-version. The vendored `source`,
-`yamlview`, `yamlvalue`, `schemaquery`, `edit`, `index` and `workspace` packages
-match that pin. No sibling checkout, local `replace` or toolkit release tag is
-required. The hash-locked [API contract](contracts/toolkit-design-5.md) is a build
-and identity input; its filename does not make it an obsolete design document.
+[contracts/toolkit.lock.json](contracts/toolkit.lock.json) pins the published
+toolkit release and source commit; [go.mod](go.mod) selects the same Go module
+version. The vendored `source`, `yamlview`, `yamlvalue`, `schemaquery`, `edit`,
+`index` and `workspace` packages match that pin. No sibling checkout or local
+`replace` is required. The hash-locked [API contract](contracts/toolkit-design-6.md)
+is a build and identity input; its filename does not make it an obsolete design
+document.
 
 Treat an upgrade as an explicit consumer decision. Keep the existing pin until a
 contract diff and a fixed candidate commit demonstrate a benefit in Workflows
-workloads. In particular, adopting design-6 requires parser scheduling measurements
-with representative interactive workloads; matching another product's pin is not
-an upgrade reason.
+workloads; matching another product's pin is not an upgrade reason.
 
 1. Record the old consumer commit, toolkit lock, contract digest and toolchain.
    Rebuild that combination independently before replacing it, using the check
@@ -63,7 +62,7 @@ an upgrade reason.
    was not truncated. Verify the contract SHA-256 against `contractFile` in the
    lock and the provider contract. Reproduce `sourceSHA256` using the runtime
    snapshot procedure at the pinned provider commit. For the current
-   `go-module-commit` adoption, `zipSHA256` is the SHA-256 of the Go module archive
+   `go-module-release` adoption, `zipSHA256` is the SHA-256 of the Go module archive
    returned as `Zip` by `go mod download -json`, not the local snapshot ZIP. Check
    `Origin.Hash` against `implementationCommit`; separately compare `Sum` and
    `GoModSum` with the module and `/go.mod` entries in `go.sum`. These Go `h1:`

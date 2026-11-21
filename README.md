@@ -176,7 +176,7 @@ configuration, root/scope boundaries and the current-buffer explanation.
 
 ## Standalone CLI / other editors
 
-Download your platform archive from the [LSP alpha release](https://github.com/lazysnail1024/zed-argo-workflows/releases/tag/v0.0.1-alpha.4),
+Download your platform archive from the [LSP alpha release](https://github.com/lazysnail1024/zed-argo-workflows/releases/tag/v0.0.1-alpha.5),
 extract it, and run:
 
 ```sh
