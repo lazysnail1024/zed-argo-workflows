@@ -328,7 +328,7 @@ def cache_refusals():
 
 def live(pid):
     try: return pathlib.Path('/proc', str(pid), 'stat').read_text().split()[2] != 'Z'
-    except FileNotFoundError: return False
+    except (FileNotFoundError, ProcessLookupError): return False
 
 
 def custom_output_rotation():
