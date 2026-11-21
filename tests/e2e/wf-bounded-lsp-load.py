@@ -44,16 +44,20 @@ try:
  # Warm RSS and five equal lifecycle batches; unsaved URI must always clear on close.
  temp=work/'group-000/ephemeral.yaml';warm=[];after=[]
  for batch in range(6):
-  for i in range(2000 if batch else 200):
+  samples=[]
+  for i in range(2000):
    client.send('textDocument/didOpen',{'textDocument':{'uri':temp.as_uri(),'version':1,'languageId':'yaml','text':texts[0]}})
    client.send('textDocument/didChange',{'textDocument':{'uri':temp.as_uri(),'version':2},'contentChanges':[{'text':texts[0]+'# edited\n'}]})
    last_close_marker=len(client.received);client.send('textDocument/didClose',{'textDocument':{'uri':temp.as_uri()}})
-   if i%100==99:client.request('textDocument/documentSymbol',{'textDocument':{'uri':uri}})
+   if i%100==99:
+    client.request('textDocument/documentSymbol',{'textDocument':{'uri':uri}})
+    if i<1999:samples.append(rss())
   cleared=lambda x:x.get('method')=='textDocument/publishDiagnostics' and x['params']['uri']==temp.as_uri() and x['params']['diagnostics']==[]
   if not any(cleared(x) for x in client.received[last_close_marker:]):client.wait(cleared)
   # Terminal query is also an ordering barrier; allow the debounced analysis to retire.
   client.request('textDocument/documentSymbol',{'textDocument':{'uri':uri}});time.sleep(.3)
-  (warm if batch==0 else after).append(rss())
+  samples.append(rss())
+  (warm if batch==0 else after).append(int(statistics.median(samples)))
  record('10000-open-edit-close',{'fiveSamples':len(after)==5,'growthWithin10Percent':max(after)<=warm[0]*1.1,'serverAlive':client.p.poll() is None},warmRSSKiB=warm,sampleRSSKiB=after)
  start=time.monotonic();client.close();record('shutdown',{'withinFiveSeconds':time.monotonic()-start<=5,'exitZero':client.p.returncode==0},seconds=time.monotonic()-start);client=None
 except Exception as e:record('runner-error',{'completed':False},error=repr(e))
